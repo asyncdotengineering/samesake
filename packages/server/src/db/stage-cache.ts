@@ -1,0 +1,37 @@
+import { eq, and, gt, sql } from "drizzle-orm";
+import type { MatcherCtx } from "../types.ts";
+
+export function makeStageCacheService(ctx: MatcherCtx) {
+  const { db, systemTables } = ctx;
+  const t = systemTables.samesakeStageCache;
+
+  return {
+    async getStageCache(key: string): Promise<unknown | null> {
+      const rows = await db
+        .select({ payload: t.payload })
+        .from(t)
+        .where(and(eq(t.cacheKey, key), gt(t.expiresAt, sql`now()`)))
+        .limit(1);
+      return rows[0]?.payload ?? null;
+    },
+
+    async setStageCache(
+      key: string,
+      stageName: string,
+      payload: object,
+      model: string,
+      ttlDays = 90
+    ): Promise<void> {
+      const expiresAt = new Date(Date.now() + ttlDays * 24 * 3600 * 1000);
+      await db
+        .insert(t)
+        .values({ cacheKey: key, stageName, payload, model, expiresAt })
+        .onConflictDoUpdate({
+          target: t.cacheKey,
+          set: { payload, stageName, model, expiresAt },
+        });
+    },
+  };
+}
+
+export type StageCacheService = ReturnType<typeof makeStageCacheService>;

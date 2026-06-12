@@ -1,0 +1,60 @@
+{
+  "name": "@samesake/server",
+  "version": "1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/asyncdotengineering/samesake"
+  },
+  "description": "createMatcher factory — hybrid search (FTS+vector RRF, filters, facets, NLQ, enrichment) and entity resolution on PostgreSQL + pgvector. Hono app with universal fetch handler; BYO embed/generate/parse functions.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "keywords": [
+    "entity-resolution",
+    "matcher",
+    "hono",
+    "drizzle",
+    "pgvector",
+    "samesake"
+  ],
+  "peerDependencies": {
+    "@hono/zod-validator": "^0.8.0",
+    "drizzle-orm": "^0.45.0",
+    "hono": "^4.12.0",
+    "postgres": "^3.4.0",
+    "@samesake/core": "^1.0.0",
+    "zod": "^4.0.0"
+  },
+  "dependencies": {
+    "@samesake/core": "^1.0.0"
+  },
+  "devDependencies": {
+    "@hono/zod-validator": "^0.8.0",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.12.19",
+    "postgres": "^3.4.9",
+    "tsup": "^8.5.1",
+    "zod": "^4.4.3"
+  }
+}

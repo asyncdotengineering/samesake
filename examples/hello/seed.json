@@ -1,0 +1,14 @@
+{
+  "entityType": "customer",
+  "items": [
+    { "id": "c_1", "scope": { "tenantId": "acme" }, "data": { "name": "John Smith", "phone": "0771234567" } },
+    { "id": "c_2", "scope": { "tenantId": "acme" }, "data": { "name": "Jane Smith", "phone": "0779999999" } },
+    { "id": "c_3", "scope": { "tenantId": "acme" }, "data": { "name": "Jonathan Smithson" } },
+    { "id": "c_4", "scope": { "tenantId": "acme" }, "data": { "name": "අම්මා", "phone": "0712223333" } },
+    { "id": "c_5", "scope": { "tenantId": "acme" }, "data": { "name": "Anuhas Sir" } },
+    { "id": "c_6", "scope": { "tenantId": "acme" }, "data": { "name": "Soap" } },
+    { "id": "c_7", "scope": { "tenantId": "acme" }, "data": { "name": "Soap" } },
+    { "id": "c_8", "scope": { "tenantId": "acme" }, "data": { "name": "Soap" } },
+    { "id": "c_9", "scope": { "tenantId": "other" }, "data": { "name": "John Smith" } }
+  ]
+}

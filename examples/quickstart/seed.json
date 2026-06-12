@@ -1,0 +1,8 @@
+{
+  "entityType": "contact",
+  "items": [
+    { "id": "k_1", "scope": { "tenantId": "acme" }, "data": { "name": "Priya Fernando", "phone": "0771112222" } },
+    { "id": "k_2", "scope": { "tenantId": "acme" }, "data": { "name": "Nuwan Perera", "phone": "0773334444" } },
+    { "id": "k_3", "scope": { "tenantId": "acme" }, "data": { "name": "අනූෂා සිල්වා", "phone": "0775556666" } }
+  ]
+}

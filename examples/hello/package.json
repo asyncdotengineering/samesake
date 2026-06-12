@@ -1,0 +1,12 @@
+{
+  "name": "samesake-example-hello",
+  "module": "run.ts",
+  "type": "module",
+  "private": true,
+  "description": "Minimal hello-world example: 3 entities (customer/supplier/asset), 18 smoke assertions exercising fuzzy match, parse-shape, dedup, variants, calibrate.",
+  "dependencies": {
+    "@samesake/core": "workspace:*",
+    "@samesake/cli": "workspace:*",
+    "@samesake/server": "workspace:*"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "samesake-example-hello-spaces",
+  "type": "module",
+  "private": true,
+  "description": "Spaces demo: segmented vector + query-time weight flip. No LLM required.",
+  "dependencies": {
+    "drizzle-orm": "^0.45.2",
+    "@samesake/core": "workspace:*",
+    "@samesake/server": "workspace:*"
+  }
+}

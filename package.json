@@ -1,0 +1,26 @@
+{
+  "name": "samesake-workspace",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "workspaces": ["packages/*", "apps/*", "examples/*"],
+  "scripts": {
+    "dev": "bun --watch apps/matcher/src/index.ts",
+    "start": "bun apps/matcher/src/index.ts",
+    "cli": "bun packages/cli/src/index.ts",
+    "examples:hello": "bun examples/hello/run.ts",
+    "examples:hello-search": "bun examples/hello-search/run.ts",
+    "examples:hello-spaces": "bun examples/hello-spaces/run.ts",
+    "examples:quickstart": "bun examples/quickstart/run.ts",
+    "typecheck": "tsc --noEmit",
+    "pack:assert": "bun scripts/pack-assert.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "drizzle-kit": "^0.31.10",
+    "tsup": "^8.5.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

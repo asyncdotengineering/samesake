@@ -1,0 +1,12 @@
+{
+  "entityType": "asset",
+  "items": [
+    { "id": "a_1", "scope": { "tenantId": "acme" }, "data": { "name": "කිස්ට් ඇපල් නෙක්ටා 500", "units": "ml" } },
+    { "id": "a_2", "scope": { "tenantId": "acme" }, "data": { "name": "කිස්ට් orange නෙක්ටා 500", "units": "ml" } },
+    { "id": "a_3", "scope": { "tenantId": "acme" }, "data": { "name": "Kist apple nectar 1000", "units": "ml" } },
+    { "id": "a_4", "scope": { "tenantId": "acme" }, "data": { "name": "BLN 0004 Blender Lid Doom" } },
+    { "id": "a_5", "scope": { "tenantId": "acme" }, "data": { "name": "10 inch Chrome Blue Balloon" } },
+    { "id": "a_6", "scope": { "tenantId": "acme" }, "data": { "name": "12 inch Chrome Blue Balloon" } },
+    { "id": "a_7", "scope": { "tenantId": "acme" }, "data": { "name": "Sunlight 1kg" } }
+  ]
+}

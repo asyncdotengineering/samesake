@@ -1,0 +1,16 @@
+{
+  "name": "samesake-example-fashion-search",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "ingest": "bun ingest.ts",
+    "pipeline": "bun run-pipeline.ts",
+    "serve": "bun serve.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@samesake/core": "workspace:*",
+    "@samesake/server": "workspace:*",
+    "drizzle-orm": "^0.45.2"
+  }
+}

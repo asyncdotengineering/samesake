@@ -1,0 +1,8 @@
+{
+  "entityType": "supplier",
+  "items": [
+    { "id": "s_1", "scope": { "tenantId": "acme" }, "data": { "name": "Sunlight Distribution Co" } },
+    { "id": "s_2", "scope": { "tenantId": "acme" }, "data": { "name": "Lanka Wholesale Ltd" } },
+    { "id": "s_3", "scope": { "tenantId": "acme" }, "data": { "name": "Kist Beverages" } }
+  ]
+}

@@ -1,0 +1,30 @@
+# OPTIONAL — not required for local dev or default Fly deploy (see deploy/README.md).
+FROM oven/bun:1.3-debian AS deps
+WORKDIR /app
+COPY package.json bun.lock* ./
+COPY packages/sdk/package.json packages/sdk/
+COPY packages/server/package.json packages/server/
+COPY packages/cli/package.json packages/cli/
+COPY apps/matcher/package.json apps/matcher/
+RUN bun install --frozen-lockfile
+
+FROM oven/bun:1.3-debian AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json bun.lock* tsconfig.json ./
+COPY packages ./packages
+COPY apps/matcher ./apps/matcher
+RUN cd packages/sdk && bun run build && cd ../server && bun run build
+
+FROM oven/bun:1.3-debian AS runtime
+WORKDIR /app
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/package.json ./
+COPY --from=build /app/apps/matcher ./apps/matcher
+COPY --from=build /app/packages/sdk/dist ./packages/sdk/dist
+COPY --from=build /app/packages/sdk/package.json ./packages/sdk/package.json
+COPY --from=build /app/packages/server/dist ./packages/server/dist
+COPY --from=build /app/packages/server/package.json ./packages/server/package.json
+EXPOSE 3030
+ENV FINDABLE_PORT=3030
+CMD ["bun", "apps/matcher/src/index.ts"]

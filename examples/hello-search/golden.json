@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "queries": [
+    { "id": "q1", "query": "running shoes" },
+    { "id": "q2", "query": "wallet" },
+    { "id": "q3", "query": "red hat" }
+  ]
+}

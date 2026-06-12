@@ -1,0 +1,38 @@
+# Fly.io template for the findable matcher (apps/matcher).
+# Postgres: use Neon or another external provider — do NOT provision Fly Postgres here.
+#
+#   fly launch --no-deploy --config deploy/fly.toml.example
+#   fly secrets set FINDABLE_DATABASE_URL=postgres://...
+#   fly secrets set FINDABLE_API_KEY=$(openssl rand -hex 24)
+#   fly secrets set GOOGLE_GENERATIVE_AI_API_KEY=...
+#   fly deploy --config deploy/fly.toml.example
+#
+# Optional Docker build: add --dockerfile deploy/Dockerfile.example
+
+app = "findable-matcher"
+primary_region = "iad"
+
+[env]
+  FINDABLE_PORT = "3030"
+
+[processes]
+  app = "bun apps/matcher/src/index.ts"
+
+[http_service]
+  internal_port = 3030
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/v1/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

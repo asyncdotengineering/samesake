@@ -1,0 +1,255 @@
+import { createHash } from "node:crypto";
+import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import type { CollectionDef, PipelineDef, StageContext } from "@samesake/core";
+import type { MatcherCtx } from "../types.ts";
+import type { ProjectsService } from "./projects.ts";
+import { makeStageCacheService } from "../db/stage-cache.ts";
+import { fetchImageBytes } from "./fetch-image.ts";
+import { sanitiseIdent } from "./schema-gen.ts";
+import { callWithRetry } from "./policy.ts";
+
+type PgUnsafe = {
+  unsafe: (query: string, params?: unknown[]) => Promise<Record<string, unknown>[]>;
+};
+
+function pgClient(db: PostgresJsDatabase): PgUnsafe {
+  const session = (db as { session?: { client?: PgUnsafe } }).session;
+  if (!session?.client?.unsafe) {
+    throw new Error("postgres client unavailable for enrich");
+  }
+  return session.client;
+}
+
+function tableName(schema: string, collection: string): string {
+  return `${schema}.c_${sanitiseIdent(collection)}`;
+}
+
+function isPipeline(def: CollectionDef["enrich"]): def is PipelineDef {
+  return !!def && typeof def === "object" && Array.isArray((def as PipelineDef).stages);
+}
+
+function stageCacheKey(
+  stageName: string,
+  model: string,
+  prompt: string,
+  imageUrls: string[],
+  schema: Record<string, unknown>
+): string {
+  const material = `${prompt}|${imageUrls.join(",")}|${JSON.stringify(schema)}`;
+  const hash = createHash("sha1").update(material).digest("hex");
+  return `stage:${stageName}:${model}:${hash}`;
+}
+
+export function makeEnrichPipelineService(
+  ctx: MatcherCtx,
+  projectsService: ProjectsService
+) {
+  const stageCache = makeStageCacheService(ctx);
+
+  function requireGenerate(def: CollectionDef): void {
+    if (!isPipeline(def.enrich)) return;
+    if (!ctx.generateConfigured) {
+      throw new Error(
+        "createMatcher's `generate` is not configured, but a collection declared an `enrich:` pipeline.\n\n" +
+          "Wire it up by providing a function that calls your LLM with schema-constrained JSON output:\n\n" +
+          "  createMatcher({\n" +
+          "    /* ...db, apiKey, embed... */\n" +
+          "    generate: async ({ model, prompt, images, schema }) => {\n" +
+          "      // call Gemini / OpenAI / etc with responseSchema\n" +
+          "      return parsedJson;\n" +
+          "    },\n" +
+          "  });\n\n" +
+          "Or remove the `enrich:` block from collections that do not need enrichment."
+      );
+    }
+  }
+
+  async function runStage(
+    stage: PipelineDef["stages"][number],
+    stageCtx: StageContext,
+    docId: string,
+    fewShot = ""
+  ): Promise<Record<string, unknown> | null> {
+    if (stage.condition && !stage.condition(stageCtx)) return null;
+
+    const prompt = stage.prompt(stageCtx) + fewShot;
+    const imageUrls = stage.images?.(stageCtx) ?? [];
+    const schema = stage.schema(stageCtx);
+    const model = stage.model ?? "<default>";
+    const key = stageCacheKey(stage.name, model, prompt, imageUrls, schema);
+
+    const cached = await stageCache.getStageCache(key);
+    if (cached && typeof cached === "object") {
+      return cached as Record<string, unknown>;
+    }
+
+    const images: { mimeType: string; data: string }[] = [];
+    for (const url of imageUrls) {
+      const fetched = await fetchImageBytes(url);
+      if (fetched) {
+        images.push({
+          mimeType: fetched.mimeType,
+          data: Buffer.from(fetched.bytes).toString("base64"),
+        });
+      }
+    }
+
+    try {
+      const result = await callWithRetry(
+        () =>
+          ctx.generate({
+            model: stage.model,
+            prompt,
+            images: images.length ? images : undefined,
+            schema,
+          }),
+        { ...ctx.policy.llm, timeoutMs: undefined }
+      );
+      const payload =
+        result && typeof result === "object" ? (result as Record<string, unknown>) : { value: result };
+      await stageCache.setStageCache(key, stage.name, payload, model);
+      return payload;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      ctx.observability.inc("enrich_failures_total");
+      ctx.observability.log("error", "enrich", `stage "${stage.name}" failed`, {
+        docId,
+        error: msg.slice(0, 200),
+      });
+      return null;
+    }
+  }
+
+  async function enrichOne(
+    def: CollectionDef,
+    row: { id: string; data: Record<string, unknown> },
+    schema: string,
+    collectionName: string,
+    fewShot = ""
+  ): Promise<boolean> {
+    if (!isPipeline(def.enrich)) return false;
+    requireGenerate(def);
+
+    const data = row.data;
+    const enriched: Record<string, unknown> = {};
+    const stageCtx: StageContext = { data, enriched };
+
+    for (const stage of def.enrich.stages) {
+      const result = await runStage(stage, stageCtx, row.id, fewShot);
+      if (result) {
+        Object.assign(enriched, result);
+        enriched._stages = {
+          ...(enriched._stages as Record<string, unknown> | undefined),
+          [stage.name]: result,
+        };
+        stageCtx.enriched = enriched;
+      }
+    }
+
+    const table = tableName(schema, collectionName);
+    await pgClient(ctx.db).unsafe(
+      `UPDATE ${table}
+       SET enriched = $1::jsonb, enriched_at = now(), updated_at = now()
+       WHERE id = $2`,
+      [JSON.stringify(enriched), row.id]
+    );
+    ctx.observability.inc("enrich_docs_total");
+    return true;
+  }
+
+  async function enrichCollection(
+    projectSlug: string,
+    collectionName: string,
+    opts?: { concurrency?: number; limit?: number }
+  ): Promise<{ enriched: number; skipped: number; failed: number }> {
+    return ctx.jobs.run(
+      `enrich:${projectSlug}:${collectionName}`,
+      { projectSlug, collectionName, ...opts },
+      () => runEnrichCollection(projectSlug, collectionName, opts)
+    );
+  }
+
+  async function runEnrichCollection(
+    projectSlug: string,
+    collectionName: string,
+    opts?: { concurrency?: number; limit?: number }
+  ): Promise<{ enriched: number; skipped: number; failed: number }> {
+    const project = await projectsService.getProject(projectSlug);
+    if (!project) throw new Error(`project "${projectSlug}" not found`);
+    const def = await projectsService.getCollectionDef(projectSlug, collectionName);
+    if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
+    if (!isPipeline(def.enrich)) {
+      throw new Error(`collection "${collectionName}" has no enrich pipeline configured`);
+    }
+    for (const stage of def.enrich.stages) {
+      if (typeof stage.prompt !== "function" || typeof stage.schema !== "function") {
+        throw new Error(
+          `collection "${collectionName}" stage "${stage.name}" has no callable prompt/schema. ` +
+            `Pipeline functions cannot be loaded from the database — pass this collection's config ` +
+            `to createMatcher (or re-apply the project in-process) before calling enrich.`
+        );
+      }
+    }
+    requireGenerate(def);
+
+    const table = tableName(project.schema_name, collectionName);
+    const limit = opts?.limit ?? 100_000;
+    const concurrency = opts?.concurrency ?? 8;
+
+    // Few-shot guidance from human corrections (Q6 review loop) — fetched once per run.
+    let fewShot = "";
+    try {
+      const { makeReviewService } = await import("./review.ts");
+      const examples = await makeReviewService(ctx, projectsService).correctionExamples(projectSlug, collectionName, 3);
+      if (examples.length) {
+        fewShot = "\n\nCorrections from human review of similar products in this catalog (follow these patterns):\n" + examples.join("\n");
+      }
+    } catch {
+      // corrections table may not exist on older deployments; few-shot is best-effort
+    }
+
+    const pending = await pgClient(ctx.db).unsafe(
+      `SELECT id, data FROM ${table}
+       WHERE enriched_at IS NULL
+       ORDER BY id
+       LIMIT $1`,
+      [limit]
+    );
+
+    let enriched = 0;
+    let skipped = 0;
+    let failed = 0;
+    let idx = 0;
+
+    await Promise.all(
+      Array.from({ length: concurrency }, async () => {
+        while (idx < pending.length) {
+          const row = pending[idx++]!;
+          const data =
+            typeof row.data === "string"
+              ? (JSON.parse(row.data as string) as Record<string, unknown>)
+              : (row.data as Record<string, unknown>);
+          try {
+            const ok = await enrichOne(
+              def,
+              { id: String(row.id), data },
+              project.schema_name,
+              collectionName,
+              fewShot
+            );
+            if (ok) enriched++;
+            else skipped++;
+          } catch {
+            failed++;
+          }
+        }
+      })
+    );
+
+    return { enriched, skipped, failed };
+  }
+
+  return { enrichCollection, enrichOne, requireGenerate };
+}
+
+export type EnrichPipelineService = ReturnType<typeof makeEnrichPipelineService>;

@@ -1,0 +1,68 @@
+{
+  "name": "@samesake/core",
+  "version": "1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/asyncdotengineering/samesake"
+  },
+  "description": "Config-as-code DSL for commerce search and entity resolution. Declare collection() and entity() with compile-time validation; @samesake/server runs hybrid search and multi-channel matching on PostgreSQL + pgvector.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./types": {
+      "import": {
+        "types": "./dist/types.d.ts",
+        "default": "./dist/types.js"
+      },
+      "require": {
+        "types": "./dist/types.d.cts",
+        "default": "./dist/types.cjs"
+      }
+    },
+    "./schemas": {
+      "import": {
+        "types": "./dist/schemas.d.ts",
+        "default": "./dist/schemas.js"
+      },
+      "require": {
+        "types": "./dist/schemas.d.cts",
+        "default": "./dist/schemas.cjs"
+      }
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "keywords": [
+    "entity-resolution",
+    "record-linkage",
+    "fuzzy-matching",
+    "deduplication",
+    "pgvector",
+    "drizzle",
+    "typescript"
+  ],
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1"
+  }
+}

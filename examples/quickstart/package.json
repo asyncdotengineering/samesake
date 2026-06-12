@@ -1,0 +1,13 @@
+{
+  "name": "samesake-example-quickstart",
+  "module": "run.ts",
+  "type": "module",
+  "private": true,
+  "description": "Smallest possible config — one entity, one scope, smoke-friendly.",
+  "dependencies": {
+    "drizzle-orm": "^0.45.2",
+    "@samesake/core": "workspace:*",
+    "@samesake/cli": "workspace:*",
+    "@samesake/server": "workspace:*"
+  }
+}

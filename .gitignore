@@ -1,0 +1,23 @@
+.env
+.env.*
+!.env.example
+node_modules
+bun.lock
+*.log
+.DS_Store
+.vercel
+dist/
+examples/bulk-import/.env
+examples/bulk-import/node_modules/
+examples/bulk-import/bun.lock
+
+# Real-world sample data — generated locally by scripts/refresh-real-world-sample.sh.
+# Real customer names and supplier names must not enter the OSS repo.
+examples/real-world-sample/customers.json
+examples/real-world-sample/suppliers.json
+examples/real-world-sample/assets.json
+examples/real-world-sample/tenants.json
+examples/real-world-sample/_raw.json
+
+# Skill telemetry — sentinel files, scratchpads, delegate transcripts.
+.handoff/
