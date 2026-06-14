@@ -1,0 +1,138 @@
+---
+title: Tuning search relevance
+description: A practical playbook for improving search quality with samesake — diagnose with explain, fix the data first, enrich attributes, compose what you embed, choose hard vs soft filters, and tune query-time weights. Built from real findings.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Relevance is not a setting you flip — it's a loop. This guide is the technique we use to tune
+search with samesake, written up from a real session where "black dress with white" kept
+returning red dresses. Every step here came from a concrete fix.
+
+```
+query → explain → diagnose → fix (data or config) → re-measure → repeat
+```
+
+## 1. Diagnose before you tune — `searchExplain`
+
+Never guess why a result ranked where it did. `matcher.searchExplain(...)` returns, per hit, the
+rank from each retrieval leg (FTS, cosine, spaces) and the merged RRF score, plus the parsed NLQ
+and the compiled filter SQL.
+
+```ts
+const r = await matcher.searchExplain(project, collection, { q: "black dress with white" });
+r.docs.forEach((d) => console.log(d.id, { fts: d.fts_rank, cos: d.cosine_rank, spc: d.spaces_rank }));
+console.log(r.parsed, r.constraintTrace.appliedFilters, r.filters.sql);
+```
+
+In our case the explain showed `fts = null` for every hit (no title contained "black"/"white")
+and the order was driven entirely by the embedding — which, to the model, was mostly "dress."
+That single output told us colour wasn't a signal at all. **Measure the cause, then fix it.**
+
+## 2. Data quality dominates everything
+
+We audited the colour field: **17 of 27 products had no colour at all** — they'd been guessed
+from the title with a heuristic, and most titles ("Princess Line Dress with Belt") have none.
+No amount of weight-tuning fixes absent data. Garbage in, "red dress for a black query" out.
+
+<Aside type="tip">
+Before touching weights or models, audit how complete and correct your filterable/searchable
+fields actually are. A one-line `GROUP BY` over your catalog usually reveals the real problem.
+</Aside>
+
+## 3. Enrich attributes at the source (don't guess from text)
+
+The fix was to read the attributes off the **product images** with samesake's `enrich` pipeline —
+a multimodal stage that calls your `generate` with the image + a schema and writes structured
+fields into `enriched`:
+
+```ts
+enrich: pipeline(
+  stage("vision", {
+    model: "your-vision-model",
+    images: (ctx) => (ctx.data.image_url ? [String(ctx.data.image_url)] : []),
+    prompt: () => "Describe this product's colours and pattern as JSON.",
+    schema: () => ({ type: "object", properties: { color_text: { type: "string" }, pattern: { type: "string" } }, required: ["color_text"] }),
+  })
+)
+```
+
+Run with `matcher.enrich(project, collection)`. Colours went from mostly-empty to accurate
+("RED PUFF SLEEVE MAXI DRESS" → `solid red`). See [the full pipeline](/guides/porulle-fashion-app/#enrich-attributes-from-the-image-samesake-enrich-pipeline).
+
+## 4. Compose what you embed
+
+An embedding only knows what's in the text it was built from. Pull the attributes that matter
+into the doc embedding's `source`:
+
+```ts
+embeddings: { doc: { source: "$title $brand $category $enriched.color_text $enriched.pattern", model: "...", dim: 1536 } }
+```
+
+Now "black dress" cosine-matches products whose embedded text actually says black — the black
+dress jumped from buried to **#1**.
+
+## 5. Hard filters vs soft signals — and keep NLQ in its lane
+
+This is the subtlest lever:
+
+- **Hard filters** for strict, well-populated constraints: `price ≤ 5000`, `available = true`.
+  These should gate the result set — that's the "hard filters stay hard" promise.
+- **Soft fields** (`f.text({ soft: true })`) for sparse or fuzzy attributes: a missing colour
+  tag shouldn't empty your results. samesake relaxes soft filters when too few rows match.
+- **Constrain NLQ** so it can't turn a fuzzy word into a hard filter on a sparse field. We gave
+  NLQ a schema of just `{ semantic_query, max_price }` — so "black dress" never compiles to
+  `color = 'black'` (which had dead-ended at the 2 literally-tagged rows). Colour is left to the
+  embedding + visual signals instead.
+
+<Aside type="caution">
+The classic failure: an LLM query parser extracts `color = "black"` and hard-filters a field that's
+90% empty → near-zero results. Either populate the field (step 3) **and** make it soft, or keep it
+out of the NLQ schema. Diagnose which with `searchExplain`'s `appliedFilters`.
+</Aside>
+
+## 6. Multimodal & cross-modal signals
+
+With a multimodal embedding model, an image space gives you three retrieval modes over one index:
+text→text (doc cosine), **text→image** (a text query embedded into the image space), and
+**image→image** (find-similar / search-by-image). Colour/pattern intent that text barely encodes
+is far stronger image→image — so "find similar" is where the visual space earns its keep, while
+text→image mainly adds category/shape sense. Know which mode a query needs.
+
+## 7. Tune query-time weights last
+
+Channel weights (`Channels.fts({ weight })`, `Channels.cosine`, `Channels.spaces`) and
+`defaultSpaceWeights` rescale the RRF mix **without reindexing**. Reach for these only after the
+data and signals are right — re-weighting noise just reshuffles noise. Per-query `weights` let you
+push visual vs intent vs price differently for, say, a "similar look" surface vs a keyword box.
+
+## 8. Measure, and respect corpus size
+
+Tune against a fixed query set, not vibes — see [Eval from search snapshots](/guides/eval-from-snapshots/)
+for relevance@k + constraint compliance. And be honest about scale: at ~30 products colour is a weak
+discriminator no matter what, because the embedding is dominated by category. Real relevance wins
+need both clean attributes **and** a catalog big enough to disambiguate.
+
+## Running enrichment in the background
+
+`enrich`, `index`, and `ingest` route their work through a `JobRunner` (`ctx.jobs.run`). The
+default runs inline; pass `jobs: createPgBossRunner({ connectionString })` from
+[`@samesake/jobs-pgboss`](https://www.npmjs.com/package/@samesake/jobs-pgboss) to back them with a
+pg-boss queue for durability and concurrency control:
+
+```ts
+import { createPgBossRunner } from "@samesake/jobs-pgboss";
+const matcher = createMatcher({ /* ... */, jobs: await createPgBossRunner({ connectionString: process.env.DATABASE_URL! }) });
+```
+
+<Aside type="note">
+The current pg-boss adapter runs the job function in the **enqueuing process** (it holds the
+closure in memory), so it provides durable scheduling + concurrency, not yet cross-process worker
+dynos. For a separate-worker topology the job payload needs to be self-describing so a worker can
+reconstruct the work. A worked example is [tracked upstream](https://github.com/asyncdotengineering/samesake/issues/44).
+</Aside>
+
+## The loop, in one line
+
+Explain → fix the data → compose the embedding → set hard/soft correctly → constrain NLQ →
+tune weights → measure. In that order.

@@ -47,6 +47,7 @@ export default defineConfig({
           label: "Guides",
           items: [
             { label: "Fashion app with Porulle + Next.js", slug: "guides/porulle-fashion-app" },
+            { label: "Tuning search relevance", slug: "guides/tuning-search" },
             { label: "Eval from search snapshots", slug: "guides/eval-from-snapshots" },
           ],
         },
