@@ -22,6 +22,7 @@ import {
 export { weightedSegmentCosines } from "./spaces.ts";
 export {
   buildFilterSql,
+  normalizeFiltersToConstraintPredicates,
   type CompiledFilter,
   type FilterClause,
   type FilterCompileOpts,

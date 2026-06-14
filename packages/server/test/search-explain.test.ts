@@ -81,6 +81,12 @@ describeIf("search explain", () => {
         expect.objectContaining({ field: "colors", source: "explicit", kind: "contains" }),
       ])
     );
+    expect(explain.constraintTrace.plan.predicates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "price", fieldType: "number", operator: "lte", source: "explicit" }),
+        expect.objectContaining({ field: "colors", fieldType: "array", operator: "contains", source: "explicit" }),
+      ])
+    );
 
     const top = explain.docs.find((d) => d.id === "1") ?? explain.docs[0]!;
     expect(top.fts_rank).not.toBeNull();

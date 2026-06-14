@@ -1,11 +1,33 @@
 import { describe, expect, test } from "bun:test";
 import { collection, f, Channels } from "@samesake/core";
 import { buildFilterSql } from "../src/core/search.ts";
+import { normalizeFiltersToConstraintPredicates } from "../src/core/search-filter.ts";
 import { testProductsCollection } from "./fixtures.ts";
 
 const def = testProductsCollection;
 
 describe("buildFilterSql", () => {
+  test("normalizes raw filters into typed predicates before SQL compilation", () => {
+    const predicates = normalizeFiltersToConstraintPredicates(
+      { price: { $gt: 10, $lte: 100 }, colors: ["red"], brand: { $not: "a+b" } },
+      def,
+      "explicit"
+    );
+
+    expect(predicates).toEqual([
+      expect.objectContaining({ field: "price", fieldType: "number", operator: "gt", value: 10, source: "explicit" }),
+      expect.objectContaining({ field: "price", fieldType: "number", operator: "lte", value: 100, source: "explicit" }),
+      expect.objectContaining({ field: "colors", fieldType: "array", operator: "contains", value: ["red"], soft: true }),
+      expect.objectContaining({ field: "brand", fieldType: "text", operator: "not", value: "a+b" }),
+    ]);
+  });
+
+  test("normalization preserves validation failures", () => {
+    expect(() =>
+      normalizeFiltersToConstraintPredicates({ price: { $lte: "cheap" } }, def, "explicit")
+    ).toThrow(/requires a numeric value/);
+  });
+
   test("shorthand eq on text", () => {
     const r = buildFilterSql({ brand: "nike" }, def, { soft: true }, 4);
     expect(r.where).toBe("brand = $4");

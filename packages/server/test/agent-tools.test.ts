@@ -152,6 +152,13 @@ describeIf("agent retrieval tools", () => {
         expect.objectContaining({ field: "sizes", source: "explicit", kind: "contains" }),
       ])
     );
+    expect(result.constraintTrace?.plan.predicates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "available", fieldType: "boolean", operator: "eq", source: "explicit" }),
+        expect.objectContaining({ field: "price", fieldType: "number", operator: "lte", source: "explicit" }),
+        expect.objectContaining({ field: "sizes", fieldType: "array", operator: "contains", source: "explicit" }),
+      ])
+    );
   });
 
   test("strict mode excludes unknown verification fields", async () => {

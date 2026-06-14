@@ -1,4 +1,4 @@
-import type { CollectionDef, CollectionFieldDef } from "@samesake/core";
+import type { CollectionDef, CollectionFieldDef, ConstraintPredicate, ConstraintTraceSource } from "@samesake/core";
 import { ClientError } from "../errors.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
 
@@ -68,68 +68,79 @@ function filterClientError(code: string, message: string): never {
   throw new ClientError(code, message);
 }
 
-export function buildFilterSql(
+function allowedFieldOrThrow(allowed: Map<string, CollectionFieldDef>, field: string): CollectionFieldDef {
+  const fieldDef = allowed.get(field);
+  if (fieldDef) return fieldDef;
+  const valid = [...allowed.keys()].sort().join(", ");
+  filterClientError(
+    "unknown_filter_field",
+    `Unknown filter field "${field}". Filterable fields: ${valid || "(none)"}`
+  );
+}
+
+function assertBoolean(val: unknown, field: string, op?: string): asserts val is boolean {
+  if (typeof val !== "boolean") {
+    const label = op ? ` ${op}` : "";
+    filterClientError("invalid_filter_value", `Filter${label} on field "${field}" requires a boolean value`);
+  }
+}
+
+function filterOperatorToConstraintOperator(op: FilterOperator): ConstraintPredicate["operator"] {
+  switch (op) {
+    case "$eq":
+      return "eq";
+    case "$ne":
+      return "ne";
+    case "$gt":
+      return "gt";
+    case "$gte":
+      return "gte";
+    case "$lt":
+      return "lt";
+    case "$lte":
+      return "lte";
+    case "$in":
+      return "in";
+    case "$nin":
+      return "nin";
+    case "$contains":
+      return "contains";
+    case "$exclude":
+      return "exclude";
+    case "$not":
+      return "not";
+  }
+}
+
+export function normalizeFiltersToConstraintPredicates(
   filters: SearchFilters,
   def: CollectionDef,
-  opts: FilterCompileOpts,
-  startIndex: number
-): CompiledFilter {
+  source?: ConstraintTraceSource
+): ConstraintPredicate[] {
   const allowed = filterableFields(def);
-  const clauses: string[] = [];
-  const params: unknown[] = [];
-  const softFieldsUsed: string[] = [];
-  const next = () => `$${startIndex + params.length}`;
+  const predicates: ConstraintPredicate[] = [];
 
   for (const [field, raw] of Object.entries(filters)) {
-    const fieldDef = allowed.get(field);
-    if (!fieldDef) {
-      const valid = [...allowed.keys()].sort().join(", ");
-      filterClientError(
-        "unknown_filter_field",
-        `Unknown filter field "${field}". Filterable fields: ${valid || "(none)"}`
-      );
-    }
-
-    if (fieldDef.soft && opts.excludeSoft) continue;
-    if (fieldDef.soft && opts.soft) softFieldsUsed.push(field);
-
-    const col = sanitiseIdent(field);
-    const isArray = fieldDef.type === "array";
+    const fieldDef = allowedFieldOrThrow(allowed, field);
+    const soft = fieldDef.soft === true;
 
     if (!isOperatorObject(raw)) {
-      if (isArray && Array.isArray(raw)) {
-        clauses.push(`${col} && ${next()}::text[]`);
-        params.push(raw);
-        continue;
-      }
-      if (fieldDef.type === "enum" && fieldDef.alsoMatch?.length && typeof raw === "string") {
-        const eqParam = next();
-        params.push(raw);
-        const anyParam = next();
-        params.push([...fieldDef.alsoMatch]);
-        clauses.push(`(${col} = ${eqParam} OR ${col} = ANY(${anyParam}::text[]))`);
+      if (fieldDef.type === "array" && Array.isArray(raw)) {
+        predicates.push({ field, fieldType: fieldDef.type, operator: "contains", value: raw, source, soft });
         continue;
       }
       if (fieldDef.type === "text" || fieldDef.type === "enum") {
-        clauses.push(`${col} = ${next()}`);
-        params.push(raw);
+        predicates.push({ field, fieldType: fieldDef.type, operator: "eq", value: raw, source, soft });
         continue;
       }
       if (fieldDef.type === "number") {
         assertNumeric(raw, field, "=");
-        clauses.push(`${col} = ${next()}::numeric`);
-        params.push(raw);
+        predicates.push({ field, fieldType: fieldDef.type, operator: "eq", value: raw, source, soft });
         continue;
       }
       if (fieldDef.type === "boolean") {
-        if (typeof raw !== "boolean") {
-          filterClientError(
-            "invalid_filter_value",
-            `Filter on field "${field}" requires a boolean value`
-          );
-        }
-        clauses.push(`${col} = ${next()}::boolean`);
-        params.push(raw);
+        assertBoolean(raw, field);
+        predicates.push({ field, fieldType: fieldDef.type, operator: "eq", value: raw, source, soft });
         continue;
       }
     }
@@ -138,99 +149,42 @@ export function buildFilterSql(
     for (const [op, val] of Object.entries(ops)) {
       switch (op as FilterOperator) {
         case "$eq":
-          if (isArray) {
-            clauses.push(`${col} = ${next()}`);
-            params.push(val);
-          } else if (fieldDef.type === "number") {
-            assertNumeric(val, field, "$eq");
-            clauses.push(`${col} = ${next()}::numeric`);
-            params.push(val);
-          } else if (fieldDef.type === "boolean") {
-            if (typeof val !== "boolean") {
-              filterClientError(
-                "invalid_filter_value",
-                `Filter $eq on field "${field}" requires a boolean value`
-              );
-            }
-            clauses.push(`${col} = ${next()}::boolean`);
-            params.push(val);
-          } else if (
-            fieldDef.type === "enum" &&
-            fieldDef.alsoMatch?.length &&
-            typeof val === "string"
-          ) {
-            const eqParam = next();
-            params.push(val);
-            const anyParam = next();
-            params.push([...fieldDef.alsoMatch]);
-            clauses.push(`(${col} = ${eqParam} OR ${col} = ANY(${anyParam}::text[]))`);
-          } else {
-            clauses.push(`${col} = ${next()}`);
-            params.push(val);
-          }
+          if (fieldDef.type === "number") assertNumeric(val, field, "$eq");
+          if (fieldDef.type === "boolean") assertBoolean(val, field, "$eq");
+          predicates.push({ field, fieldType: fieldDef.type, operator: "eq", value: val, source, soft });
           break;
         case "$ne":
-          clauses.push(`(${col} IS NULL OR ${col} <> ${next()})`);
-          params.push(val);
+          predicates.push({ field, fieldType: fieldDef.type, operator: "ne", value: val, source, soft });
           break;
         case "$gt":
           assertNumeric(val, field, "$gt");
-          clauses.push(`${col} > ${next()}::numeric`);
-          params.push(val);
+          predicates.push({ field, fieldType: fieldDef.type, operator: "gt", value: val, source, soft });
           break;
         case "$gte":
           assertNumeric(val, field, "$gte");
-          clauses.push(`${col} >= ${next()}::numeric`);
-          params.push(val);
+          predicates.push({ field, fieldType: fieldDef.type, operator: "gte", value: val, source, soft });
           break;
         case "$lt":
           assertNumeric(val, field, "$lt");
-          clauses.push(`${col} < ${next()}::numeric`);
-          params.push(val);
+          predicates.push({ field, fieldType: fieldDef.type, operator: "lt", value: val, source, soft });
           break;
         case "$lte":
           assertNumeric(val, field, "$lte");
-          clauses.push(`${col} <= ${next()}::numeric`);
-          params.push(val);
+          predicates.push({ field, fieldType: fieldDef.type, operator: "lte", value: val, source, soft });
           break;
         case "$in":
-          clauses.push(`${col} = ANY(${next()}::text[])`);
-          params.push(val);
-          break;
         case "$nin":
-          clauses.push(`(${col} IS NULL OR NOT (${col} = ANY(${next()}::text[])))`);
-          params.push(val);
-          break;
         case "$contains":
-          if (isArray) {
-            clauses.push(`${col} && ${next()}::text[]`);
-            params.push(val);
-          } else {
-            clauses.push(`${col} ILIKE '%' || ${next()} || '%'`);
-            params.push(val);
-          }
-          break;
         case "$exclude":
-          if (isArray) {
-            clauses.push(`NOT (${col} && ${next()}::text[])`);
-            params.push(val);
-          } else {
-            filterClientError(
-              "invalid_filter_operator",
-              `Operator $exclude is only supported on array fields (field "${field}")`
-            );
-          }
-          break;
         case "$not":
-          if (fieldDef.type === "text") {
-            clauses.push(`(${col} IS NULL OR ${col} !~* ${next()})`);
-            params.push(escapeRegex(String(val)));
-          } else {
-            filterClientError(
-              "invalid_filter_operator",
-              `Operator $not is only supported on text fields (field "${field}")`
-            );
-          }
+          predicates.push({
+            field,
+            fieldType: fieldDef.type,
+            operator: filterOperatorToConstraintOperator(op as FilterOperator),
+            value: val,
+            source,
+            soft,
+          });
           break;
         default:
           filterClientError(
@@ -238,6 +192,118 @@ export function buildFilterSql(
             `Unknown filter operator "${op}" on field "${field}"`
           );
       }
+    }
+  }
+
+  return predicates;
+}
+
+export function buildFilterSql(
+  filters: SearchFilters,
+  def: CollectionDef,
+  opts: FilterCompileOpts,
+  startIndex: number
+): CompiledFilter {
+  const predicates = normalizeFiltersToConstraintPredicates(filters, def);
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  const softFieldsUsed: string[] = [];
+  const next = () => `$${startIndex + params.length}`;
+
+  for (const predicate of predicates) {
+    if (predicate.soft && opts.excludeSoft) continue;
+    if (predicate.soft && opts.soft) softFieldsUsed.push(predicate.field);
+
+    const fieldDef = def.fields[predicate.field]!;
+    const col = sanitiseIdent(predicate.field);
+    const isArray = predicate.fieldType === "array";
+
+    switch (predicate.operator) {
+      case "eq":
+        if (isArray) {
+          clauses.push(`${col} = ${next()}`);
+          params.push(predicate.value);
+        } else if (predicate.fieldType === "number") {
+          clauses.push(`${col} = ${next()}::numeric`);
+          params.push(predicate.value);
+        } else if (predicate.fieldType === "boolean") {
+          clauses.push(`${col} = ${next()}::boolean`);
+          params.push(predicate.value);
+        } else if (
+          predicate.fieldType === "enum" &&
+          fieldDef.type === "enum" &&
+          fieldDef.alsoMatch?.length &&
+          typeof predicate.value === "string"
+        ) {
+          const eqParam = next();
+          params.push(predicate.value);
+          const anyParam = next();
+          params.push([...fieldDef.alsoMatch]);
+          clauses.push(`(${col} = ${eqParam} OR ${col} = ANY(${anyParam}::text[]))`);
+        } else {
+          clauses.push(`${col} = ${next()}`);
+          params.push(predicate.value);
+        }
+        break;
+      case "ne":
+        clauses.push(`(${col} IS NULL OR ${col} <> ${next()})`);
+        params.push(predicate.value);
+        break;
+      case "gt":
+        clauses.push(`${col} > ${next()}::numeric`);
+        params.push(predicate.value);
+        break;
+      case "gte":
+        clauses.push(`${col} >= ${next()}::numeric`);
+        params.push(predicate.value);
+        break;
+      case "lt":
+        clauses.push(`${col} < ${next()}::numeric`);
+        params.push(predicate.value);
+        break;
+      case "lte":
+        clauses.push(`${col} <= ${next()}::numeric`);
+        params.push(predicate.value);
+        break;
+      case "in":
+        clauses.push(`${col} = ANY(${next()}::text[])`);
+        params.push(predicate.value);
+        break;
+      case "nin":
+        clauses.push(`(${col} IS NULL OR NOT (${col} = ANY(${next()}::text[])))`);
+        params.push(predicate.value);
+        break;
+      case "contains":
+        if (isArray) {
+          clauses.push(`${col} && ${next()}::text[]`);
+          params.push(predicate.value);
+        } else {
+          clauses.push(`${col} ILIKE '%' || ${next()} || '%'`);
+          params.push(predicate.value);
+        }
+        break;
+      case "exclude":
+        if (isArray) {
+          clauses.push(`NOT (${col} && ${next()}::text[])`);
+          params.push(predicate.value);
+        } else {
+          filterClientError(
+            "invalid_filter_operator",
+            `Operator $exclude is only supported on array fields (field "${predicate.field}")`
+          );
+        }
+        break;
+      case "not":
+        if (predicate.fieldType === "text") {
+          clauses.push(`(${col} IS NULL OR ${col} !~* ${next()})`);
+          params.push(escapeRegex(String(predicate.value)));
+        } else {
+          filterClientError(
+            "invalid_filter_operator",
+            `Operator $not is only supported on text fields (field "${predicate.field}")`
+          );
+        }
+        break;
     }
   }
 

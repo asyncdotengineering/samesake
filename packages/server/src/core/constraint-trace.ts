@@ -1,51 +1,42 @@
 import type {
   CollectionDef,
+  ConstraintPlan,
+  ConstraintPredicate,
   ConstraintTrace,
   ConstraintTraceItem,
   ConstraintTraceKind,
   ConstraintTraceSource,
 } from "@samesake/core";
-import type { FilterClause, FilterOperator, SearchFilters } from "./search-filter.ts";
+import { normalizeFiltersToConstraintPredicates, type SearchFilters } from "./search-filter.ts";
 
 function cloneFilters(filters: SearchFilters | undefined): SearchFilters {
   return filters ? JSON.parse(JSON.stringify(filters)) as SearchFilters : {};
 }
 
-function isOperatorObject(
-  value: FilterClause
-): value is Partial<Record<FilterOperator, string | number | boolean | string[] | number[]>> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function operatorKind(op: FilterOperator): ConstraintTraceKind {
-  switch (op) {
-    case "$ne":
+function predicateKind(predicate: ConstraintPredicate): ConstraintTraceKind {
+  switch (predicate.operator) {
+    case "ne":
       return "not_eq";
-    case "$gt":
-    case "$gte":
+    case "gt":
+    case "gte":
       return "min";
-    case "$lt":
-    case "$lte":
+    case "lt":
+    case "lte":
       return "max";
-    case "$in":
+    case "in":
       return "in";
-    case "$nin":
+    case "nin":
       return "not_in";
-    case "$contains":
+    case "contains":
       return "contains";
-    case "$exclude":
-    case "$not":
+    case "exclude":
+    case "not":
       return "exclude";
-    case "$eq":
+    case "eq":
     default:
+      if (predicate.fieldType === "boolean") return "boolean";
       return "eq";
   }
-}
-
-function defaultKind(value: FilterClause): ConstraintTraceKind {
-  if (typeof value === "boolean") return "boolean";
-  if (Array.isArray(value)) return "contains";
-  return "eq";
 }
 
 export function traceFilterItems(
@@ -53,32 +44,7 @@ export function traceFilterItems(
   filters: SearchFilters | undefined,
   source: ConstraintTraceSource
 ): ConstraintTraceItem[] {
-  const items: ConstraintTraceItem[] = [];
-  for (const [field, value] of Object.entries(filters ?? {})) {
-    const soft = def.fields[field]?.soft === true;
-    if (isOperatorObject(value)) {
-      const ops = Object.entries(value) as Array<[FilterOperator, unknown]>;
-      const hasMin = ops.some(([op]) => op === "$gt" || op === "$gte");
-      const hasMax = ops.some(([op]) => op === "$lt" || op === "$lte");
-      if (hasMin && hasMax) {
-        items.push({ field, source, kind: "range", value, soft });
-        continue;
-      }
-      for (const [operator, operatorValue] of ops) {
-        items.push({
-          field,
-          source,
-          kind: operatorKind(operator),
-          operator,
-          value: operatorValue,
-          soft,
-        });
-      }
-      continue;
-    }
-    items.push({ field, source, kind: defaultKind(value), value, soft });
-  }
-  return items;
+  return predicatesToTraceItems(normalizeFiltersToConstraintPredicates(filters ?? {}, def, source));
 }
 
 export function relaxedSoftFields(def: CollectionDef, filters: SearchFilters, softFieldsUsed: string[]): string[] {
@@ -86,6 +52,65 @@ export function relaxedSoftFields(def: CollectionDef, filters: SearchFilters, so
     ...softFieldsUsed,
     ...Object.keys(filters).filter((field) => def.fields[field]?.soft === true),
   ])].sort();
+}
+
+function sourceForAppliedField(
+  field: string,
+  input: {
+    derivedFilters: SearchFilters;
+    explicitFilters: SearchFilters;
+    appliedFilters: SearchFilters;
+    budgetHints?: Record<string, "cheap" | "premium">;
+  }
+): ConstraintTraceSource {
+  if (Object.hasOwn(input.explicitFilters, field)) return "explicit";
+  if (
+    Object.hasOwn(input.budgetHints ?? {}, field) &&
+    !Object.hasOwn(input.derivedFilters, field) &&
+    Object.hasOwn(input.appliedFilters, field)
+  ) {
+    return "budget_hint";
+  }
+  return "nlq";
+}
+
+function buildConstraintPlan(
+  def: CollectionDef,
+  input: {
+    derivedFilters: SearchFilters;
+    explicitFilters: SearchFilters;
+    appliedFilters: SearchFilters;
+    relaxedFields?: string[];
+    excludedTerms?: string[];
+    budgetHints?: Record<string, "cheap" | "premium">;
+  }
+): ConstraintPlan {
+  const predicates: ConstraintPredicate[] = [];
+  for (const [field, value] of Object.entries(input.appliedFilters)) {
+    predicates.push(
+      ...normalizeFiltersToConstraintPredicates(
+        { [field]: value } as SearchFilters,
+        def,
+        sourceForAppliedField(field, input)
+      )
+    );
+  }
+  return {
+    predicates,
+    excludedTerms: [...(input.excludedTerms ?? [])],
+    relaxedFields: [...new Set(input.relaxedFields ?? [])].sort(),
+  };
+}
+
+function predicatesToTraceItems(predicates: ConstraintPredicate[]): ConstraintTraceItem[] {
+  return predicates.map((predicate) => ({
+    field: predicate.field,
+    source: predicate.source ?? "explicit",
+    kind: predicateKind(predicate),
+    operator: predicate.operator,
+    value: predicate.value,
+    soft: predicate.soft,
+  }));
 }
 
 export function buildConstraintTrace(
@@ -101,28 +126,19 @@ export function buildConstraintTrace(
   }
 ): ConstraintTrace {
   const explicitFilters = input.explicitFilters ?? {};
-  const items = [
-    ...traceFilterItems(def, input.derivedFilters, "nlq"),
-    ...traceFilterItems(def, explicitFilters, "explicit"),
-  ];
-
-  for (const [field, hint] of Object.entries(input.budgetHints ?? {})) {
-    const alreadyDerived = Object.hasOwn(input.derivedFilters, field);
-    const explicitlySet = Object.hasOwn(explicitFilters, field);
-    if (!alreadyDerived && !explicitlySet && Object.hasOwn(input.appliedFilters, field)) {
-      items.push({
-        field,
-        source: "budget_hint",
-        kind: hint === "cheap" ? "max" : "min",
-        value: input.appliedFilters[field],
-        soft: def.fields[field]?.soft === true,
-      });
-    }
-  }
+  const plan = buildConstraintPlan(def, {
+    derivedFilters: input.derivedFilters,
+    explicitFilters,
+    appliedFilters: input.appliedFilters,
+    relaxedFields: input.relaxedFields,
+    excludedTerms: input.excludedTerms,
+    budgetHints: input.budgetHints,
+  });
 
   return {
     semanticQuery: input.semanticQuery,
-    items,
+    items: predicatesToTraceItems(plan.predicates),
+    plan,
     derivedFilters: cloneFilters(input.derivedFilters),
     explicitFilters: cloneFilters(explicitFilters),
     appliedFilters: cloneFilters(input.appliedFilters),

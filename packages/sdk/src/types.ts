@@ -379,6 +379,21 @@ export type SearchWeightsInput<S extends string = string> = {
 
 export type ConstraintTraceSource = "nlq" | "explicit" | "budget_hint" | "agent";
 
+export type ConstraintFieldType = "text" | "number" | "boolean" | "enum" | "array";
+
+export type ConstraintOperator =
+  | "eq"
+  | "ne"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "in"
+  | "nin"
+  | "contains"
+  | "exclude"
+  | "not";
+
 export type ConstraintTraceKind =
   | "eq"
   | "not_eq"
@@ -400,9 +415,25 @@ export interface ConstraintTraceItem {
   soft?: boolean;
 }
 
+export interface ConstraintPredicate {
+  field: string;
+  fieldType: ConstraintFieldType;
+  operator: ConstraintOperator;
+  value: unknown;
+  source?: ConstraintTraceSource;
+  soft?: boolean;
+}
+
+export interface ConstraintPlan {
+  predicates: ConstraintPredicate[];
+  excludedTerms: string[];
+  relaxedFields: string[];
+}
+
 export interface ConstraintTrace {
   semanticQuery?: string;
   items: ConstraintTraceItem[];
+  plan: ConstraintPlan;
   derivedFilters: Record<string, unknown>;
   explicitFilters: Record<string, unknown>;
   appliedFilters: Record<string, unknown>;

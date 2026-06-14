@@ -173,6 +173,11 @@ describeIf("fashionSearch product surface", () => {
         expect.objectContaining({ field: "available", source: "explicit", kind: "boolean" }),
       ])
     );
+    expect(result.constraintTrace?.plan.predicates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "available", fieldType: "boolean", operator: "eq", source: "explicit" }),
+      ])
+    );
   });
 
   test("personalization reorders without violating hard filters", async () => {
@@ -209,6 +214,9 @@ describeIf("fashionSearch product surface", () => {
     expect(result.constraintTrace?.explicitFilters).toMatchObject({ category: "skirts" });
     expect(result.constraintTrace?.appliedFilters).toEqual({ available: true });
     expect(result.constraintTrace?.relaxedFields).toEqual(expect.arrayContaining(["category", "colors", "material"]));
+    expect(result.constraintTrace?.plan.predicates).toEqual([
+      expect.objectContaining({ field: "available", fieldType: "boolean", operator: "eq", source: "explicit" }),
+    ]);
     expect(result.hits.every((h) => h.available === true)).toBe(true);
   });
 
