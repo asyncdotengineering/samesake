@@ -58,6 +58,18 @@ describe("buildFilterSql", () => {
     expect(r.params).toEqual([["x"]]);
   });
 
+  test("$in on number field casts to numeric[] (not text[])", () => {
+    const r = buildFilterSql({ price: { $in: [100, 200] } }, def, { soft: true }, 4);
+    expect(r.where).toBe("price = ANY($4::numeric[])");
+    expect(r.params).toEqual([[100, 200]]);
+  });
+
+  test("$nin on number field casts to numeric[]", () => {
+    const r = buildFilterSql({ price: { $nin: [100] } }, def, { soft: true }, 4);
+    expect(r.where).toBe("(price IS NULL OR NOT (price = ANY($4::numeric[])))");
+    expect(r.params).toEqual([[100]]);
+  });
+
   test("$ne operator", () => {
     const r = buildFilterSql({ brand: { $ne: "adidas" } }, def, { soft: true }, 4);
     expect(r.where).toBe("(brand IS NULL OR brand <> $4)");

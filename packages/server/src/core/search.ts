@@ -105,11 +105,23 @@ export interface SearchOpts {
 
 const MAX_OFFSET = 200;
 
+function imageFingerprint(image: SearchOpts["image"]): string | null {
+  if (!image) return null;
+  if (image.url) return `url:${image.url}`;
+  const payload = image.bytesBase64 ?? (image.bytes ? Buffer.from(image.bytes).toString("base64") : null);
+  if (payload == null) return null;
+  // djb2 over the payload keeps the key bounded for large base64 images.
+  let h = 5381;
+  for (let i = 0; i < payload.length; i++) h = ((h << 5) + h + payload.charCodeAt(i)) >>> 0;
+  return `bytes:${image.mimeType ?? ""}:${payload.length}:${h.toString(36)}`;
+}
+
 function resultCacheKey(project: string, collection: string, opts: SearchOpts): SearchCacheKey {
   return {
     project,
     collection,
     query: opts.q,
+    image: imageFingerprint(opts.image),
     filters: opts.filters ?? {},
     weights: opts.weights ?? {},
     limit: opts.limit ?? 20,
@@ -626,15 +638,8 @@ export function makeSearchService(
   ): Promise<SearchExplainResult> {
     const t0 = Date.now();
     ctx.observability.inc("searches_total");
-    const cacheKey = opts.cache === true ? resultCacheKey(projectSlug, collectionName, opts) : null;
-    let cacheHit = false;
-    if (cacheKey) {
-      const hit = searchResultCache.get<SearchResult>(cacheKey);
-      if (hit) {
-        cacheHit = true;
-        ctx.observability.inc("search_cache_hits");
-      }
-    }
+    // The explain result shape is not stored in the result cache, so a lookup here
+    // could never serve a cached value — it always recomputes the breakdown fresh.
 
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
@@ -800,7 +805,7 @@ export function makeSearchService(
         budgetHints: nlq.budgetHints,
       }),
       relaxation: relaxed,
-      cache_hit: cacheHit,
+      cache_hit: false,
       weights,
       filters: { sql: filterSql, params: redactFilterParams(filterParams) },
       docs,

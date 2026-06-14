@@ -5,6 +5,7 @@ import { collection, f, Channels } from "@samesake/core";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed } from "./fixtures.ts";
+import { SearchResultCache, type SearchCacheKey } from "../src/core/search-cache.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
@@ -22,6 +23,34 @@ const cacheCollection = collection("things", {
     ],
     nlq: { instructions: "cache test" },
   },
+});
+
+describe("search result cache key", () => {
+  const base: SearchCacheKey = {
+    project: "p",
+    collection: "c",
+    query: "",
+    filters: {},
+    weights: {},
+    limit: 10,
+    offset: 0,
+    facets: [],
+  };
+
+  test("distinct image fingerprints do not collide on the same text query", () => {
+    const cache = new SearchResultCache({ ttlMs: 1000, maxEntries: 10 });
+    cache.set({ ...base, image: "url:a.jpg" }, { id: "A" });
+    cache.set({ ...base, image: "url:b.jpg" }, { id: "B" });
+    expect(cache.get<{ id: string }>({ ...base, image: "url:a.jpg" })).toEqual({ id: "A" });
+    expect(cache.get<{ id: string }>({ ...base, image: "url:b.jpg" })).toEqual({ id: "B" });
+  });
+
+  test("an image-only query with no text builds a key without throwing", () => {
+    const cache = new SearchResultCache({ ttlMs: 1000, maxEntries: 10 });
+    const key: SearchCacheKey = { ...base, query: undefined, image: "url:only.jpg" };
+    expect(() => cache.set(key, { id: "X" })).not.toThrow();
+    expect(cache.get<{ id: string }>(key)).toEqual({ id: "X" });
+  });
 });
 
 describeIf("query caches (Q2)", () => {

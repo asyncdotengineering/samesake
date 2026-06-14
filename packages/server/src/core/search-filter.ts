@@ -265,14 +265,20 @@ export function buildFilterSql(
         clauses.push(`${col} <= ${next()}::numeric`);
         params.push(predicate.value);
         break;
-      case "in":
-        clauses.push(`${col} = ANY(${next()}::text[])`);
+      case "in": {
+        const arrayType =
+          predicate.fieldType === "number" ? "numeric" : predicate.fieldType === "boolean" ? "boolean" : "text";
+        clauses.push(`${col} = ANY(${next()}::${arrayType}[])`);
         params.push(predicate.value);
         break;
-      case "nin":
-        clauses.push(`(${col} IS NULL OR NOT (${col} = ANY(${next()}::text[])))`);
+      }
+      case "nin": {
+        const arrayType =
+          predicate.fieldType === "number" ? "numeric" : predicate.fieldType === "boolean" ? "boolean" : "text";
+        clauses.push(`(${col} IS NULL OR NOT (${col} = ANY(${next()}::${arrayType}[])))`);
         params.push(predicate.value);
         break;
+      }
       case "contains":
         if (isArray) {
           clauses.push(`${col} && ${next()}::text[]`);

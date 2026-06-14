@@ -1,7 +1,9 @@
 export interface SearchCacheKey {
   project: string;
   collection: string;
-  query: string;
+  query?: string;
+  /** Stable fingerprint of any image query input; distinct images must not collide. */
+  image?: string | null;
   filters: unknown;
   weights: unknown;
   limit: number;
@@ -13,7 +15,8 @@ function stableKey(key: SearchCacheKey): string {
   return [
     key.project,
     key.collection,
-    key.query.trim().toLowerCase().replace(/\s+/g, " "),
+    (key.query ?? "").trim().toLowerCase().replace(/\s+/g, " "),
+    key.image ?? "",
     JSON.stringify(key.filters ?? {}),
     JSON.stringify(key.weights ?? {}),
     key.limit,
