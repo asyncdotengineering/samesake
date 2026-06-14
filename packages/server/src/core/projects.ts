@@ -63,6 +63,10 @@ export function makeProjectsService(
   const { db, systemTables } = ctx;
   const projects = systemTables.samesakeProjects;
   const liveCollections = new Map<string, CollectionDef>();
+  // Short-TTL cache so a single request's many getProject() sub-calls (resolveProductImage,
+  // getCollectionDef, search, explain, loadMetadata) collapse to one SELECT. Invalidated on apply.
+  const projectCache = new Map<string, { row: ProjectRow | null; at: number }>();
+  const PROJECT_CACHE_TTL_MS = 2_000;
 
   function collectionKey(projectSlug: string, collectionName: string): string {
     return `${projectSlug}:${collectionName}`;
@@ -106,6 +110,7 @@ export function makeProjectsService(
     const dryRun = opts?.dryRun ?? false;
     const allowDestructive = opts?.allowDestructive ?? false;
 
+    projectCache.delete(projectSlug); // read fresh existing config, ignore any cached row
     const existing = await getProject(projectSlug);
     const storedCollections = new Map<string, CollectionDef>();
     for (const c of existing?.config_json.collections ?? []) {
@@ -199,6 +204,8 @@ export function makeProjectsService(
         },
       });
 
+    projectCache.delete(projectSlug); // config changed; force next read from DB
+
     return {
       project: projectSlug,
       schema: projectSchema,
@@ -210,18 +217,25 @@ export function makeProjectsService(
   }
 
   async function getProject(slug: string): Promise<ProjectRow | null> {
+    const cached = projectCache.get(slug);
+    if (cached && Date.now() - cached.at < PROJECT_CACHE_TTL_MS) return cached.row;
     const rows = await db
       .select({ slug: projects.slug, schemaName: projects.schemaName, configJson: projects.configJson })
       .from(projects)
       .where(eq(projects.slug, slug))
       .limit(1);
     const r = rows[0];
-    if (!r) return null;
+    if (!r) {
+      projectCache.set(slug, { row: null, at: Date.now() });
+      return null;
+    }
     const raw = r.configJson as unknown;
     const config: ProjectConfig = Array.isArray(raw)
       ? { entities: raw as EntityDef[], collections: [] }
       : ((raw as ProjectConfig | null) ?? { entities: [], collections: [] });
-    return { slug: r.slug, schema_name: r.schemaName, config_json: config };
+    const row: ProjectRow = { slug: r.slug, schema_name: r.schemaName, config_json: config };
+    projectCache.set(slug, { row, at: Date.now() });
+    return row;
   }
 
   async function getEntityDef(projectSlug: string, entityKind: string): Promise<EntityDef | null> {

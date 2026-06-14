@@ -11,7 +11,7 @@ import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import type { SearchHit, SearchService, SearchOpts, SearchFilters } from "./search.ts";
 import type { IngestService } from "./ingest.ts";
-import { collectionTableName, getPgClient } from "./db-utils.ts";
+import { collectionTableName, getByPath, getPgClient } from "./db-utils.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
 import { searchResultCache } from "./search-cache.ts";
 
@@ -28,16 +28,6 @@ export interface FashionCatalogSyncEvent {
   id: string;
   data?: Record<string, unknown>;
   changes?: Record<string, unknown>;
-}
-
-function getByPath(root: Record<string, unknown>, path: string): unknown {
-  if (!path.includes(".")) return root[path];
-  let cur: unknown = root;
-  for (const part of path.split(".")) {
-    if (cur == null || typeof cur !== "object") return undefined;
-    cur = (cur as Record<string, unknown>)[part];
-  }
-  return cur;
 }
 
 function hitValue(hit: SearchHit, key: string): unknown {
