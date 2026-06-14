@@ -1,28 +1,11 @@
 import { createHash } from "node:crypto";
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { CollectionDef, PipelineDef, StageContext } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import { makeStageCacheService } from "../db/stage-cache.ts";
-import { fetchImageBytes } from "./fetch-image.ts";
-import { sanitiseIdent } from "./schema-gen.ts";
+import { fetchRemoteImageSafe } from "./fetch-image.ts";
 import { callWithRetry } from "./policy.ts";
-
-type PgUnsafe = {
-  unsafe: (query: string, params?: unknown[]) => Promise<Record<string, unknown>[]>;
-};
-
-function pgClient(db: PostgresJsDatabase): PgUnsafe {
-  const session = (db as { session?: { client?: PgUnsafe } }).session;
-  if (!session?.client?.unsafe) {
-    throw new Error("postgres client unavailable for enrich");
-  }
-  return session.client;
-}
-
-function tableName(schema: string, collection: string): string {
-  return `${schema}.c_${sanitiseIdent(collection)}`;
-}
+import { collectionTableName, getPgClient } from "./db-utils.ts";
 
 function isPipeline(def: CollectionDef["enrich"]): def is PipelineDef {
   return !!def && typeof def === "object" && Array.isArray((def as PipelineDef).stages);
@@ -85,11 +68,16 @@ export function makeEnrichPipelineService(
 
     const images: { mimeType: string; data: string }[] = [];
     for (const url of imageUrls) {
-      const fetched = await fetchImageBytes(url);
-      if (fetched) {
+      const fetched = await fetchRemoteImageSafe(url);
+      if (fetched.ok) {
         images.push({
-          mimeType: fetched.mimeType,
+          mimeType: fetched.contentType,
           data: Buffer.from(fetched.bytes).toString("base64"),
+        });
+      } else {
+        ctx.observability.log("warn", "enrich", "image fetch skipped", {
+          reason: fetched.reason,
+          url: url.slice(0, 120),
         });
       }
     }
@@ -146,8 +134,8 @@ export function makeEnrichPipelineService(
       }
     }
 
-    const table = tableName(schema, collectionName);
-    await pgClient(ctx.db).unsafe(
+    const table = collectionTableName(schema, collectionName);
+    await getPgClient(ctx.db, "enrich").unsafe(
       `UPDATE ${table}
        SET enriched = $1::jsonb, enriched_at = now(), updated_at = now()
        WHERE id = $2`,
@@ -192,7 +180,7 @@ export function makeEnrichPipelineService(
     }
     requireGenerate(def);
 
-    const table = tableName(project.schema_name, collectionName);
+    const table = collectionTableName(project.schema_name, collectionName);
     const limit = opts?.limit ?? 100_000;
     const concurrency = opts?.concurrency ?? 8;
 
@@ -208,7 +196,7 @@ export function makeEnrichPipelineService(
       // corrections table may not exist on older deployments; few-shot is best-effort
     }
 
-    const pending = await pgClient(ctx.db).unsafe(
+    const pending = await getPgClient(ctx.db, "enrich").unsafe(
       `SELECT id, data FROM ${table}
        WHERE enriched_at IS NULL
        ORDER BY id

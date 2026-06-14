@@ -1,0 +1,13 @@
+{
+  "name": "samesake-example-agentic-commerce",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "demo": "bun run.ts"
+  },
+  "dependencies": {
+    "@samesake/core": "workspace:*",
+    "@samesake/server": "workspace:*",
+    "drizzle-orm": "^0.45.2"
+  }
+}

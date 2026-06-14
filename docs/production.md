@@ -38,7 +38,7 @@ Counters exposed at `GET /v1/metrics` (master API key) and `matcher.metrics()`:
 | Counter | Meaning |
 |---------|---------|
 | `searches_total` | Search requests |
-| `search_cache_hits` | NLQ/filter cache hits |
+| `search_cache_hits` | Opt-in in-process search result cache hits |
 | `nlq_degraded_total` | NLQ timed out, fell back |
 | `enrich_failures_total` | Enrichment stage failures |
 | `embed_calls_total` / `embed_cache_hits` | Embedding API vs cache |
@@ -48,6 +48,10 @@ Counters exposed at `GET /v1/metrics` (master API key) and `matcher.metrics()`:
 `POST /v1/projects/:p/collections/:c/search/explain` — per-channel ranks (FTS, cosine, spaces) plus per-space cosine contributions for debugging a single query.
 
 CLI: `samesake search-explain --project=p --collection=c --q="..."`.
+
+## Search result cache
+
+Collection search reads fresh results by default. Callers can opt into the short-TTL in-process result cache per request with `cache: true`; cache keys include project, collection, query, filters, weights, limit, offset, and facets. Document writes, collection indexing, and review corrections invalidate the affected project/collection cache entries in the current process. Distributed cache invalidation is intentionally out of scope.
 
 ## Per-project API keys
 
@@ -85,7 +89,7 @@ const matcher = createMatcher({
 
 `samesake dev` prints the plan on every apply (including config watch re-apply).
 
-Deploy order: system DDL first (`samesake migrate --db=$URL`), then app boot or `dev`/`apply` for project schemas.
+Deploy order: system DDL first (`samesake migrate --db=$URL`), then app boot or `dev`/`apply` for project schemas. In production, construct the app with `migrate: "manual"` after the deploy step; manual mode does not install request-time migration middleware. Use `migrate: "lazy"` for dev convenience when first-request migrations are acceptable, or `migrate: "eager"` plus `await matcher.migrate()` when a long-lived process should warm migrations before serving.
 
 ## Deploy
 

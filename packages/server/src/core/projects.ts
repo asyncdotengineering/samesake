@@ -8,6 +8,7 @@ import { mergeMigrationPlans, planCollectionMigration } from "./collections-migr
 import { assertIdent, assertNoIdentCollisions } from "@samesake/core";
 import { ClientError } from "../errors.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
+import { collectionTableName, getPgClient } from "./db-utils.ts";
 
 function validateProjectConfig(config: ProjectConfig): void {
   const entityNames = (config.entities ?? []).map((e) => e.name).filter(Boolean) as string[];
@@ -49,16 +50,6 @@ export interface ProjectRow {
   config_json: ProjectConfig;
 }
 
-type PgUnsafe = {
-  unsafe: (query: string, params?: unknown[]) => Promise<Record<string, unknown>[]>;
-};
-
-function pgClient(db: MatcherCtx["db"]): PgUnsafe {
-  const session = (db as { session?: { client?: PgUnsafe } }).session;
-  if (!session?.client?.unsafe) throw new Error("postgres client unavailable for projects migration");
-  return session.client;
-}
-
 function normaliseConfig(input: EntityDef[] | ProjectConfig): ProjectConfig {
   if (Array.isArray(input)) return { entities: input, collections: [] };
   return { entities: input.entities ?? [], collections: input.collections ?? [] };
@@ -83,7 +74,7 @@ export function makeProjectsService(
 
   async function collectionTableExists(schema: string, collectionName: string): Promise<boolean> {
     const table = `c_${sanitiseIdent(collectionName)}`;
-    const rows = await pgClient(db).unsafe(
+    const rows = await getPgClient(db, "projects migration").unsafe(
       `SELECT 1 FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2 LIMIT 1`,
       [schema, table]
     );
@@ -177,8 +168,10 @@ export function makeProjectsService(
 
     for (const m of collectionMigrations) {
       if (!m.reindex) continue;
-      const table = `${projectSchema}.c_${sanitiseIdent(m.collection)}`;
-      await pgClient(db).unsafe(`UPDATE ${table} SET indexed_at = NULL WHERE indexed_at IS NOT NULL`);
+      const table = collectionTableName(projectSchema, m.collection);
+      await getPgClient(db, "projects migration").unsafe(
+        `UPDATE ${table} SET indexed_at = NULL WHERE indexed_at IS NOT NULL`
+      );
     }
 
     const configHash = createHash("sha1").update(JSON.stringify(config)).digest("hex");

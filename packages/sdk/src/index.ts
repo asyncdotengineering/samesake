@@ -53,6 +53,27 @@ import { assertIdent, assertNoIdentCollisions } from "./ident.ts";
 export * from "./types.ts";
 export { IdentError, assertIdent, assertNoIdentCollisions } from "./ident.ts";
 
+const DEF_KIND = Symbol.for("@samesake/core.defKind");
+type DefKind = "entity" | "collection";
+
+function brandDef<T extends object>(def: T, kind: DefKind): T {
+  Object.defineProperty(def, DEF_KIND, {
+    value: kind,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
+  return def;
+}
+
+export function isEntityDef(value: unknown): value is EntityDef {
+  return !!value && typeof value === "object" && (value as Record<PropertyKey, unknown>)[DEF_KIND] === "entity";
+}
+
+export function isCollectionDef(value: unknown): value is CollectionDef {
+  return !!value && typeof value === "object" && (value as Record<PropertyKey, unknown>)[DEF_KIND] === "collection";
+}
+
 // ── Field factories ─────────────────────────────────────────────────────
 export const fields = {
   text(opts: { required?: boolean; optional?: boolean; maxLength?: number } = {}): FieldDef {
@@ -142,7 +163,7 @@ export function entity<
   assertIdent(name, "entity");
   for (const s of def.scopes ?? []) assertIdent(s, "scope");
   assertNoIdentCollisions(Object.keys(def.fields ?? {}), "field");
-  return { ...(def as unknown as EntityDef), name };
+  return brandDef({ ...(def as unknown as EntityDef), name }, "entity");
 }
 
 // ── Collection field factories ──────────────────────────────────────────
@@ -274,7 +295,7 @@ export function collection<
   if (def.spaces && Object.keys(def.spaces).length > 0) {
     validateSpaceDims(def.spaces);
   }
-  return { ...(def as unknown as CollectionDef), name };
+  return brandDef({ ...(def as unknown as CollectionDef), name }, "collection");
 }
 
 export function stage(
@@ -286,6 +307,204 @@ export function stage(
 
 export function pipeline(...stages: StageDef[]): PipelineDef {
   return { stages };
+}
+
+export const fashionAttributes = {
+  categories: [
+    "dresses",
+    "tops",
+    "bottoms",
+    "outerwear",
+    "ethnic",
+    "activewear",
+    "footwear",
+    "bags",
+    "jewelry",
+    "accessories",
+    "kids",
+    "other",
+  ],
+  colors: [
+    "black",
+    "white",
+    "ivory",
+    "beige",
+    "brown",
+    "tan",
+    "grey",
+    "red",
+    "pink",
+    "purple",
+    "blue",
+    "navy",
+    "green",
+    "yellow",
+    "orange",
+    "multicolor",
+  ],
+  materials: [
+    "cotton",
+    "linen",
+    "denim",
+    "silk",
+    "satin",
+    "chiffon",
+    "knit",
+    "polyester",
+    "leather",
+    "wool",
+    "blend",
+    "unknown",
+  ],
+  patterns: ["solid", "floral", "striped", "checked", "embroidered", "graphic", "other"],
+  fit: ["slim", "regular", "relaxed", "oversized", "tailored", "unknown"],
+  occasions: ["everyday", "office", "party", "wedding guest", "festive", "beach", "gym", "evening"],
+  seasons: ["spring", "summer", "fall", "winter", "all-season"],
+  formality: ["casual", "smart-casual", "formal", "occasion"],
+  modesty: ["modest", "moderate", "revealing"],
+  genders: ["women", "men", "unisex", "kids"],
+  styles: ["casual", "formal", "bohemian", "minimalist", "streetwear", "romantic", "classic", "sporty"],
+} as const;
+
+export function fashionAttributeSchema(): Record<string, unknown> {
+  return {
+    type: "OBJECT",
+    properties: {
+      category: { type: "STRING", enum: fashionAttributes.categories },
+      silhouette: { type: "STRING" },
+      colors: { type: "ARRAY", items: { type: "STRING", enum: fashionAttributes.colors } },
+      material: { type: "STRING", enum: fashionAttributes.materials },
+      pattern: { type: "STRING", enum: fashionAttributes.patterns },
+      fit: { type: "STRING", enum: fashionAttributes.fit },
+      sleeve_length: { type: "STRING" },
+      neckline: { type: "STRING" },
+      length: { type: "STRING" },
+      occasions: { type: "ARRAY", items: { type: "STRING", enum: fashionAttributes.occasions } },
+      season: { type: "STRING", enum: fashionAttributes.seasons },
+      formality: { type: "STRING", enum: fashionAttributes.formality },
+      modesty: { type: "STRING", enum: fashionAttributes.modesty },
+      gender: { type: "STRING", enum: fashionAttributes.genders },
+      style_archetypes: { type: "ARRAY", items: { type: "STRING", enum: fashionAttributes.styles } },
+      search_document: { type: "STRING" },
+      confidence: { type: "NUMBER" },
+      uncertain_fields: { type: "ARRAY", items: { type: "STRING" } },
+    },
+    required: ["category", "colors", "search_document", "confidence"],
+  };
+}
+
+export function fashionEnrichmentPreset(opts: {
+  model?: string;
+  imageField?: string;
+  titleField?: string;
+  descriptionField?: string;
+} = {}): PipelineDef {
+  const imageField = opts.imageField ?? "image_url";
+  const titleField = opts.titleField ?? "title";
+  const descriptionField = opts.descriptionField ?? "description";
+  return pipeline(
+    stage("fashion_attributes", {
+      model: opts.model,
+      images: (ctx) => {
+        const url = ctx.data[imageField];
+        return typeof url === "string" && url ? [url] : [];
+      },
+      prompt: (ctx) =>
+        [
+          "Extract structured fashion catalog attributes for visual search.",
+          `Title: ${String(ctx.data[titleField] ?? "")}`,
+          `Description: ${String(ctx.data[descriptionField] ?? "").slice(0, 1200)}`,
+          "Prefer observable image evidence, use allowed enum values, and write a concise shopper-facing search_document.",
+        ].join("\n"),
+      schema: () => fashionAttributeSchema(),
+    })
+  );
+}
+
+export function fashionSearchPreset(opts: {
+  name?: string;
+  textModel: string;
+  textDim: number;
+  imageModel?: string;
+  imageDim?: number;
+  enableVisual?: boolean;
+  enrichmentModel?: string;
+  fields?: {
+    title?: string;
+    brand?: string;
+    price?: string;
+    variants?: string;
+    availability?: string;
+    imageUrl?: string;
+    category?: string;
+    rawTags?: string;
+  };
+}): CollectionDef & { name: string } {
+  const fieldsMap = {
+    title: opts.fields?.title ?? "title",
+    brand: opts.fields?.brand ?? "brand",
+    price: opts.fields?.price ?? "price",
+    availability: opts.fields?.availability ?? "available",
+    imageUrl: opts.fields?.imageUrl ?? "image_url",
+    category: opts.fields?.category ?? "category",
+  };
+  const spaces: Record<string, SpaceDef> = {
+    intent: s.text({
+      source: "$enriched.search_document $title",
+      model: opts.textModel,
+      dim: opts.textDim,
+      taskType: "RETRIEVAL_DOCUMENT",
+    }),
+    price: s.number({ field: "price", mode: "closer", dims: 8, min: 0, max: 100000, scale: "log" }),
+  };
+  if (opts.enableVisual !== false && opts.imageModel && opts.imageDim) {
+    spaces.visual = s.image({
+      source: `$${fieldsMap.imageUrl}`,
+      model: opts.imageModel,
+      dim: opts.imageDim,
+      taskType: "RETRIEVAL_DOCUMENT",
+    });
+  }
+  return collection(opts.name ?? "products", {
+    fields: {
+      title: f.text({ searchable: true, path: fieldsMap.title }),
+      brand: f.text({ filterable: true, facet: true, path: fieldsMap.brand }),
+      price: f.number({ filterable: true, facet: "range", budget: true, path: fieldsMap.price }),
+      available: f.boolean({ filterable: true, facet: true, path: fieldsMap.availability }),
+      category: f.text({ filterable: true, facet: true, path: fieldsMap.category }),
+      colors: f.array(f.enum(fashionAttributes.colors), { filterable: true, soft: true, path: "enriched.colors" }),
+      material: f.enum(fashionAttributes.materials, { filterable: true, soft: true, path: "enriched.material" }),
+      fit: f.enum(fashionAttributes.fit, { filterable: true, soft: true, path: "enriched.fit" }),
+      styles: f.array(f.enum(fashionAttributes.styles), { filterable: true, soft: true, path: "enriched.style_archetypes" }),
+    },
+    enrich: fashionEnrichmentPreset({ model: opts.enrichmentModel, imageField: fieldsMap.imageUrl, titleField: fieldsMap.title }),
+    embeddings: {
+      intent: {
+        source: "$enriched.search_document $title",
+        model: opts.textModel,
+        dim: opts.textDim,
+        taskType: "RETRIEVAL_DOCUMENT",
+      },
+    },
+    spaces,
+    search: {
+      channels: [
+        Channels.fts({ fields: ["title"], weight: 1 }),
+        Channels.cosine({ embedding: "intent", weight: 1 }),
+        Channels.spaces({ weight: 1 }),
+      ],
+      combiner: "rrf",
+      defaultSpaceWeights: {
+        intent: 1,
+        price: 0.4,
+        ...(spaces.visual ? { visual: 1.2 } : {}),
+      },
+      nlq: {
+        semanticRewrite: true,
+        schema: fashionAttributeSchema(),
+      },
+    },
+  });
 }
 
 export const sources = {

@@ -26,5 +26,5 @@ COPY --from=build /app/packages/sdk/package.json ./packages/sdk/package.json
 COPY --from=build /app/packages/server/dist ./packages/server/dist
 COPY --from=build /app/packages/server/package.json ./packages/server/package.json
 EXPOSE 3030
-ENV FINDABLE_PORT=3030
+ENV SAMESAKE_PORT=3030
 CMD ["bun", "apps/matcher/src/index.ts"]

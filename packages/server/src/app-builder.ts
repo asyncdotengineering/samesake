@@ -14,6 +14,8 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { EntityDef, ProjectConfig } from "@samesake/core";
 import type { MatchService } from "./core/match.ts";
 import type { SearchService } from "./core/search.ts";
+import type { AgentToolsService } from "./core/agent-tools.ts";
+import type { FashionSearchService } from "./core/fashion-search.ts";
 import type { IngestService } from "./core/ingest.ts";
 import type { EnrichPipelineService } from "./core/enrich-pipeline.ts";
 import type { ReviewService } from "./core/review.ts";
@@ -28,11 +30,14 @@ import type { Observability } from "./core/observability.ts";
 export interface AppDeps {
   apiKey: string;
   ensureMigrations: () => Promise<void>;
+  runMigrationsOnRequest?: boolean;
   observability: Observability;
   db: PostgresJsDatabase;
   services: {
     match: MatchService;
     search: SearchService;
+    agentTools: AgentToolsService;
+    fashionSearch: FashionSearchService;
     ingest: IngestService;
     enrich: EnrichPipelineService;
     review: ReviewService;
@@ -124,14 +129,16 @@ function readBearer(c: { req: { header(name: string): string | undefined } }): s
 }
 
 export function buildApp(deps: AppDeps): Hono {
-  const { apiKey, ensureMigrations, observability, db, services } = deps;
+  const { apiKey, ensureMigrations, runMigrationsOnRequest = true, observability, db, services } = deps;
   const app = new Hono();
 
   // Lazy migrations on first request.
-  app.use("*", async (c, next) => {
-    await ensureMigrations();
-    await next();
-  });
+  if (runMigrationsOnRequest) {
+    app.use("*", async (c, next) => {
+      await ensureMigrations();
+      await next();
+    });
+  }
 
   function requireMasterKey(c: { req: { header(name: string): string | undefined } }): void {
     const provided = readBearer(c);
@@ -203,6 +210,61 @@ export function buildApp(deps: AppDeps): Hono {
     limit: z.number().optional(),
     offset: z.number().optional(),
     facets: z.array(z.string()).optional(),
+  });
+
+  const FashionSearchBody = z.object({
+    q: z.string().optional(),
+    image: z.object({
+      url: z.string().optional(),
+      bytesBase64: z.string().optional(),
+      mimeType: z.string().optional(),
+      productId: z.string().optional(),
+    }).optional(),
+    filters: z.record(z.string(), z.unknown()).optional(),
+    weights: z
+      .record(
+        z.string(),
+        z.union([z.number(), z.record(z.string(), z.number())])
+      )
+      .optional(),
+    rankingPolicy: z.record(z.string(), z.unknown()).optional(),
+    personalization: z.record(z.string(), z.unknown()).optional(),
+    limit: z.number().optional(),
+    offset: z.number().optional(),
+    debug: z.boolean().optional(),
+    explain: z.boolean().optional(),
+    recoverNoResults: z.boolean().optional(),
+  });
+
+  const FashionSyncBody = z.object({
+    type: z.enum([
+      "product.upsert",
+      "product.delete",
+      "variant.upsert",
+      "inventory.update",
+      "price.update",
+      "image.update",
+    ]),
+    id: z.string(),
+    data: z.record(z.string(), z.unknown()).optional(),
+    changes: z.record(z.string(), z.unknown()).optional(),
+  });
+
+  const AgentImageBody = z.union([
+    z.object({ kind: z.literal("url"), url: z.string() }),
+    z.object({ kind: z.literal("bytes"), bytesBase64: z.string(), mimeType: z.string().optional() }),
+    z.object({ kind: z.literal("product_image"), productId: z.string(), imageField: z.string().optional() }),
+  ]);
+
+  const FindProductsBody = z.object({
+    intent: z.string().optional(),
+    image: AgentImageBody.optional(),
+    constraints: z.record(z.string(), z.unknown()).optional(),
+    shopperContext: z.record(z.string(), z.unknown()).optional(),
+    constraintMode: z.enum(["best_effort", "strict"]).optional(),
+    explain: z.boolean().optional(),
+    limit: z.number().optional(),
+    productId: z.string().optional(),
   });
 
   const DocumentsBody = z.object({
@@ -329,6 +391,60 @@ export function buildApp(deps: AppDeps): Hono {
           offset: body.offset,
         })
       );
+    }
+  );
+
+  app.get("/v1/agent-tools/tools.json", async (c) => {
+    return c.json({ tools: services.agentTools.toolDescriptors() });
+  });
+
+  app.get("/v1/agent-tools/openapi.json", async (c) => {
+    return c.json(services.agentTools.openApi());
+  });
+
+  app.post(
+    "/v1/projects/:project/collections/:collection/agent/find-products",
+    zValidator("json", FindProductsBody),
+    async (c) => {
+      const { project, collection } = c.req.param();
+      await requireProjectKey(c, project);
+      const body = c.req.valid("json");
+      return c.json(await services.agentTools.findProducts(project, collection, body));
+    }
+  );
+
+  app.post(
+    "/v1/projects/:project/collections/:collection/agent/find-similar-products",
+    zValidator("json", FindProductsBody),
+    async (c) => {
+      const { project, collection } = c.req.param();
+      await requireProjectKey(c, project);
+      const body = c.req.valid("json");
+      return c.json(await services.agentTools.findSimilarProducts(project, collection, body));
+    }
+  );
+
+  app.post(
+    "/v1/projects/:project/collections/:collection/fashion-search",
+    zValidator("json", FashionSearchBody),
+    async (c) => {
+      const { project, collection } = c.req.param();
+      await requireProjectKey(c, project);
+      const body = c.req.valid("json");
+      return c.json(
+        await services.fashionSearch.fashionSearch(project, collection, body as Parameters<typeof services.fashionSearch.fashionSearch>[2])
+      );
+    }
+  );
+
+  app.post(
+    "/v1/projects/:project/collections/:collection/fashion-sync",
+    zValidator("json", FashionSyncBody),
+    async (c) => {
+      const { project, collection } = c.req.param();
+      await requireProjectKey(c, project);
+      const body = c.req.valid("json");
+      return c.json(await services.fashionSearch.syncFashionCatalogEvent(project, collection, body));
     }
   );
 

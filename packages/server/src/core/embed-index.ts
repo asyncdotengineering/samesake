@@ -1,4 +1,3 @@
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { CollectionDef, CollectionFieldDef, PipelineDef } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import type { Observability } from "./observability.ts";
@@ -6,7 +5,9 @@ import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
 import type { ProjectsService } from "./projects.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
-import { fetchImageBytes } from "./fetch-image.ts";
+import { fetchRemoteImageSafe } from "./fetch-image.ts";
+import { searchResultCache } from "./search-cache.ts";
+import { collectionTableName, getPgClient } from "./db-utils.ts";
 import {
   assembleDocVector,
   encodeCategorical,
@@ -18,22 +19,6 @@ import {
 } from "./spaces.ts";
 
 const BATCH_SIZE = 24;
-
-type PgUnsafe = {
-  unsafe: (query: string, params?: unknown[]) => Promise<Record<string, unknown>[]>;
-};
-
-function pgClient(db: PostgresJsDatabase): PgUnsafe {
-  const session = (db as { session?: { client?: PgUnsafe } }).session;
-  if (!session?.client?.unsafe) {
-    throw new Error("postgres client unavailable for embed-index");
-  }
-  return session.client;
-}
-
-function tableName(schema: string, collection: string): string {
-  return `${schema}.c_${sanitiseIdent(collection)}`;
-}
 
 function getByPath(root: Record<string, unknown>, path: string): unknown {
   if (!path.includes(".")) return root[path];
@@ -183,10 +168,11 @@ async function buildDocSpaceSegments(
       const cacheKey = `${sdef.model}|${sdef.dim}|img|${imageUrl}`;
       let vec = imageEmbedCache.get(cacheKey);
       if (!vec) {
-        const fetched = await fetchImageBytes(imageUrl);
-        if (!fetched) {
+        const fetched = await fetchRemoteImageSafe(imageUrl);
+        if (!fetched.ok) {
           observability.log("warn", "embed-index", "image fetch failed — zero vector", {
             space: name,
+            reason: fetched.reason,
             url: imageUrl.slice(0, 120),
           });
           segments.push(new Array(sdef.dim).fill(0));
@@ -197,7 +183,7 @@ async function buildDocSpaceSegments(
             image: {
               url: imageUrl,
               bytes: fetched.bytes,
-              mimeType: fetched.mimeType,
+              mimeType: fetched.contentType,
             },
             model: sdef.model,
             dim: sdef.dim,
@@ -286,7 +272,7 @@ export function makeEmbedIndexService(
 
     const embKey = hasEmb ? Object.keys(def.embeddings!)[0]! : null;
     const embDef = embKey ? def.embeddings![embKey]! : null;
-    const table = tableName(project.schema_name, collectionName);
+    const table = collectionTableName(project.schema_name, collectionName);
     const limit = opts?.limit ?? 100_000;
     const needsEnrich = hasEnrichPipeline(def);
 
@@ -295,7 +281,7 @@ export function makeEmbedIndexService(
       : "indexed_at IS NULL OR (enriched_at IS NOT NULL AND indexed_at < enriched_at)";
     const spaceBackfill = hasSpace ? " OR space_vec IS NULL" : "";
 
-    const pending = await pgClient(ctx.db).unsafe(
+    const pending = await getPgClient(ctx.db, "embed-index").unsafe(
       `SELECT id, data, enriched, ingested_at FROM ${table}
        WHERE (${staleClause}${spaceBackfill})
        ORDER BY id LIMIT $1`,
@@ -308,7 +294,7 @@ export function makeEmbedIndexService(
     const imageEmbedCache = new Map<string, number[]>();
 
     async function markIndexSkipped(id: string): Promise<void> {
-      await pgClient(ctx.db).unsafe(
+      await getPgClient(ctx.db, "embed-index").unsafe(
         `UPDATE ${table}
          SET indexed_at = now(), doc = NULL, embedding = NULL, updated_at = now()
          WHERE id = $1`,
@@ -429,7 +415,7 @@ export function makeEmbedIndexService(
         params.push(...fieldValues, row.id);
         const setClause = colNames.map((c, k) => `${c} = $${k + 1}`).join(", ");
 
-        await pgClient(ctx.db).unsafe(
+        await getPgClient(ctx.db, "embed-index").unsafe(
           `UPDATE ${table}
            SET ${setClause}, indexed_at = now(), updated_at = now()
            WHERE id = $${params.length}`,
@@ -438,6 +424,10 @@ export function makeEmbedIndexService(
         ctx.observability.inc("index_docs_total");
         indexed++;
       }
+    }
+
+    if (indexed > 0) {
+      searchResultCache.invalidateProjectCollection(projectSlug, collectionName);
     }
 
     return { indexed };

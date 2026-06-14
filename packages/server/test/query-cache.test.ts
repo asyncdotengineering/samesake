@@ -26,6 +26,7 @@ const cacheCollection = collection("things", {
 
 describeIf("query caches (Q2)", () => {
   const projectSlug = `t_${Math.random().toString(36).slice(2, 10)}`;
+  const runToken = Math.random().toString(36).slice(2, 8);
   let schemaName = "";
   let matcher: ReturnType<typeof createMatcher>;
   let generateCalls = 0;
@@ -61,7 +62,7 @@ describeIf("query caches (Q2)", () => {
   });
 
   test("NLQ parse is cached in Postgres across calls (generate fires once)", async () => {
-    const q = "some nice widget thing please";
+    const q = `some nice widget thing please ${runToken}`;
     const r1 = await matcher.search(projectSlug, "things", { q, cache: false });
     expect(generateCalls).toBe(1);
     // bypass result cache to force the NLQ path again
@@ -70,14 +71,31 @@ describeIf("query caches (Q2)", () => {
     expect(r2.hits.map((h) => h.id).sort()).toEqual(r1.hits.map((h) => h.id).sort());
   });
 
-  test("in-process result cache: identical results, cached flag, much faster", async () => {
+  test("in-process result cache is explicit opt-in", async () => {
     const q = "another lovely widget query";
     const fresh = await matcher.search(projectSlug, "things", { q });
     const cached = await matcher.search(projectSlug, "things", { q });
-    expect(cached.cached).toBe(true);
     expect(cached.hits).toEqual(fresh.hits);
-    expect(cached.took_ms).toBeLessThan(50);
-    const bypass = await matcher.search(projectSlug, "things", { q, cache: false });
-    expect(bypass.cached).toBeUndefined();
+    expect(cached.cached).toBeUndefined();
+
+    const optInFresh = await matcher.search(projectSlug, "things", { q, cache: true });
+    const optInCached = await matcher.search(projectSlug, "things", { q, cache: true });
+    expect(optInCached.cached).toBe(true);
+    expect(optInCached.hits).toEqual(optInFresh.hits);
+  });
+
+  test("opt-in result cache invalidates after document write and index", async () => {
+    const q = "rare purple widget";
+    const before = await matcher.search(projectSlug, "things", { q, cache: true });
+    expect(before.hits.some((h) => h.id === "4")).toBe(false);
+
+    await matcher.pushDocuments(projectSlug, "things", [
+      { id: "4", data: { title: "rare purple widget", category: "a" } },
+    ]);
+    await matcher.index(projectSlug, "things");
+
+    const after = await matcher.search(projectSlug, "things", { q, cache: true });
+    expect(after.cached).toBeUndefined();
+    expect(after.hits.some((h) => h.id === "4")).toBe(true);
   });
 });

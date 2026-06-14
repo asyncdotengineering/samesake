@@ -13,6 +13,9 @@ When you find yourself asking "wait, but *why* does it work that way?" — start
 
 | Page | What it explains |
 |---|---|
+| [Samesake positioning](../positioning.md) | The visual-commerce/fashion-search category, what the project is not, and the proof standard public docs should use. |
+| [Fashion Search Proof](../fashion-search-proof.md) | The measured parity result, corpus, eval method, limitations, and rerun path. |
+| [Agentic commerce retrieval direction](../agentic-commerce-direction.md) | The agent-facing retrieval boundary, YC landscape, tool shape, and out-of-scope checkout/payment line. |
 | [How the matcher scores candidates](./matcher-channels.md) | The five (or seven, for parse-shape) signal channels and how they combine. Why noisy-OR? Why does cosine dominate name-only matching? Why is a brand mismatch fatal in one entity but a soft demotion in another? |
 | [Tuning channel weights per entity](./tuning-channel-weights.md) | The reasoning behind per-entity weight declarations. Why the library has defaults at all. When to lean on cosine, when to lean on structured fields, when to give up on a channel entirely. The trade-off space between recall and precision, and which channels move you in which direction. |
 

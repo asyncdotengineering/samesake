@@ -6,7 +6,7 @@
 // Models you can declare in your entity config:
 //   model: "text-embedding-3-small", dim: 1536   ← cheap default
 //   model: "text-embedding-3-small", dim: 768    ← truncated for storage
-//   model: "text-embedding-3-large", dim: 3072   ← strongest
+//   model: "text-embedding-3-large", dim: 1536   ← truncated; raw 3072 exceeds default pgvector HNSW vector limit
 import { embed } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { EmbedFn } from "@samesake/server";

@@ -195,6 +195,7 @@ describe("parseNlq", () => {
 
 describeIf("NLQ search integration", () => {
   const projectSlug = `t_${Math.random().toString(36).slice(2, 10)}`;
+  const runToken = Math.random().toString(36).slice(2, 10);
   let schemaName = "";
   let matcher: ReturnType<typeof createMatcher>;
   let generateCalls = 0;
@@ -265,7 +266,7 @@ describeIf("NLQ search integration", () => {
   test("NLQ hard filters applied to results", async () => {
     generateCalls = 0;
     const result = await matcher.search(projectSlug, "products", {
-      q: "nike running shoes under 100 dollars",
+      q: `nike running shoes under 100 dollars ${runToken}`,
       limit: 10,
     });
     expect(generateCalls).toBe(1);

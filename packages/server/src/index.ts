@@ -32,6 +32,13 @@ export type {
   PolicySlot,
 } from "./types.ts";
 export type { SearchExplainResult, ExplainDocBreakdown } from "./core/search.ts";
+export {
+  agentToolDescriptors,
+  agentToolsOpenApi,
+  agentFindProductsRequestSchema,
+  agentFindProductsResponseSchema,
+} from "./core/agent-tools.ts";
+export type { FashionCatalogSyncEvent } from "./core/fashion-search.ts";
 export { inProcessRunner } from "./jobs/in-process.ts";
 
 // Parse schema + default prompt — exported so consumers can:

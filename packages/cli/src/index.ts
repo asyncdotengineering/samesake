@@ -8,6 +8,7 @@
 import { createMatcher, prepareMigrations } from "@samesake/server";
 import type { EmbedFn } from "@samesake/server";
 import type { CollectionDef, EntityDef, ProjectConfig } from "@samesake/core";
+import { loadProjectConfig } from "./config-loader.ts";
 import { readFileSync, existsSync, writeFileSync, watch } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -268,23 +269,20 @@ async function cmdHealthz(): Promise<void> {
 async function cmdApply(flags: Record<string, string>): Promise<void> {
   const project = flags.project ?? PROJECT ?? fail("--project is required");
   const configPath = flags.config ?? fail("--config is required");
-  const abs = resolve(configPath);
-  if (!existsSync(abs)) fail(`config not found: ${abs}`);
-  const mod = await import(pathToFileURL(abs).href);
+  const config = await loadProjectConfig(configPath);
 
-  const entities: EntityDef[] = [];
-  for (const v of Object.values(mod) as unknown[]) {
-    if (v && typeof v === "object" && "name" in v && "fields" in v && "scopes" in v) {
-      entities.push(v as EntityDef);
-    }
-  }
-  if (entities.length === 0) fail("no entities exported from config file");
-
-  console.log(`Applying ${entities.length} entit${entities.length === 1 ? "y" : "ies"} to project '${project}'...`);
-  const body = await post<ApplyResponse>(`/v1/projects/${project}/schema/apply`, { entities });
+  console.log(
+    `Applying ${config.entities.length} entit${config.entities.length === 1 ? "y" : "ies"} and ` +
+      `${config.collections.length} collection${config.collections.length === 1 ? "" : "s"} to project '${project}'...`
+  );
+  const body = await post<ApplyResponse>(`/v1/projects/${project}/schema/apply`, {
+    entities: config.entities,
+    collections: config.collections,
+  });
   console.log(`✓ Applied schema to ${body.schema}`);
   console.log(`  - ${body.appliedStatements} DDL statements`);
-  console.log(`  - entities: ${body.entities.join(", ")}`);
+  console.log(`  - entities: ${body.entities.join(", ") || "(none)"}`);
+  console.log(`  - collections: ${(body.collections ?? []).join(", ") || "(none)"}`);
 }
 
 async function cmdSeed(flags: Record<string, string>): Promise<void> {
@@ -672,7 +670,7 @@ async function cmdDev(flags: Record<string, string>): Promise<void> {
 
   await matcher.migrate();
   const config = await loadProjectConfig(configPath);
-  await applyDevConfig(matcher, project, config, "boot");
+  await applyDevConfig(matcher, project, config.project, "boot");
 
   const server = Bun.serve({
     port,
@@ -689,7 +687,7 @@ async function cmdDev(flags: Record<string, string>): Promise<void> {
       try {
         console.log("[dev] config changed — re-applying...");
         const next = await loadProjectConfig(configPath);
-        await applyDevConfig(matcher, project, next, "watch");
+        await applyDevConfig(matcher, project, next.project, "watch");
       } catch (e) {
         console.error(`[dev] re-apply failed: ${e instanceof Error ? e.message : e}`);
       }
@@ -758,24 +756,6 @@ async function cmdEval(flags: Record<string, string>): Promise<void> {
   console.log("Reference: docs/context/spike/eval-search.js");
 }
 
-async function loadProjectConfig(configPath: string): Promise<ProjectConfig> {
-  const abs = resolve(configPath);
-  if (!existsSync(abs)) fail(`config not found: ${abs}`);
-  const mod = await import(pathToFileURL(abs).href);
-
-  const entities: EntityDef[] = [];
-  const collections: CollectionDef[] = [];
-  for (const v of Object.values(mod) as unknown[]) {
-    if (!v || typeof v !== "object" || !("name" in v) || !("fields" in v)) continue;
-    if ("scopes" in v) {
-      entities.push(v as EntityDef);
-    } else if ("search" in v || "embeddings" in v || "enrich" in v) {
-      collections.push(v as CollectionDef);
-    }
-  }
-  return { entities, collections };
-}
-
 async function cmdMigrate(flags: Record<string, string>): Promise<void> {
   const project = flags.project ?? PROJECT;
   const configPath = flags.config;
@@ -796,7 +776,7 @@ async function cmdMigrate(flags: Record<string, string>): Promise<void> {
       embed: async () => [0],
     });
     await matcher.migrate();
-    const r = await matcher.apply(project!, config, {
+    const r = await matcher.apply(project!, config.project, {
       dryRun,
       allowDestructive: flags["allow-destructive"] === "true",
     });
@@ -858,7 +838,7 @@ const INIT_TEMPLATE = (name: string): string => `// samesake.config.ts — entit
 //
 // Apply via:
 //   bunx samesake apply --project=${name} --config=./samesake.config.ts
-import { entity, fields, Scorers, providers } from "@samesake/core";
+import { entity, fields, Scorers } from "@samesake/core";
 
 export const customer = entity("customer", {
   fields: {
@@ -867,7 +847,7 @@ export const customer = entity("customer", {
   },
   scopes: ["tenantId"],
   embeddings: {
-    name_emb: { source: "name", model: providers.gemini.embed001({ dim: 768 }) },
+    name_emb: { source: "name", model: "gemini-embedding-001", dim: 768 },
   },
   phonetic: {
     name_phon: { source: "name", algorithm: "indic-soundex" },
@@ -896,7 +876,7 @@ async function cmdInit(flags: Record<string, string>): Promise<void> {
   writeFileSync(out, INIT_TEMPLATE(name));
   console.log(`✓ Wrote ${out}`);
   console.log(`\nNext steps:`);
-  console.log(`  1. Adjust the import path at the top of ${out}`);
+  console.log(`  1. Review ${out}`);
   console.log(`  2. samesake apply --project=${name} --config=${out}`);
   console.log(`  3. samesake seed --project=${name} --file=seed.json`);
 }

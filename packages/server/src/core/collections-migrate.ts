@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { CollectionDef, CollectionFieldDef } from "@samesake/core";
 import { totalSpaceDims } from "./spaces.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
+import { assertIndexableVectorDimension } from "./vector-dim.ts";
 
 export interface MigrationPlan {
   additions: string[];
@@ -44,12 +45,6 @@ function canonicalEmbeddings(c: CollectionDef): Record<string, unknown> {
 
 function canonicalSpaces(c: CollectionDef): Record<string, unknown> {
   return c.spaces ?? {};
-}
-
-export function indexDefsHash(c: CollectionDef): string {
-  return createHash("sha1")
-    .update(JSON.stringify({ embeddings: canonicalEmbeddings(c), spaces: canonicalSpaces(c) }))
-    .digest("hex");
 }
 
 function jsonPathExpr(root: "data" | "enriched", path: string): string {
@@ -136,6 +131,13 @@ export function planCollectionMigration(
 
   const storedEmbKeys = Object.keys(storedEmb);
   const incomingEmbKeys = Object.keys(incomingEmb);
+  for (const [name, def] of Object.entries(incomingEmb)) {
+    assertIndexableVectorDimension({
+      owner: `collection ${coll}`,
+      field: `embeddings.${name}`,
+      dimensions: def.dim,
+    });
+  }
   const storedEmbCanon = JSON.stringify(canonicalEmbeddings(stored));
   const incomingEmbCanon = JSON.stringify(canonicalEmbeddings(incoming));
   if (storedEmbCanon !== incomingEmbCanon && incomingEmbKeys.length > 0) {
@@ -165,6 +167,13 @@ export function planCollectionMigration(
 
   const storedSpaceDim = Object.keys(storedSpaces).length ? totalSpaceDims(storedSpaces) : 0;
   const incomingSpaceDim = Object.keys(incomingSpaces).length ? totalSpaceDims(incomingSpaces) : 0;
+  if (incomingSpaceDim > 0) {
+    assertIndexableVectorDimension({
+      owner: `collection ${coll}`,
+      field: "spaces total",
+      dimensions: incomingSpaceDim,
+    });
+  }
   const storedSpaceHash = createHash("sha1").update(JSON.stringify(canonicalSpaces(stored))).digest("hex");
   const incomingSpaceHash = createHash("sha1").update(JSON.stringify(canonicalSpaces(incoming))).digest("hex");
 

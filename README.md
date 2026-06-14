@@ -1,30 +1,50 @@
 # samesake
 
-A dev-first commerce search framework on a shared Postgres substrate. Config-as-code **search** (hybrid FTS + vector retrieval, filters, facets, NLQ, enrichment pipelines, connectors) and **match** (entity resolution, dedup, aliases) coexist in one factory — BYO embedding and generation models, web-standard `fetch`, no Redis or Elasticsearch.
+Samesake is a TypeScript-first search engine compiler for visual commerce, starting with fashion.
 
-Built on Bun + Hono + Postgres + pgvector. Two containers in production: Postgres and your app process.
+It is built for shoppers who do not know the product name: screenshots, similar-look search, vague intent, budget constraints, occasion, size, availability, and merchant ranking policy. You declare the catalog and retrieval spaces in TypeScript; Samesake compiles them into a Postgres-backed search layer you can run inside your app.
 
-## 60-second example
+Proof and positioning:
+
+- [Positioning contract](./docs/positioning.md)
+- [Fashion search proof](./docs/fashion-search-proof.md)
+- [Build fashion search from a messy catalog](./docs/how-to/build-fashion-search.md)
+- [Agentic commerce retrieval direction](./docs/agentic-commerce-direction.md)
+- [Visual-commerce demo script](./docs/demo-visual-commerce.md)
+
+## 60-second fashion search
 
 ```ts
-import { collection, f, Channels } from "@samesake/core";
+import { collection, f, Channels, s } from "@samesake/core";
 import { createMatcher } from "@samesake/server";
 
 const products = collection("products", {
   fields: {
     title: f.text({ searchable: true }),
-    brand: f.text({ filterable: true }),
-    price: f.number({ filterable: true }),
+    brand: f.text({ filterable: true, facet: true }),
+    price: f.number({ filterable: true, facet: "range", budget: true }),
+    color: f.text({ filterable: true, facet: true }),
+    occasion: f.text({ filterable: true, soft: true }),
+    available: f.boolean({ filterable: true }),
+    image_url: f.text(),
   },
   embeddings: {
-    doc: { source: "$title", model: "gemini-embedding-2", dim: 1536 },
+    doc: { source: "$title $brand $color $occasion", model: "gemini-embedding-2", dim: 1536 },
+  },
+  spaces: {
+    intent: s.text({ source: "$title $brand $color $occasion", model: "gemini-embedding-2", dim: 768 }),
+    visual: s.image({ source: "$image_url", model: "gemini-embedding-2", dim: 768 }),
+    price: s.number({ field: "price", mode: "closer", dims: 8, min: 0, max: 100000, scale: "log" }),
   },
   search: {
     channels: [
-      Channels.fts({ fields: ["title"], weight: 1 }),
+      Channels.fts({ fields: ["title", "brand", "color", "occasion"], weight: 1 }),
       Channels.cosine({ embedding: "doc", weight: 1 }),
+      Channels.spaces({ weight: 1 }),
     ],
     combiner: "rrf",
+    defaultSpaceWeights: { intent: 1, visual: 1, price: 0.25 },
+    nlq: { enable: true, semanticRewrite: true },
   },
 });
 
@@ -35,13 +55,41 @@ const matcher = createMatcher({
 });
 
 await matcher.apply("shop", { entities: [], collections: [products] });
-await matcher.pushDocuments("shop", "products", [{ id: "1", data: { title: "linen shirt", brand: "zara", price: 45 } }]);
+await matcher.pushDocuments("shop", "products", [{
+  id: "1",
+  data: {
+    title: "black linen wedding guest dress",
+    brand: "atelier",
+    price: 18900,
+    color: "black",
+    occasion: "wedding",
+    available: true,
+    image_url: "https://cdn.example.com/dress.jpg",
+  },
+}]);
 await matcher.index("shop", "products");
 
-const hits = await matcher.search("shop", "products", { q: "linen shirt", filters: { brand: "zara" }, limit: 10 });
+const hits = await matcher.search("shop", "products", {
+  q: "similar wedding guest look under 20000 in black",
+  filters: { available: true },
+  weights: { spaces: { visual: 2, intent: 1, price: 0.5 } },
+  limit: 10,
+});
 ```
 
-Runnable without any LLM: [`bun examples/hello-search/run.ts`](./examples/hello-search/run.ts).
+For a no-LLM smoke test, run [`bun examples/hello-search/run.ts`](./examples/hello-search/run.ts). For the external fashion corpus and eval path, see [`examples/fashion-search/`](./examples/fashion-search/) and [Fashion Search Proof](./docs/fashion-search-proof.md).
+
+## What Makes It Different
+
+Samesake is not a hosted vector DB, a generic RAG framework, or only keyword search. It is a typed retrieval layer for commerce catalogs where:
+
+- image similarity, text intent, structured attributes, price, freshness, and availability are separate signals
+- hard filters stay hard, so "under 20000" and "available now" are not soft semantic vibes
+- query-time weights let you tune visual, intent, price, and freshness influence without reindexing
+- `/search/explain` shows per-leg ranks and space cosines for debugging
+- the same factory also supports entity resolution and deduplication for catalog/customer records
+
+Built on Bun + Hono + Postgres + pgvector. Two containers in production: Postgres and your app process. BYO embedding and generation models; no Redis or Elasticsearch.
 
 ## Spaces (60 seconds)
 
@@ -147,7 +195,7 @@ createMatcher({ embed, generate?, ... })
 Postgres (pgvector + pg_trgm + unaccent + fuzzystrmatch)
 ```
 
-One factory, two capabilities. Fashion is the first vertical preset — see [`examples/fashion-search/PARITY.md`](./examples/fashion-search/PARITY.md).
+One factory, two capabilities. Fashion is the first public proof path — see [Fashion Search Proof](./docs/fashion-search-proof.md) and [`examples/fashion-search/PARITY.md`](./examples/fashion-search/PARITY.md).
 
 ## Match in brief
 
@@ -222,7 +270,7 @@ Deploy: see [`deploy/`](./deploy/) (Fly.io, Cloudflare Workers, local `bun run d
 
 ## Status & naming
 
-NPM packages: **`@samesake/core`** (SDK), **`@samesake/server`**, **`@samesake/cli`** at **1.0.0**. This project was formerly **samesake** / **linkable** (entity resolution) before the commerce search framework work. The HTTP app still lives at `apps/matcher/`.
+NPM packages: **`@samesake/core`** (SDK), **`@samesake/server`**, **`@samesake/cli`** at **1.0.0**. The current public name is **Samesake**. The HTTP app still lives at `apps/matcher/`.
 
 Search and match share embeddings, Postgres caches, and per-project runtime DDL.
 

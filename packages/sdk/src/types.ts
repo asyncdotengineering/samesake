@@ -377,6 +377,154 @@ export type SearchWeightsInput<S extends string = string> = {
   spaces?: number | Partial<Record<S, number>>;
 };
 
+export interface FashionSearchImageInput {
+  /** Remote image URL. The server fetches it through the same hardened image guard used for indexing. */
+  url?: string;
+  /** Base64 image bytes for callers that do not want Samesake to fetch a URL. */
+  bytesBase64?: string;
+  /** In-process callers may pass bytes directly. Not valid over JSON HTTP. */
+  bytes?: Uint8Array;
+  mimeType?: string;
+  /** Product id whose catalog image should be used as the query image. */
+  productId?: string;
+}
+
+export interface FashionRankingPolicy {
+  weights?: {
+    relevance?: number;
+    visual?: number;
+    availability?: number;
+    newness?: number;
+    business?: number;
+    personalization?: number;
+  };
+  /** Numeric field used as a merchant/business signal, for example margin or sell-through. */
+  businessField?: string;
+  boostAvailable?: boolean;
+  buryUnavailable?: boolean;
+}
+
+export interface FashionPersonalizationContext {
+  size?: string;
+  priceBand?: { min?: number; max?: number };
+  preferredBrands?: string[];
+  blockedBrands?: string[];
+  viewedProductIds?: string[];
+  avoidedStyles?: string[];
+  colorAffinity?: Record<string, number>;
+}
+
+export interface FashionSearchRequest<S extends string = string> {
+  q?: string;
+  image?: FashionSearchImageInput;
+  filters?: Record<string, unknown>;
+  weights?: SearchWeightsInput<S>;
+  rankingPolicy?: FashionRankingPolicy;
+  personalization?: FashionPersonalizationContext;
+  limit?: number;
+  offset?: number;
+  debug?: boolean;
+  explain?: boolean;
+  recoverNoResults?: boolean;
+}
+
+export interface FashionSearchExplanation {
+  hitId: string;
+  factors: Record<string, number | boolean | string | null>;
+  appliedFilters: string[];
+}
+
+export interface FashionSearchResponse {
+  hits: Array<Record<string, unknown> & { id: string; score: number }>;
+  parsed?: Record<string, unknown>;
+  appliedFilters: Record<string, unknown>;
+  explanations?: FashionSearchExplanation[];
+  fallback?: {
+    reason: "no_results" | "low_confidence";
+    relaxedFilters: string[];
+  };
+  debug?: Record<string, unknown>;
+  took_ms: number;
+}
+
+export type AgentImageInput =
+  | { kind: "url"; url: string }
+  | { kind: "bytes"; bytesBase64: string; mimeType?: string }
+  | { kind: "product_image"; productId: string; imageField?: string };
+
+export interface FindProductsRequest {
+  intent?: string;
+  image?: AgentImageInput;
+  constraints?: Record<string, unknown>;
+  shopperContext?: Record<string, unknown>;
+  constraintMode?: "best_effort" | "strict";
+  explain?: boolean;
+  limit?: number;
+}
+
+export interface ProductVariantAvailability {
+  id?: string;
+  title?: string;
+  size?: string;
+  price?: number;
+  available?: boolean;
+  inventoryQuantity?: number;
+  updatedAt?: string;
+}
+
+export interface ConstraintVerification {
+  status: "satisfied" | "violated" | "unknown";
+  satisfied: string[];
+  violated: string[];
+  unknown: string[];
+  strictExcluded?: boolean;
+}
+
+export interface GroundedProductCandidate {
+  id: string;
+  title?: string;
+  url?: string;
+  imageUrl?: string;
+  price?: { amount: number; currency?: string; lastUpdatedAt?: string };
+  availability?: {
+    inStock?: boolean;
+    variants?: ProductVariantAvailability[];
+    lastCheckedAt?: string;
+    freshness: "fresh" | "stale" | "unknown";
+  };
+  score: number;
+  data: Record<string, unknown>;
+  grounding: {
+    project: string;
+    collection: string;
+    productId: string;
+    indexedAt?: string;
+    sourceUpdatedAt?: string;
+  };
+  verification: ConstraintVerification;
+  why?: Record<string, unknown>;
+}
+
+export interface FindProductsResponse {
+  products: GroundedProductCandidate[];
+  parsed?: Record<string, unknown>;
+  relaxed?: boolean;
+  took_ms: number;
+}
+
+export interface AgentToolDescriptor {
+  name:
+    | "find_products"
+    | "find_similar_products"
+    | "compare_products"
+    | "explain_result"
+    | "get_product_availability"
+    | "recover_no_results";
+  description: string;
+  inputSchema: Record<string, unknown>;
+  outputSchema: Record<string, unknown>;
+}
+
 export interface ProjectConfig {
   entities?: EntityDef[];
   collections?: CollectionDef[];

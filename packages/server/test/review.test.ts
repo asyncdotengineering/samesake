@@ -27,6 +27,7 @@ const reviewCollection = collection("rev", {
 
 describeIf("review loop (Q6)", () => {
   const projectSlug = `t_${Math.random().toString(36).slice(2, 10)}`;
+  const runToken = Math.random().toString(36).slice(2, 8);
   let schemaName = "";
   let matcher: ReturnType<typeof createMatcher>;
 
@@ -85,7 +86,9 @@ describeIf("review loop (Q6)", () => {
   });
 
   test("future enrichment runs include correction few-shot", async () => {
-    await matcher.pushDocuments(projectSlug, "rev", [{ id: "skirt-2", data: { title: "A-line Pleated Skirt" } }]);
+    await matcher.pushDocuments(projectSlug, "rev", [
+      { id: "skirt-2", data: { title: `A-line Pleated Skirt ${runToken}` } },
+    ]);
     seenPrompts.length = 0;
     await matcher.enrich(projectSlug, "rev");
     expect(seenPrompts.length).toBeGreaterThan(0);

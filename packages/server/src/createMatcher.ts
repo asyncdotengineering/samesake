@@ -14,10 +14,10 @@
 //   3. The Hono app (matcher.app) for .route() composition.
 //
 // The migration story is lazy by default: the first HTTP request awaits
-// matcher.migrate() via middleware. Pass migrate:"eager" to apply
-// synchronously inside createMatcher() (useful for tests + standalone runner),
-// or migrate:"manual" to skip the middleware and require an explicit
-// `await matcher.migrate()` call.
+// matcher.migrate() via middleware. Pass migrate:"eager" to start migrations
+// during construction (await matcher.migrate() before serving if you need a
+// hard startup gate), or migrate:"manual" to skip request-time middleware and
+// require an explicit `await matcher.migrate()` or CLI deploy step.
 //
 // BYO AI (v0.2): config.embed is REQUIRED — the consumer supplies the
 // embedding function. config.parse is OPTIONAL; if any entity declares a
@@ -35,10 +35,12 @@ import { makeEmbedService } from "./core/embed.ts";
 import { makeParseService } from "./core/parse.ts";
 import { makeMatchService } from "./core/match.ts";
 import { makeSearchService } from "./core/search.ts";
+import { makeAgentToolsService } from "./core/agent-tools.ts";
 import { makeIngestService } from "./core/ingest.ts";
 import { makeEnrichPipelineService } from "./core/enrich-pipeline.ts";
 import { makeReviewService } from "./core/review.ts";
 import { makeEmbedIndexService } from "./core/embed-index.ts";
+import { makeFashionSearchService } from "./core/fashion-search.ts";
 import { makeCalibrateService } from "./core/calibrate.ts";
 import { makeExplainService } from "./core/explain.ts";
 import { makeVariantsService } from "./core/variants.ts";
@@ -70,6 +72,12 @@ export interface Matcher {
   getEntityDef: ReturnType<typeof makeProjectsService>["getEntityDef"];
   getCollectionDef: ReturnType<typeof makeProjectsService>["getCollectionDef"];
   search: ReturnType<typeof makeSearchService>["search"];
+  findProducts: ReturnType<typeof makeAgentToolsService>["findProducts"];
+  findSimilarProducts: ReturnType<typeof makeAgentToolsService>["findSimilarProducts"];
+  agentToolDescriptors: ReturnType<typeof makeAgentToolsService>["toolDescriptors"];
+  agentToolsOpenApi: ReturnType<typeof makeAgentToolsService>["openApi"];
+  fashionSearch: ReturnType<typeof makeFashionSearchService>["fashionSearch"];
+  syncFashionCatalogEvent: ReturnType<typeof makeFashionSearchService>["syncFashionCatalogEvent"];
   indexDocuments: ReturnType<typeof makeSearchService>["indexDocuments"];
   ingest: ReturnType<typeof makeIngestService>["ingestCollection"];
   pushDocuments: ReturnType<typeof makeIngestService>["upsertDocuments"];
@@ -218,7 +226,9 @@ export function createMatcher(config: MatcherConfig): Matcher {
   const parseService = makeParseService(ctx);
   const matchService = makeMatchService(ctx, embedService, parseService, projectsService, schemaGen);
   const searchService = makeSearchService(ctx, embedService, projectsService);
+  const agentToolsService = makeAgentToolsService(ctx, projectsService, searchService);
   const ingestService = makeIngestService(ctx, projectsService);
+  const fashionSearchService = makeFashionSearchService(ctx, projectsService, searchService, ingestService);
   const enrichService = makeEnrichPipelineService(ctx, projectsService);
   const reviewService = makeReviewService(ctx, projectsService);
   const embedIndexService = makeEmbedIndexService(ctx, embedService, projectsService);
@@ -231,10 +241,13 @@ export function createMatcher(config: MatcherConfig): Matcher {
   const app = buildApp({
     apiKey: config.apiKey,
     ensureMigrations: ctx.ensureMigrations,
+    runMigrationsOnRequest: config.migrate !== "manual",
     observability,
     services: {
       match: matchService,
       search: searchService,
+      agentTools: agentToolsService,
+      fashionSearch: fashionSearchService,
       ingest: ingestService,
       enrich: enrichService,
       review: reviewService,
@@ -251,10 +264,8 @@ export function createMatcher(config: MatcherConfig): Matcher {
   // migrate() respects the config.migrate mode.
   const migrate = ctx.ensureMigrations;
 
-  // Eager mode: trigger the migrations now (fire-and-forget; the next
-  // request will await the same promise via middleware if it's still running,
-  // but for "eager" the typical caller does `await createMatcher(...)`-equivalent
-  // by awaiting matcher.migrate() before serving requests).
+  // Eager mode: trigger migrations now. Callers that need a hard startup gate
+  // can await matcher.migrate(), which observes the same promise.
   if (config.migrate === "eager") {
     void migrate();
   }
@@ -277,6 +288,12 @@ export function createMatcher(config: MatcherConfig): Matcher {
     getEntityDef: projectsService.getEntityDef,
     getCollectionDef: projectsService.getCollectionDef,
     search: searchService.search,
+    findProducts: agentToolsService.findProducts,
+    findSimilarProducts: agentToolsService.findSimilarProducts,
+    agentToolDescriptors: agentToolsService.toolDescriptors,
+    agentToolsOpenApi: agentToolsService.openApi,
+    fashionSearch: fashionSearchService.fashionSearch,
+    syncFashionCatalogEvent: fashionSearchService.syncFashionCatalogEvent,
     indexDocuments: searchService.indexDocuments,
     ingest: ingestService.ingestCollection,
     pushDocuments: ingestService.upsertDocuments,
