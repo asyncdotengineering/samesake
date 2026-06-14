@@ -553,9 +553,21 @@ export function makeSearchService(
     };
   }
 
-  async function finishSearch(r: Retrieval, opts: SearchOpts, t0: number): Promise<SearchResult> {
-    const limit = opts.limit ?? 20;
-    let { rows, softFieldsUsed, totalCandidates } = await runHybridQuery(
+  // Run the hybrid query for one mode, retrying once with soft filters dropped
+  // when too few rows come back. Shared by the search and explain finishers.
+  async function runRanked(
+    r: Retrieval,
+    limit: number,
+    mode: "search" | "explain"
+  ): Promise<{
+    rows: Array<Record<string, unknown>>;
+    totalCandidates: number;
+    filterSql: string;
+    filterParams: unknown[];
+    relaxed: boolean;
+    relaxedFields: string[];
+  }> {
+    let { rows, softFieldsUsed, totalCandidates, filterSql, filterParams } = await runHybridQuery(
       ctx,
       r.project.schema_name,
       r.def,
@@ -567,7 +579,8 @@ export function makeSearchService(
       r.filterOpts,
       r.weights,
       limit,
-      r.offset
+      r.offset,
+      mode
     );
 
     let relaxed = false;
@@ -589,13 +602,22 @@ export function makeSearchService(
         { ...r.filterOpts, excludeSoft: true },
         r.weights,
         limit,
-        r.offset
+        r.offset,
+        mode
       );
       rows = retry.rows;
       totalCandidates = retry.totalCandidates;
+      filterSql = retry.filterSql;
+      filterParams = retry.filterParams;
       relaxed = true;
       relaxedFields = relaxedSoftFields(r.def, r.mergedFilters, softFieldsUsed);
     }
+
+    return { rows, totalCandidates, filterSql, filterParams, relaxed, relaxedFields };
+  }
+
+  async function finishSearch(r: Retrieval, opts: SearchOpts, t0: number): Promise<SearchResult> {
+    const { rows, totalCandidates, relaxed, relaxedFields } = await runRanked(r, opts.limit ?? 20, "search");
 
     let facets: SearchResult["facets"];
     if (opts.facets?.length) {
@@ -657,51 +679,11 @@ export function makeSearchService(
   }
 
   async function finishExplain(r: Retrieval, opts: SearchOpts, t0: number): Promise<SearchExplainResult> {
-    const limit = Math.min(opts.limit ?? 20, 20);
-    let { rows, softFieldsUsed, filterSql, filterParams } = await runHybridQuery(
-      ctx,
-      r.project.schema_name,
-      r.def,
-      r.collectionName,
-      r.q,
-      r.vector,
-      r.spaceVector,
-      r.mergedFilters,
-      r.filterOpts,
-      r.weights,
-      limit,
-      r.offset,
+    const { rows, filterSql, filterParams, relaxed, relaxedFields } = await runRanked(
+      r,
+      Math.min(opts.limit ?? 20, 20),
       "explain"
     );
-
-    let relaxed = false;
-    let relaxedFields: string[] = [];
-    const hasSoftFilters =
-      softFieldsUsed.length > 0 ||
-      Object.keys(r.mergedFilters).some((k) => r.def.fields[k]?.soft);
-
-    if (rows.length < 3 && hasSoftFilters) {
-      const retry = await runHybridQuery(
-        ctx,
-        r.project.schema_name,
-        r.def,
-        r.collectionName,
-        r.q,
-        r.vector,
-        r.spaceVector,
-        r.mergedFilters,
-        { ...r.filterOpts, excludeSoft: true },
-        r.weights,
-        limit,
-        r.offset,
-        "explain"
-      );
-      rows = retry.rows;
-      filterSql = retry.filterSql;
-      filterParams = retry.filterParams;
-      relaxed = true;
-      relaxedFields = relaxedSoftFields(r.def, r.mergedFilters, softFieldsUsed);
-    }
 
     const table = collectionTableName(r.project.schema_name, r.collectionName);
     const spaceCosinesById = new Map<string, Record<string, number>>();
