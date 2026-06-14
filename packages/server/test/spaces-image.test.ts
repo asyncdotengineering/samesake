@@ -5,7 +5,7 @@ import type { EmbedRequest } from "../src/types.ts";
 import { collection, f, Channels, s } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
-import { fetchRemoteImageSafe } from "../src/core/fetch-image.ts";
+import { fetchRemoteImageSafe, __setImageTransport } from "../src/core/fetch-image.ts";
 import { encodeImage } from "../src/core/spaces.ts";
 import { stubEmbed } from "./fixtures.ts";
 
@@ -29,14 +29,19 @@ function multimodalStub(req: EmbedRequest): number[] {
 }
 
 function mockFetch(responseFor: (url: string) => Response) {
-  const original = globalThis.fetch;
-  globalThis.fetch = ((input: Parameters<typeof fetch>[0]) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    return Promise.resolve(responseFor(url));
-  }) as typeof fetch;
-  return () => {
-    globalThis.fetch = original;
-  };
+  __setImageTransport(async ({ url }) => {
+    const res = responseFor(url.href);
+    const headers: Record<string, string | undefined> = {};
+    res.headers.forEach((v, k) => {
+      headers[k] = v;
+    });
+    const buf = new Uint8Array(await res.arrayBuffer());
+    async function* body() {
+      if (buf.byteLength) yield buf;
+    }
+    return { status: res.status, headers, body: body() };
+  });
+  return () => __setImageTransport(null);
 }
 
 const publicResolve = async () => ["93.184.216.34"];
@@ -133,6 +138,58 @@ describe("fetchRemoteImageSafe", () => {
     } finally {
       restore();
     }
+  });
+
+  test("pins the validated IP for the connection (no second resolution)", async () => {
+    let seenPins: string[] = [];
+    const got = await fetchRemoteImageSafe("https://cdn.example.com/ok.png", {
+      resolveHostname: async () => ["93.184.216.34"],
+      transport: async ({ pinnedIps }) => {
+        seenPins = pinnedIps;
+        async function* body() {
+          yield new Uint8Array([1, 2, 3]);
+        }
+        return { status: 200, headers: { "content-type": "image/png" }, body: body() };
+      },
+    });
+    expect(got.ok).toBe(true);
+    expect(seenPins).toEqual(["93.184.216.34"]);
+  });
+
+  test("blocks NAT64-embedded metadata address before connecting", async () => {
+    const got = await fetchRemoteImageSafe("https://evil.example/x.png", {
+      resolveHostname: async () => ["64:ff9b::a9fe:a9fe"], // 169.254.169.254
+      transport: async () => {
+        throw new Error("transport must not be reached for a blocked destination");
+      },
+    });
+    expect(got.ok).toBe(false);
+    if (!got.ok) expect(got.reason).toBe("blocked_destination");
+  });
+
+  test("blocks hex-form IPv4-mapped loopback", async () => {
+    const got = await fetchRemoteImageSafe("https://evil.example/x.png", {
+      resolveHostname: async () => ["::ffff:7f00:1"], // 127.0.0.1
+      transport: async () => {
+        throw new Error("transport must not be reached for a blocked destination");
+      },
+    });
+    expect(got.ok).toBe(false);
+    if (!got.ok) expect(got.reason).toBe("blocked_destination");
+  });
+
+  test("accepts image/avif", async () => {
+    const got = await fetchRemoteImageSafe("https://cdn.example.com/x.avif", {
+      resolveHostname: async () => ["93.184.216.34"],
+      transport: async () => {
+        async function* body() {
+          yield new Uint8Array([1, 2, 3]);
+        }
+        return { status: 200, headers: { "content-type": "image/avif" }, body: body() };
+      },
+    });
+    expect(got.ok).toBe(true);
+    if (got.ok) expect(got.contentType).toBe("image/avif");
   });
 });
 

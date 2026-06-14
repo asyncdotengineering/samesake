@@ -1,10 +1,29 @@
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { isIP, type LookupFunction } from "node:net";
+import http from "node:http";
+import https from "node:https";
 
 export interface FetchedImage {
   mimeType: string;
   bytes: Uint8Array;
 }
+
+export interface RawImageResponse {
+  status: number;
+  headers: Record<string, string | undefined>;
+  body: AsyncIterable<Uint8Array>;
+  cancel?: () => void;
+}
+
+export interface RawImageRequest {
+  url: URL;
+  /** The already-validated destination IPs; the connection MUST go to one of these. */
+  pinnedIps: string[];
+  timeoutMs: number;
+  headers: Record<string, string>;
+}
+
+export type ImageTransport = (req: RawImageRequest) => Promise<RawImageResponse>;
 
 export interface FetchImageOptions {
   maxBytes?: number;
@@ -12,6 +31,8 @@ export interface FetchImageOptions {
   maxRedirects?: number;
   allowedContentTypes?: string[];
   resolveHostname?: (hostname: string) => Promise<string[]>;
+  /** Override the HTTP transport (tests only). Defaults to an IP-pinned node:http/https client. */
+  transport?: ImageTransport;
 }
 
 export type FetchImageFailureReason =
@@ -29,7 +50,7 @@ export type FetchImageResult =
 const DEFAULT_MAX_BYTES = 6_000_000;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_REDIRECTS = 3;
-const DEFAULT_ALLOWED_CONTENT_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const DEFAULT_ALLOWED_CONTENT_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"];
 
 function ipv4ToInt(ip: string): number {
   return ip.split(".").reduce((acc, part) => (acc << 8) + Number(part), 0) >>> 0;
@@ -54,15 +75,57 @@ function isBlockedIpv4(ip: string): boolean {
   ].some(([base, bits]) => ipv4InCidr(ip, base as string, bits as number));
 }
 
+/** Expand any IPv6 form (compressed, zero-padded, embedded IPv4) into 8 16-bit groups. */
+function expandIpv6(ip: string): number[] | null {
+  let s = ip.toLowerCase().split("%")[0]!; // strip any zone id
+  // Fold a trailing dotted-quad (::ffff:1.2.3.4, 64:ff9b::1.2.3.4) into two hex groups.
+  const lastColon = s.lastIndexOf(":");
+  const trailer = s.slice(lastColon + 1);
+  if (trailer.includes(".")) {
+    if (isIP(trailer) !== 4) return null;
+    const n = ipv4ToInt(trailer);
+    s = `${s.slice(0, lastColon + 1)}${((n >>> 16) & 0xffff).toString(16)}:${(n & 0xffff).toString(16)}`;
+  }
+  const halves = s.split("::");
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  if (halves.length === 1) {
+    if (head.length !== 8) return null;
+    return head.map((g) => parseInt(g || "0", 16));
+  }
+  const missing = 8 - head.length - tail.length;
+  if (missing < 0) return null;
+  const groups = [...head, ...new Array(missing).fill("0"), ...tail];
+  if (groups.length !== 8) return null;
+  return groups.map((g) => parseInt(g || "0", 16));
+}
+
+function ipv4FromGroups(hi: number, lo: number): string {
+  return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+}
+
 function isBlockedIpv6(ip: string): boolean {
-  const normal = ip.toLowerCase();
-  if (normal === "::" || normal === "::1") return true;
-  if (normal.startsWith("fc") || normal.startsWith("fd")) return true;
-  if (normal.startsWith("fe8") || normal.startsWith("fe9") || normal.startsWith("fea") || normal.startsWith("feb")) return true;
-  if (normal.startsWith("ff")) return true;
-  if (normal.startsWith("::ffff:")) {
-    const mapped = normal.slice("::ffff:".length);
-    if (isIP(mapped) === 4) return isBlockedIpv4(mapped);
+  const g = expandIpv6(ip);
+  if (!g) return true; // unparseable → fail closed
+  // unspecified :: and loopback ::1
+  if (g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0 && g[6] === 0) {
+    return g[7] === 0 || g[7] === 1;
+  }
+  if ((g[0]! & 0xfe00) === 0xfc00) return true; // unique-local fc00::/7
+  if ((g[0]! & 0xffc0) === 0xfe80) return true; // link-local fe80::/10
+  if ((g[0]! & 0xff00) === 0xff00) return true; // multicast ff00::/8
+  // IPv4-mapped ::ffff:0:0/96 → check the embedded IPv4
+  if (g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0xffff) {
+    return isBlockedIpv4(ipv4FromGroups(g[6]!, g[7]!));
+  }
+  // NAT64 64:ff9b::/96 and 64:ff9b:1::/48 → embedded IPv4 in the low 32 bits
+  if (g[0] === 0x64 && g[1] === 0xff9b) {
+    return isBlockedIpv4(ipv4FromGroups(g[6]!, g[7]!));
+  }
+  // 6to4 2002::/16 → embedded IPv4 in groups 1-2
+  if (g[0] === 0x2002) {
+    return isBlockedIpv4(ipv4FromGroups(g[1]!, g[2]!));
   }
   return false;
 }
@@ -80,10 +143,11 @@ async function defaultResolveHostname(hostname: string): Promise<string[]> {
   return records.map((record) => record.address);
 }
 
-async function validateDestination(
+/** Resolve + validate a destination, returning the IPs the connection must be pinned to. */
+async function resolveAndValidate(
   url: URL,
   resolveHostname: (hostname: string) => Promise<string[]>
-): Promise<FetchImageResult | null> {
+): Promise<{ addresses: string[] } | FetchImageResult> {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return { ok: false, reason: "invalid_url", finalUrl: url.href };
   }
@@ -105,32 +169,74 @@ async function validateDestination(
   if (!addresses.length || addresses.some(isBlockedIp)) {
     return { ok: false, reason: "blocked_destination", finalUrl: url.href };
   }
-  return null;
+  return { addresses };
 }
 
-async function readBounded(res: Response, maxBytes: number): Promise<Uint8Array | "too_large"> {
-  const length = res.headers.get("content-length");
-  if (length && Number(length) > maxBytes) return "too_large";
-  if (!res.body) {
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    return bytes.length > maxBytes ? "too_large" : bytes;
-  }
+// IP-pinned transport: the TCP connection is forced to a validated address via a custom
+// DNS lookup, while the URL hostname is preserved so TLS SNI and certificate validation
+// stay bound to the real host. This closes the resolve-then-fetch DNS-rebinding window.
+const nodeTransport: ImageTransport = ({ url, pinnedIps, timeoutMs, headers }) =>
+  new Promise<RawImageResponse>((resolve, reject) => {
+    const isHttps = url.protocol === "https:";
+    const mod = isHttps ? https : http;
+    const pinnedLookup: LookupFunction = ((_hostname: string, opts: unknown, cb: unknown) => {
+      const results = pinnedIps.map((address) => ({ address, family: isIP(address) === 6 ? 6 : 4 }));
+      const callback = cb as (err: Error | null, ...rest: unknown[]) => void;
+      if (opts && (opts as { all?: boolean }).all) callback(null, results);
+      else callback(null, results[0]!.address, results[0]!.family);
+    }) as unknown as LookupFunction;
+    const req = mod.request(
+      {
+        protocol: url.protocol,
+        hostname: url.hostname,
+        port: url.port ? Number(url.port) : isHttps ? 443 : 80,
+        path: `${url.pathname}${url.search}`,
+        method: "GET",
+        headers: { host: url.host, ...headers },
+        lookup: pinnedLookup,
+      },
+      (res) => {
+        resolve({
+          status: res.statusCode ?? 0,
+          headers: res.headers as Record<string, string | undefined>,
+          body: res as AsyncIterable<Uint8Array>,
+          cancel: () => res.destroy(),
+        });
+      }
+    );
+    req.setTimeout(timeoutMs, () => {
+      const err = new Error("request timed out");
+      err.name = "TimeoutError";
+      req.destroy(err);
+    });
+    req.on("error", reject);
+    req.end();
+  });
 
-  const reader = res.body.getReader();
+// Process-wide transport, overridable in tests so deep pipeline calls (embed-index,
+// enrich, search) can be stubbed without real network access. Defaults to the pinned client.
+let activeTransport: ImageTransport = nodeTransport;
+export function __setImageTransport(transport: ImageTransport | null): void {
+  activeTransport = transport ?? nodeTransport;
+}
+
+async function readBounded(res: RawImageResponse, maxBytes: number): Promise<Uint8Array | "too_large"> {
+  const length = res.headers["content-length"];
+  if (length && Number(length) > maxBytes) {
+    res.cancel?.();
+    return "too_large";
+  }
   const chunks: Uint8Array[] = [];
   let total = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (!value) continue;
-    total += value.byteLength;
+  for await (const chunk of res.body) {
+    const u8 = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk as ArrayBufferLike);
+    total += u8.byteLength;
     if (total > maxBytes) {
-      await reader.cancel();
+      res.cancel?.();
       return "too_large";
     }
-    chunks.push(value);
+    chunks.push(u8);
   }
-
   const out = new Uint8Array(total);
   let offset = 0;
   for (const chunk of chunks) {
@@ -149,6 +255,7 @@ export async function fetchRemoteImageSafe(
   const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
   const allowedContentTypes = options.allowedContentTypes ?? DEFAULT_ALLOWED_CONTENT_TYPES;
   const resolveHostname = options.resolveHostname ?? defaultResolveHostname;
+  const transport = options.transport ?? activeTransport;
 
   let current: URL;
   try {
@@ -158,15 +265,16 @@ export async function fetchRemoteImageSafe(
   }
 
   for (let redirects = 0; redirects <= maxRedirects; redirects++) {
-    const blocked = await validateDestination(current, resolveHostname);
-    if (blocked) return blocked;
+    const validated = await resolveAndValidate(current, resolveHostname);
+    if ("ok" in validated) return validated;
 
-    let res: Response;
+    let res: RawImageResponse;
     try {
-      res = await fetch(current.href, {
-        headers: { "User-Agent": "Mozilla/5.0" },
-        redirect: "manual",
-        signal: AbortSignal.timeout(timeoutMs),
+      res = await transport({
+        url: current,
+        pinnedIps: validated.addresses,
+        timeoutMs,
+        headers: { "user-agent": "Mozilla/5.0", accept: "image/*" },
       });
     } catch (e) {
       const name = e instanceof Error ? e.name : "";
@@ -179,7 +287,8 @@ export async function fetchRemoteImageSafe(
     }
 
     if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get("location");
+      const location = res.headers["location"];
+      res.cancel?.();
       if (!location || redirects === maxRedirects) {
         return { ok: false, reason: "network_error", finalUrl: current.href };
       }
@@ -187,10 +296,14 @@ export async function fetchRemoteImageSafe(
       continue;
     }
 
-    if (!res.ok) return { ok: false, reason: "network_error", finalUrl: current.href };
+    if (res.status < 200 || res.status >= 300) {
+      res.cancel?.();
+      return { ok: false, reason: "network_error", finalUrl: current.href };
+    }
 
-    const contentType = res.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() ?? "";
+    const contentType = (res.headers["content-type"] ?? "").split(";")[0]!.trim().toLowerCase();
     if (!allowedContentTypes.includes(contentType)) {
+      res.cancel?.();
       return { ok: false, reason: "unsupported_content_type", finalUrl: current.href };
     }
 

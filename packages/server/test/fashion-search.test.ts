@@ -5,6 +5,7 @@ import { collection, f, Channels, s } from "../../sdk/src/index.ts";
 import type { EmbedRequest } from "../src/types.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
+import { __setImageTransport } from "../src/core/fetch-image.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
@@ -26,14 +27,19 @@ function multimodalStub(req: EmbedRequest): number[] {
 }
 
 function mockFetch(responseFor: (url: string) => Response) {
-  const original = globalThis.fetch;
-  globalThis.fetch = ((input: Parameters<typeof fetch>[0]) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    return Promise.resolve(responseFor(url));
-  }) as typeof fetch;
-  return () => {
-    globalThis.fetch = original;
-  };
+  __setImageTransport(async ({ url }) => {
+    const res = responseFor(url.href);
+    const headers: Record<string, string | undefined> = {};
+    res.headers.forEach((v, k) => {
+      headers[k] = v;
+    });
+    const buf = new Uint8Array(await res.arrayBuffer());
+    async function* body() {
+      if (buf.byteLength) yield buf;
+    }
+    return { status: res.status, headers, body: body() };
+  });
+  return () => __setImageTransport(null);
 }
 
 const fashionCollection = collection("products", {
