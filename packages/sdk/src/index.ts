@@ -29,6 +29,7 @@ import type {
   CollectionEmbeddingDef,
   StageContext,
   StageDef,
+  SchemaInput,
   PipelineDef,
   ConnectorDef,
   CollectionTextFieldDef,
@@ -274,7 +275,7 @@ type CollectionInput<
       instructions?: string;
       semanticRewrite?: boolean;
       enable?: boolean;
-      schema?: Record<string, unknown>;
+      schema?: SchemaInput;
       model?: string;
     };
   };

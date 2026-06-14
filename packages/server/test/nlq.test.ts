@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
+import { z } from "zod";
 import { collection, f, Channels } from "@samesake/core";
 import {
   deriveNlqSchema,
@@ -190,6 +191,36 @@ describe("parseNlq", () => {
     expect(result.degraded).toBe(false);
     expect(result.filters.price).toEqual({ $lte: 120 });
     expect(result.filters.brand).toBe("nike");
+  });
+
+  test("converts a zod nlq.schema to JSON Schema before generate", async () => {
+    let received: Record<string, unknown> | undefined;
+    const ctx = {
+      generateConfigured: true,
+      generate: async ({ schema }: { schema: Record<string, unknown> }) => {
+        received = schema;
+        return { semantic_query: "party wear" };
+      },
+    } as unknown as MatcherCtx;
+
+    const coll = collection("products", {
+      fields: {
+        title: f.text({ searchable: true }),
+        price: f.number({ filterable: true }),
+      },
+      search: {
+        channels: [Channels.fts({ fields: ["title"], weight: 1 })],
+        nlq: {
+          enable: true,
+          schema: z.object({ semantic_query: z.string(), max_price: z.number().optional() }),
+        },
+      },
+    });
+
+    await parseNlq(ctx, coll, "party wear under 3000");
+    expect(received).toBeDefined();
+    expect(received!.type).toBe("object");
+    expect((received!.properties as Record<string, unknown>).semantic_query).toEqual({ type: "string" });
   });
 });
 

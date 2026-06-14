@@ -15,8 +15,15 @@ describe("normalizeSchema", () => {
     expect(normalizeSchema(raw)).toBe(raw);
   });
 
+  test("is idempotent — a converted schema is not re-converted", () => {
+    const once = normalizeSchema(z.object({ a: z.string() }));
+    // zod's toJSONSchema output carries a non-enumerable ~standard marker; it must
+    // still be treated as a plain JSON Schema (no validate fn) and pass through.
+    expect(normalizeSchema(once)).toBe(once);
+  });
+
   test("throws for a non-zod Standard Schema", () => {
-    const fake = { "~standard": { vendor: "valibot", version: 1 } };
+    const fake = { "~standard": { vendor: "valibot", version: 1, validate: () => ({ value: {} }) } };
     expect(() => normalizeSchema(fake)).toThrow(/valibot/);
   });
 });

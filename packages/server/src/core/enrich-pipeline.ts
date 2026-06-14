@@ -6,6 +6,7 @@ import { makeStageCacheService } from "../db/stage-cache.ts";
 import { fetchRemoteImageSafe } from "./fetch-image.ts";
 import { callWithRetry } from "./policy.ts";
 import { collectionTableName, getPgClient } from "./db-utils.ts";
+import { normalizeSchema } from "./schema-input.ts";
 
 function isPipeline(def: CollectionDef["enrich"]): def is PipelineDef {
   return !!def && typeof def === "object" && Array.isArray((def as PipelineDef).stages);
@@ -57,7 +58,7 @@ export function makeEnrichPipelineService(
 
     const prompt = stage.prompt(stageCtx) + fewShot;
     const imageUrls = stage.images?.(stageCtx) ?? [];
-    const schema = stage.schema(stageCtx);
+    const schema = normalizeSchema(stage.schema(stageCtx));
     const model = stage.model ?? "<default>";
     const key = stageCacheKey(stage.name, model, prompt, imageUrls, schema);
 
