@@ -395,10 +395,12 @@ export function buildApp(deps: AppDeps): Hono {
   );
 
   app.get("/v1/agent-tools/tools.json", async (c) => {
+    requireMasterKey(c);
     return c.json({ tools: services.agentTools.toolDescriptors() });
   });
 
   app.get("/v1/agent-tools/openapi.json", async (c) => {
+    requireMasterKey(c);
     return c.json(services.agentTools.openApi());
   });
 

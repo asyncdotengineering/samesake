@@ -10,19 +10,9 @@ import type {
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import type { SearchHit, SearchOpts, SearchService, SearchFilters } from "./search.ts";
-import { collectionTableName, getPgClient } from "./db-utils.ts";
+import { collectionTableName, getByPath, getPgClient } from "./db-utils.ts";
 
 type ConstraintMode = "best_effort" | "strict";
-
-function getByPath(root: Record<string, unknown>, path: string): unknown {
-  if (!path.includes(".")) return root[path];
-  let cur: unknown = root;
-  for (const part of path.split(".")) {
-    if (cur == null || typeof cur !== "object") return undefined;
-    cur = (cur as Record<string, unknown>)[part];
-  }
-  return cur;
-}
 
 function hitValue(hit: SearchHit, key: string): unknown {
   if (key in hit) return hit[key];
@@ -33,6 +23,22 @@ function asArray(value: unknown): unknown[] {
   if (Array.isArray(value)) return value;
   if (value == null) return [];
   return [value];
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Lowercased string values of declared text/enum/array fields only — never keys, never numeric/url-only data. */
+function declaredTextValues(hit: SearchHit, def: CollectionDef): string[] {
+  const out: string[] = [];
+  for (const [name, fieldDef] of Object.entries(def.fields)) {
+    if (fieldDef.type !== "text" && fieldDef.type !== "enum" && fieldDef.type !== "array") continue;
+    for (const item of asArray(hitValue(hit, name))) {
+      if (item != null) out.push(String(item).toLowerCase());
+    }
+  }
+  return out;
 }
 
 function toSearchImage(image: FindProductsRequest["image"]): SearchOpts["image"] | undefined {
@@ -105,7 +111,8 @@ function extractVariants(hit: SearchHit): ProductVariantAvailability[] | undefin
 function verifyCandidate(
   hit: SearchHit,
   constraints: Record<string, unknown>,
-  mode: ConstraintMode
+  mode: ConstraintMode,
+  def: CollectionDef
 ): ConstraintVerification {
   const satisfied: string[] = [];
   const violated: string[] = [];
@@ -134,9 +141,14 @@ function verifyCandidate(
     } else if (key === "currency") {
       checkField(key, hitValue(hit, "currency"), (v) => String(v) === String(expected));
     } else if (key === "blockedAttributes") {
-      const blocked = asArray(expected).map((v) => String(v).toLowerCase());
-      const haystack = JSON.stringify(hit.data).toLowerCase();
-      const found = blocked.filter((b) => haystack.includes(b));
+      const blocked = asArray(expected)
+        .map((v) => String(v).toLowerCase().trim())
+        .filter(Boolean);
+      const values = declaredTextValues(hit, def);
+      const found = blocked.filter((term) => {
+        const re = new RegExp(`\\b${escapeRegex(term)}\\b`, "i");
+        return values.some((val) => re.test(val));
+      });
       if (found.length) violated.push(key);
       else satisfied.push(key);
     }
@@ -159,6 +171,7 @@ function toGroundedCandidate(
   metadata: Record<string, { indexedAt?: string; sourceUpdatedAt?: string }>,
   constraints: Record<string, unknown>,
   mode: ConstraintMode,
+  def: CollectionDef,
   why?: Record<string, unknown>
 ): GroundedProductCandidate {
   const price = Number(hitValue(hit, "price"));
@@ -168,7 +181,7 @@ function toGroundedCandidate(
     hitValue(hit, "inventory_checked_at") ??
     hitValue(hit, "availability_checked_at") ??
     hitValue(hit, "updated_at");
-  const verification = verifyCandidate(hit, constraints, mode);
+  const verification = verifyCandidate(hit, constraints, mode, def);
   const meta = metadata[hit.id] ?? {};
 
   return {
@@ -248,18 +261,6 @@ export function agentToolDescriptors(): AgentToolDescriptor[] {
       inputSchema: agentFindProductsRequestSchema,
       outputSchema: agentFindProductsResponseSchema,
     },
-    {
-      name: "get_product_availability",
-      description: "Inspect availability fields already present in grounded product candidates. Does not call external inventory systems.",
-      inputSchema: { type: "object", properties: { productId: { type: "string" } }, required: ["productId"] },
-      outputSchema: { type: "object" },
-    },
-    {
-      name: "recover_no_results",
-      description: "Retry retrieval by relaxing soft commerce constraints while preserving hard safety constraints.",
-      inputSchema: agentFindProductsRequestSchema,
-      outputSchema: agentFindProductsResponseSchema,
-    },
   ];
 }
 
@@ -280,6 +281,23 @@ export function agentToolsOpenApi(): Record<string, unknown> {
         post: {
           operationId: "find_products",
           summary: "Find grounded product candidates for an agent",
+          description: "Requires a project key or master key. Returns structured candidates with freshness and verification metadata.",
+          parameters: [
+            { name: "project", in: "path", required: true, schema: { type: "string" } },
+            { name: "collection", in: "path", required: true, schema: { type: "string" } },
+          ],
+          requestBody: { required: true, content: { "application/json": { schema: agentFindProductsRequestSchema } } },
+          responses: {
+            "200": { description: "Grounded product candidates", content: { "application/json": { schema: agentFindProductsResponseSchema } } },
+            "400": { description: "Invalid request or unverifiable image input" },
+            "401": { description: "Missing or invalid bearer token" },
+          },
+        },
+      },
+      "/v1/projects/{project}/collections/{collection}/agent/find-similar-products": {
+        post: {
+          operationId: "find_similar_products",
+          summary: "Find products similar to a reference image or product id",
           description: "Requires a project key or master key. Returns structured candidates with freshness and verification metadata.",
           parameters: [
             { name: "project", in: "path", required: true, schema: { type: "string" } },
@@ -360,22 +378,26 @@ export function makeAgentToolsService(
     const filters = constraintsToFilters(constraints);
     const weights = imageOnlyWeights(def, intent, image);
 
-    const search = await searchService.search(projectSlug, collectionName, {
-      q: intent,
-      image,
-      filters,
-      limit: Math.min(Math.max(req.limit ?? 10, 1), 50),
-      weights,
-    });
-    const explain = req.explain
-      ? await searchService.searchExplain(projectSlug, collectionName, {
-          q: intent,
-          image,
-          filters,
-          limit: Math.min(Math.max(req.limit ?? 10, 1), 20),
-          weights,
-        })
-      : null;
+    // search and explain use identical filters here (no fallback dependency between them),
+    // so run the two independent retrieval passes concurrently instead of serially.
+    const [search, explain] = await Promise.all([
+      searchService.search(projectSlug, collectionName, {
+        q: intent,
+        image,
+        filters,
+        limit: Math.min(Math.max(req.limit ?? 10, 1), 50),
+        weights,
+      }),
+      req.explain
+        ? searchService.searchExplain(projectSlug, collectionName, {
+            q: intent,
+            image,
+            filters,
+            limit: Math.min(Math.max(req.limit ?? 10, 1), 20),
+            weights,
+          })
+        : Promise.resolve(null),
+    ]);
     const explainById = new Map(explain?.docs.map((doc) => [doc.id, doc]) ?? []);
     const metadata = await loadMetadata(projectSlug, collectionName, search.hits.map((h) => h.id));
     const products = search.hits
@@ -387,6 +409,7 @@ export function makeAgentToolsService(
           metadata,
           constraints,
           mode,
+          def,
           explainById.has(hit.id) ? { retrieval: explainById.get(hit.id) } : undefined
         )
       )

@@ -5,6 +5,7 @@ import { collection, f, Channels, s } from "../../sdk/src/index.ts";
 import type { EmbedRequest } from "../src/types.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
+import { __setImageTransport } from "../src/core/fetch-image.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
@@ -22,14 +23,19 @@ function embed(req: EmbedRequest): number[] {
 }
 
 function mockFetch(responseFor: (url: string) => Response) {
-  const original = globalThis.fetch;
-  globalThis.fetch = ((input: Parameters<typeof fetch>[0]) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    return Promise.resolve(responseFor(url));
-  }) as typeof fetch;
-  return () => {
-    globalThis.fetch = original;
-  };
+  __setImageTransport(async ({ url }) => {
+    const res = responseFor(url.href);
+    const headers: Record<string, string | undefined> = {};
+    res.headers.forEach((v, k) => {
+      headers[k] = v;
+    });
+    const buf = new Uint8Array(await res.arrayBuffer());
+    async function* body() {
+      if (buf.byteLength) yield buf;
+    }
+    return { status: res.status, headers, body: body() };
+  });
+  return () => __setImageTransport(null);
 }
 
 const agentCollection = collection("products", {
@@ -172,6 +178,25 @@ describeIf("agent retrieval tools", () => {
     expect(result.products.map((p) => p.id)).not.toContain("blue");
   });
 
+  test("blockedAttributes matches declared field values by whole word, not keys or substrings", async () => {
+    // "brand" is a field KEY (not a value) and "cot" is a substring of "cotton" —
+    // neither is a real blocked attribute, so the red product must NOT be excluded.
+    const safe = await matcher.findProducts(projectSlug, "products", {
+      intent: "red wedding guest dress",
+      constraints: { blockedAttributes: ["brand", "cot"] },
+      limit: 3,
+    });
+    expect(safe.products.map((p) => p.id)).toContain("red");
+
+    // A real attribute token present in a declared field value IS blocked.
+    const blocked = await matcher.findProducts(projectSlug, "products", {
+      intent: "red wedding guest dress",
+      constraints: { blockedAttributes: ["cotton"] },
+      limit: 3,
+    });
+    expect(blocked.products.map((p) => p.id)).not.toContain("red");
+  });
+
   test("findSimilarProducts can use a catalog product image", async () => {
     const result = await matcher.findSimilarProducts(projectSlug, "products", {
       productId: "red",
@@ -183,10 +208,18 @@ describeIf("agent retrieval tools", () => {
   });
 
   test("HTTP route and descriptors expose structured agent tools", async () => {
-    const toolsRes = await matcher.fetch(new Request("http://localhost/v1/agent-tools/tools.json"));
+    const unauth = await matcher.fetch(new Request("http://localhost/v1/agent-tools/tools.json"));
+    expect(unauth.status).toBe(401);
+
+    const toolsRes = await matcher.fetch(
+      new Request("http://localhost/v1/agent-tools/tools.json", {
+        headers: { authorization: "Bearer test-api-key-12345" },
+      })
+    );
     expect(toolsRes.status).toBe(200);
     const tools = (await toolsRes.json()) as { tools: Array<{ name: string }> };
     expect(tools.tools.map((t) => t.name)).toContain("find_products");
+    expect(tools.tools.map((t) => t.name)).not.toContain("get_product_availability");
 
     const res = await matcher.fetch(
       new Request(`http://localhost/v1/projects/${projectSlug}/collections/products/agent/find-products`, {
@@ -199,8 +232,13 @@ describeIf("agent retrieval tools", () => {
     const body = (await res.json()) as { products: unknown[] };
     expect(body.products.length).toBe(1);
 
-    const openapiRes = await matcher.fetch(new Request("http://localhost/v1/agent-tools/openapi.json"));
+    const openapiRes = await matcher.fetch(
+      new Request("http://localhost/v1/agent-tools/openapi.json", {
+        headers: { authorization: "Bearer test-api-key-12345" },
+      })
+    );
     const openapi = (await openapiRes.json()) as { paths: Record<string, unknown> };
     expect(Object.keys(openapi.paths)).toContain("/v1/projects/{project}/collections/{collection}/agent/find-products");
+    expect(Object.keys(openapi.paths)).toContain("/v1/projects/{project}/collections/{collection}/agent/find-similar-products");
   });
 });
