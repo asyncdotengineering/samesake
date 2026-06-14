@@ -9,6 +9,7 @@ import { assertIdent, assertNoIdentCollisions } from "@samesake/core";
 import { ClientError } from "../errors.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
 import { collectionTableName, getPgClient } from "./db-utils.ts";
+import { normalizeSchema } from "./schema-input.ts";
 
 function validateProjectConfig(config: ProjectConfig): void {
   const entityNames = (config.entities ?? []).map((e) => e.name).filter(Boolean) as string[];
@@ -50,9 +51,23 @@ export interface ProjectRow {
   config_json: ProjectConfig;
 }
 
+// nlq.schema may be declared as a zod schema, but a collection's config is
+// persisted as JSON and reloaded cross-process at search time. Convert it to
+// JSON Schema here — before serialiseConfig / liveCollections — so a zod schema
+// survives the round-trip. Enrich stage schemas are functions evaluated
+// in-process and are intentionally left untouched.
+function normaliseCollectionSchema(c: CollectionDef): CollectionDef {
+  const schema = c.search?.nlq?.schema;
+  if (!schema) return c;
+  return { ...c, search: { ...c.search!, nlq: { ...c.search!.nlq, schema: normalizeSchema(schema) } } };
+}
+
 function normaliseConfig(input: EntityDef[] | ProjectConfig): ProjectConfig {
   if (Array.isArray(input)) return { entities: input, collections: [] };
-  return { entities: input.entities ?? [], collections: input.collections ?? [] };
+  return {
+    entities: input.entities ?? [],
+    collections: (input.collections ?? []).map(normaliseCollectionSchema),
+  };
 }
 
 export function makeProjectsService(

@@ -379,3 +379,42 @@ describe("implied budget hints (Q1)", () => {
     expect(r.budgetHints).toEqual({});
   });
 });
+
+describeIf("nlq.schema persistence", () => {
+  test("a zod nlq.schema is persisted as JSON Schema (survives the apply round-trip)", async () => {
+    const slug = `t_${Math.random().toString(36).slice(2, 10)}`;
+    const matcher = createMatcher({
+      databaseUrl: databaseUrl!,
+      apiKey: "test-api-key-12345",
+      migrate: "eager",
+      embed: async ({ text, dim }) => stubEmbed(text, dim),
+      generate: async () => ({}),
+    });
+    await matcher.migrate();
+    const coll = collection("products", {
+      fields: { title: f.text({ searchable: true }) },
+      search: {
+        channels: [Channels.fts({ fields: ["title"], weight: 1 })],
+        nlq: {
+          enable: true,
+          schema: z.object({ semantic_query: z.string(), max_price: z.number().optional() }),
+        },
+      },
+    });
+    const r = await matcher.apply(slug, { entities: [], collections: [coll] });
+
+    // Read the persisted config straight from the DB — this is what a fresh search
+    // process reloads (liveCollections is empty there), so it must be JSON Schema.
+    const { db, close } = createDbFromUrl(databaseUrl!);
+    const rows = await db.execute<{ config_json: { collections: { search: { nlq: { schema: Record<string, unknown> } } }[] } }>(
+      sql.raw(`SELECT config_json FROM samesake_projects WHERE slug = '${slug}'`)
+    );
+    const persistedSchema = rows[0]!.config_json.collections[0]!.search.nlq.schema;
+    expect(persistedSchema.type).toBe("object");
+    expect((persistedSchema.properties as Record<string, unknown>).semantic_query).toEqual({ type: "string" });
+
+    await db.execute(sql.raw(`DROP SCHEMA IF EXISTS ${r.schema} CASCADE`));
+    await close();
+    await matcher.close();
+  });
+});
