@@ -156,8 +156,8 @@ Concrete next slices:
 
 1. Done: add a `constraintTrace` object to `search`, `searchExplain`, `fashionSearch`, and `findProducts`.
 2. Done: normalize filter/NLQ output into a typed constraint plan before compiling SQL.
-3. Expand `examples/fashion-search/eval.ts` into a real corpus runner with top-k hard-constraint metrics.
-4. Add a search relevance evaluation page that explains why Samesake measures constraint satisfaction separately from relevance.
+3. Done: expand `examples/fashion-search/eval.ts` into a real corpus runner with top-k hard-constraint metrics.
+4. Done: document why Samesake measures constraint satisfaction separately from relevance in the fashion-search how-to.
 5. Add synthetic commerce-query generation later, but only after the evaluator is stable.
 
 ## Flip Conditions

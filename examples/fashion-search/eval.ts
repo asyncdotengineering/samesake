@@ -1,5 +1,6 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { existsSync, readdirSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { COLLECTION, PROJECT } from "./samesake.config.ts";
 
 type Product = {
@@ -29,6 +30,18 @@ type EvalQuery = {
   image?: string;
 };
 
+type EvalCorpus = {
+  products: Product[];
+  queries: EvalQuery[];
+  source: { kind: "fixture"; products: number; queries: number } | { kind: "files"; dir: string; files: number };
+};
+
+type SearchRun = {
+  hits: Product[];
+  relaxed: boolean;
+  latencyMs: number;
+};
+
 const fixture: Product[] = [
   { id: "red-dress", title: "red cotton summer dress", brand: "Luna", category: "dresses", colors: ["red"], material: "cotton", price: 72, available: true },
   { id: "blue-dress", title: "blue linen office dress", brand: "Aster", category: "dresses", colors: ["blue"], material: "linen", price: 118, available: true },
@@ -44,6 +57,87 @@ const queries: EvalQuery[] = [
   { name: "image", q: "", image: "red", filters: { available: true }, constraints: { available: true }, relevant: ["red-dress"] },
   { name: "full", q: "cotton summer dress", image: "red", filters: { category: "dresses", available: true }, constraints: { available: true }, relevant: ["red-dress"] },
 ];
+
+function isProduct(value: unknown): value is Product {
+  const p = value as Product;
+  return !!p &&
+    typeof p.id === "string" &&
+    typeof p.title === "string" &&
+    typeof p.brand === "string" &&
+    typeof p.category === "string" &&
+    Array.isArray(p.colors) &&
+    typeof p.material === "string" &&
+    typeof p.price === "number" &&
+    typeof p.available === "boolean";
+}
+
+function isEvalQuery(value: unknown): value is EvalQuery {
+  const q = value as EvalQuery;
+  return !!q &&
+    typeof q.name === "string" &&
+    typeof q.q === "string" &&
+    Array.isArray(q.relevant);
+}
+
+function normalizeCorpusRecord(record: unknown, out: { products: Product[]; queries: EvalQuery[] }): void {
+  if (Array.isArray(record)) {
+    for (const item of record) normalizeCorpusRecord(item, out);
+    return;
+  }
+  if (!record || typeof record !== "object") return;
+  const obj = record as Record<string, unknown>;
+  if (Array.isArray(obj.products)) {
+    for (const product of obj.products) {
+      if (isProduct(product)) out.products.push(product);
+    }
+  }
+  if (Array.isArray(obj.queries)) {
+    for (const query of obj.queries) {
+      if (isEvalQuery(query)) out.queries.push(query);
+    }
+  }
+  if (obj.type === "product" && isProduct(obj.data)) out.products.push(obj.data);
+  if (obj.type === "query" && isEvalQuery(obj.data)) out.queries.push(obj.data);
+  if (isProduct(record)) out.products.push(record);
+  if (isEvalQuery(record)) out.queries.push(record);
+}
+
+async function readJsonOrJsonl(path: string): Promise<unknown[]> {
+  const raw = await readFile(path, "utf8");
+  if (path.endsWith(".jsonl")) {
+    return raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as unknown);
+  }
+  return [JSON.parse(raw) as unknown];
+}
+
+async function loadCorpus(): Promise<EvalCorpus> {
+  const datasetDir = process.env.FASHION_DATASET_DIR;
+  if (!datasetDir || !existsSync(datasetDir) || !statSync(datasetDir).isDirectory()) {
+    return { products: fixture, queries, source: { kind: "fixture", products: fixture.length, queries: queries.length } };
+  }
+
+  const files = readdirSync(datasetDir)
+    .filter((f) => f.endsWith(".json") || f.endsWith(".jsonl"))
+    .sort();
+  const out: { products: Product[]; queries: EvalQuery[] } = { products: [], queries: [] };
+  for (const file of files) {
+    for (const record of await readJsonOrJsonl(join(datasetDir, file))) {
+      normalizeCorpusRecord(record, out);
+    }
+  }
+
+  if (!out.products.length || !out.queries.length) {
+    throw new Error(
+      `FASHION_DATASET_DIR=${datasetDir} must contain JSON/JSONL Product records and EvalQuery records`
+    );
+  }
+
+  return { products: out.products, queries: out.queries, source: { kind: "files", dir: datasetDir, files: files.length } };
+}
 
 function terms(s: string): string[] {
   return s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
@@ -105,9 +199,10 @@ function constraintMetrics(hits: Product[], constraints: ConstraintSpec = {}, k 
   return metrics;
 }
 
-function localSearch(query: EvalQuery): Product[] {
+function localSearch(products: Product[], query: EvalQuery): SearchRun {
+  const started = Date.now();
   const qTerms = terms(query.q);
-  return fixture
+  const hits = products
     .filter((p) => passesFilters(p, query.filters))
     .map((p) => {
       const haystack = terms(`${p.title} ${p.brand} ${p.category} ${p.colors.join(" ")} ${p.material}`);
@@ -118,12 +213,13 @@ function localSearch(query: EvalQuery): Product[] {
     .filter((x) => x.score > 0 || query.image)
     .sort((a, b) => b.score - a.score)
     .map((x) => x.p);
+  return { hits, relaxed: false, latencyMs: Date.now() - started };
 }
 
-async function remoteSearch(query: EvalQuery): Promise<Product[]> {
+async function remoteSearch(products: Product[], query: EvalQuery): Promise<SearchRun> {
   const base = process.env.FASHION_SEARCH_BASE;
   const apiKey = process.env.API_KEY ?? process.env.GEMINI_API_KEY;
-  if (!base || !apiKey) return localSearch(query);
+  if (!base || !apiKey) return localSearch(products, query);
 
   const started = Date.now();
   const res = await fetch(`${base.replace(/\/$/, "")}/v1/projects/${PROJECT}/collections/${COLLECTION}/fashion-search`, {
@@ -142,19 +238,26 @@ async function remoteSearch(query: EvalQuery): Promise<Product[]> {
     }),
   });
   if (!res.ok) throw new Error(`fashion-search eval request failed ${res.status}: ${await res.text()}`);
-  const body = await res.json() as { hits: Array<Record<string, unknown>> };
+  const body = await res.json() as {
+    hits: Array<Record<string, unknown>>;
+    fallback?: { reason: string; relaxedFilters: string[] };
+    constraintTrace?: { relaxedFields?: string[] };
+  };
   const latency = Date.now() - started;
-  return body.hits.map((h) => ({
-    id: String(h.id),
-    title: String(h.title ?? ""),
-    brand: String(h.brand ?? ""),
-    category: String(h.category ?? ""),
-    colors: Array.isArray(h.colors) ? h.colors.map(String) : [],
-    material: String(h.material ?? ""),
-    available: h.available === true,
-    price: Number(h.price ?? 0),
-    latency,
-  } as Product));
+  return {
+    hits: body.hits.map((h) => ({
+      id: String(h.id),
+      title: String(h.title ?? ""),
+      brand: String(h.brand ?? ""),
+      category: String(h.category ?? ""),
+      colors: Array.isArray(h.colors) ? h.colors.map(String) : [],
+      material: String(h.material ?? ""),
+      available: h.available === true,
+      price: Number(h.price ?? 0),
+    })),
+    relaxed: !!body.fallback || !!body.constraintTrace?.relaxedFields?.length,
+    latencyMs: latency,
+  };
 }
 
 function relevanceAtK(ids: string[], relevant: string[], k: number): number {
@@ -164,37 +267,50 @@ function relevanceAtK(ids: string[], relevant: string[], k: number): number {
 
 async function main() {
   const started = Date.now();
+  const corpus = await loadCorpus();
   const rows = [];
-  for (const query of queries) {
-    const hits = await remoteSearch(query);
+  for (const query of corpus.queries) {
+    const run = await remoteSearch(corpus.products, query);
+    const hits = run.hits;
     const ids = hits.map((h) => h.id);
+    const constraints = constraintMetrics(hits, query.constraints);
     rows.push({
       name: query.name,
       q: query.q,
       topIds: ids.slice(0, 5),
       relevanceAt3: relevanceAtK(ids, query.relevant, 3),
       constraintCompliance: hits.every((h) => passesFilters(h, query.filters)) ? 1 : 0,
-      constraintMetrics: constraintMetrics(hits, query.constraints),
+      constraintMetrics: constraints,
       zeroResult: hits.length === 0,
+      relaxed: run.relaxed,
+      latencyMs: run.latencyMs,
     });
   }
 
-  const datasetDir = process.env.FASHION_DATASET_DIR;
-  const datasetFiles = datasetDir && existsSync(datasetDir)
-    ? readdirSync(datasetDir).filter((f) => f.endsWith(".json") || f.endsWith(".jsonl")).length
-    : 0;
+  const constraintKeys = Array.from(
+    new Set(rows.flatMap((r) => Object.keys(r.constraintMetrics).filter((k) => k !== "overall" && k !== "perfect")))
+  ).sort();
+  const constraintByType = Object.fromEntries(
+    constraintKeys.map((key) => [
+      key,
+      rows.reduce((sum, r) => sum + (r.constraintMetrics[key] ?? 1), 0) / rows.length,
+    ])
+  );
   const report = {
     engine: process.env.FASHION_SEARCH_BASE ? "remote-fashion-search" : "local-deterministic-fixture",
     project: PROJECT,
     collection: COLLECTION,
     generatedAt: new Date().toISOString(),
-    dataset: datasetFiles ? { dir: datasetDir, files: datasetFiles } : { fixtureProducts: fixture.length },
+    dataset: corpus.source,
     metrics: {
       relevanceAt3: rows.reduce((sum, r) => sum + r.relevanceAt3, 0) / rows.length,
       constraintCompliance: rows.reduce((sum, r) => sum + r.constraintCompliance, 0) / rows.length,
       constraintOverallAt5: rows.reduce((sum, r) => sum + r.constraintMetrics.overall, 0) / rows.length,
       perfectConstraintAt5: rows.reduce((sum, r) => sum + r.constraintMetrics.perfect, 0) / rows.length,
+      constraintByType,
       zeroResultRate: rows.filter((r) => r.zeroResult).length / rows.length,
+      relaxationRate: rows.filter((r) => r.relaxed).length / rows.length,
+      meanLatencyMs: rows.reduce((sum, r) => sum + r.latencyMs, 0) / rows.length,
       latencyMs: Date.now() - started,
       estimatedCostUsd: 0,
     },
@@ -207,13 +323,16 @@ async function main() {
     "# Fashion Search Eval",
     "",
     `Engine: ${report.engine}`,
-    `Dataset: ${datasetFiles ? `${datasetFiles} files from ${datasetDir}` : `${fixture.length} deterministic fixture products`}`,
+    `Dataset: ${corpus.source.kind === "files" ? `${corpus.source.files} files from ${corpus.source.dir}` : `${corpus.source.products} deterministic fixture products / ${corpus.source.queries} queries`}`,
     "",
     `- relevance@3: ${report.metrics.relevanceAt3.toFixed(2)}`,
     `- constraint compliance: ${report.metrics.constraintCompliance.toFixed(2)}`,
     `- constraint overall@5: ${report.metrics.constraintOverallAt5.toFixed(2)}`,
     `- perfect constraint@5: ${report.metrics.perfectConstraintAt5.toFixed(2)}`,
+    ...Object.entries(report.metrics.constraintByType).map(([k, v]) => `- ${k}@5: ${v.toFixed(2)}`),
     `- zero-result rate: ${report.metrics.zeroResultRate.toFixed(2)}`,
+    `- relaxation rate: ${report.metrics.relaxationRate.toFixed(2)}`,
+    `- mean latency: ${report.metrics.meanLatencyMs.toFixed(0)}ms`,
     `- latency: ${report.metrics.latencyMs}ms`,
     `- estimated cost: $${report.metrics.estimatedCostUsd.toFixed(2)}`,
     "",

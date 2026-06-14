@@ -228,6 +228,16 @@ bun eval.ts
 
 It writes `.samesake/fashion-eval.json` and `.samesake/fashion-eval.md` with relevance@k, constraint compliance, zero-result rate, latency, and cost. Set `FASHION_SEARCH_BASE=http://localhost:8788` plus `API_KEY` to evaluate a running Samesake API, and set `FASHION_DATASET_DIR=...` when running against the larger parity dataset snapshot.
 
+The eval treats relevance and constraint satisfaction as separate gates. A result can be textually relevant and still fail the search if it violates price, availability, required color, excluded color, or another hard commerce constraint. The report therefore includes:
+
+- `relevance@3` for ranking quality among intended products
+- `constraint overall@5` for per-result hard-constraint satisfaction
+- `perfect constraint@5` for whether every top-5 result satisfies every declared constraint
+- per-type metrics such as `price@5`, `available@5`, `colorRequired@5`, and `colorExcluded@5`
+- `zero-result rate` and `relaxation rate` so over-constrained searches are visible
+
+`FASHION_DATASET_DIR` accepts `.json` or `.jsonl` files. Each file can contain `{ "products": [...], "queries": [...] }`, individual product/query records, or JSONL records shaped as `{ "type": "product", "data": ... }` and `{ "type": "query", "data": ... }`.
+
 ## Failure Paths
 
 - **Missing image embed capability**: image spaces will fail lazily when indexing or querying needs image embeddings. Either provide an image-capable embedder or remove the `visual` space.
