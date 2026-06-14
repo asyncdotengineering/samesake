@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { CollectionDef, CollectionFieldDef } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import { makeStageCacheService } from "../db/stage-cache.ts";
+import { normalizeSchema } from "./schema-input.ts";
 import type { SearchFilters } from "./search.ts";
 
 const NLQ_CACHE_STAGE = "__nlq";
@@ -269,7 +270,7 @@ export async function parseNlq(
     return fallback;
   }
 
-  const schema = def.search?.nlq?.schema ?? deriveNlqSchema(def);
+  const schema = normalizeSchema(def.search?.nlq?.schema ?? deriveNlqSchema(def));
   const instructions = def.search?.nlq?.instructions;
   // Caching is best-effort: minimal test/embedded contexts may lack system tables.
   const cache = ctx.systemTables?.samesakeStageCache ? makeStageCacheService(ctx) : null;

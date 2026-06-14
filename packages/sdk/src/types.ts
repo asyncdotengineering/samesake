@@ -17,6 +17,8 @@
 // — see @samesake/server's MatcherConfig. That separation keeps the SDK and
 // matcher entirely free of opinions about which LLM provider you use.
 
+import type { ZodType } from "zod";
+
 export interface FieldDef {
   type: "text" | "number";
   required?: boolean;
@@ -331,7 +333,7 @@ export interface CollectionSearchDef {
     instructions?: string;
     semanticRewrite?: boolean;
     enable?: boolean;
-    schema?: Record<string, unknown>;
+    schema?: SchemaInput;
     model?: string;
   };
 }
@@ -341,13 +343,18 @@ export interface StageContext {
   enriched: Record<string, unknown>;
 }
 
+// A structured-output schema declared on an enrich stage or NLQ config. Either a
+// zod schema (converted to JSON Schema by the matcher) or a plain JSON Schema object,
+// which is forwarded as-is to your `generate` function.
+export type SchemaInput = ZodType | Record<string, unknown>;
+
 export interface StageDef {
   name: string;
   model?: string;
   condition?: (ctx: StageContext) => boolean;
   prompt: (ctx: StageContext) => string;
   images?: (ctx: StageContext) => string[];
-  schema: (ctx: StageContext) => Record<string, unknown>;
+  schema: (ctx: StageContext) => SchemaInput;
 }
 
 export interface PipelineDef {

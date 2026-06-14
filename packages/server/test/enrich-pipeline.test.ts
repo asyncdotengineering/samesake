@@ -1,6 +1,7 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
+import { z } from "zod";
 import { collection, f, Channels, pipeline, stage } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
@@ -14,6 +15,7 @@ describeIf("enrich pipeline", () => {
   let schemaName = "";
   let matcher: ReturnType<typeof createMatcher>;
   let generateCalls = 0;
+  let lastClassifySchema: Record<string, unknown> | undefined;
 
   const enrichCollection = collection("products", {
     fields: {
@@ -23,7 +25,8 @@ describeIf("enrich pipeline", () => {
     enrich: pipeline(
       stage("classify", {
         prompt: (ctx) => `classify ${ctx.data.title}`,
-        schema: () => ({ type: "object" }),
+        // zod schema — the matcher must convert it to JSON Schema before calling generate.
+        schema: () => z.object({ is_apparel: z.boolean(), category: z.string(), confidence: z.number() }),
         model: "cheap",
       }),
       stage("extract", {
@@ -52,8 +55,9 @@ describeIf("enrich pipeline", () => {
       apiKey: "test-api-key-12345",
       migrate: "eager",
       embed: async ({ text, dim }) => stubEmbed(text, dim),
-      generate: async ({ prompt }) => {
+      generate: async ({ prompt, schema }) => {
         generateCalls++;
+        if (prompt.startsWith("classify")) lastClassifySchema = schema;
         if (prompt.includes("wallet")) {
           return { is_apparel: false, category: "accessories", confidence: 0.8 };
         }
@@ -129,6 +133,14 @@ describeIf("enrich pipeline", () => {
     expect(doc2.category).toBe("accessories");
     expect((doc2._stages as Record<string, unknown>).extract).toBeUndefined();
     expect(doc1.confidence).toBe(0.95);
+
+    // the classify stage declares its schema as a zod schema — the matcher must
+    // hand generate the converted JSON Schema, not the zod instance.
+    expect(lastClassifySchema).toBeDefined();
+    expect(lastClassifySchema!.type).toBe("object");
+    const classifyProps = lastClassifySchema!.properties as Record<string, unknown>;
+    expect(classifyProps.is_apparel).toEqual({ type: "boolean" });
+    expect(classifyProps.category).toEqual({ type: "string" });
   });
 
   test("second enrich run hits stage cache", async () => {
