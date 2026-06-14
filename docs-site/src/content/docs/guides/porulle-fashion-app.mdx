@@ -172,15 +172,28 @@ export const GET = handle(app); export const POST = handle(app); /* PUT/PATCH/DE
 ```ts title="app/api/search/route.ts — samesake (specific route wins over the catch-all)"
 export const runtime = "nodejs";
 export async function POST(req: Request) {
-  const { q, maxPrice } = await req.json();
-  const filters: Record<string, unknown> = { available: true };
-  if (maxPrice) filters.price = { $lte: Number(maxPrice) };
-  const result = await getMatcher().search("playground", "products", { q, filters, limit: 24 });
+  const { q, category } = await req.json();
+  // No explicit price filter: NLQ parses budgets ("under 3000") from q into a hard
+  // price <= cap. category stays an explicit facet from the storefront chips.
+  const result = await getMatcher().search("playground", "products", {
+    q,
+    limit: 24,
+    filters: { available: true, ...(category ? { category } : {}) },
+  });
   return Response.json({ hits: result.hits });
 }
 ```
 
 A specific route (`/api/search`) takes precedence over the optional catch-all (`/api/[[...route]]`), so samesake owns search while Porulle owns everything else under `/api`.
+
+Budgets are understood because the collection enables NLQ and `price` is `budget: true`:
+
+```ts
+// lib/samesake.ts — createMatcher({ embed: geminiEmbed, generate: geminiGenerate, ... })
+search: { channels: [/* fts + cosine */], combiner: "rrf", nlq: { enable: true, semanticRewrite: true } }
+```
+
+So "party wear under 3000" returns only in-budget results — no separate max-price box needed.
 
 ## 7. Run it
 
@@ -220,8 +233,9 @@ printf '%s' "$BETTER_AUTH_SECRET" | vercel env add BETTER_AUTH_SECRET production
 vercel deploy --prod --yes --scope <your-scope>
 ```
 
-Two gotchas worth knowing:
+Three gotchas worth knowing:
 
+- **Co-locate functions with the database.** A fresh Vercel project runs in `iad1` (US-East); if your Neon DB is in, say, `ap-southeast-1` (Singapore), every query crosses the Pacific. Pin the function region to match — `vercel.json` `{ "regions": ["sin1"] }` — so Porulle and samesake both talk to Postgres locally.
 - **`@samesake/*` as `workspace:*` won't resolve in a standalone Vercel build.** Reference the published versions (`"@samesake/core": "^1.1.0"`) — in a Bun workspace this still links the local package locally while Vercel pulls from npm.
 - New Vercel projects ship with **Deployment Protection (Vercel Authentication)** on, so the demo returns "Authentication Required". Turn it off for a public demo (Project → Settings → Deployment Protection, or `PATCH /v9/projects/<id>` with `{"ssoProtection": null}`).
 

@@ -17,14 +17,12 @@ const LKR = (n: number) => `LKR ${Number(n).toLocaleString("en-LK")}`;
 export default function Storefront() {
   const [all, setAll] = useState<Hit[]>([]);
   const [q, setQ] = useState("");
-  const [activeQ, setActiveQ] = useState(""); // the query actually run
+  const [activeQ, setActiveQ] = useState("");
   const [category, setCategory] = useState<string>("");
-  const [maxPrice, setMaxPrice] = useState("");
   const [searchHits, setSearchHits] = useState<Hit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Initial browse: load the full catalog.
   useEffect(() => {
     (async () => {
       try {
@@ -44,11 +42,11 @@ export default function Storefront() {
     [all]
   );
 
-  async function runSearch(nextQ: string, nextCat: string, nextMax: string) {
+  async function runSearch(nextQ: string, nextCat: string) {
     setActiveQ(nextQ);
     if (!nextQ.trim()) {
       setSearchHits([]);
-      return; // browse mode — client filters `all`
+      return; // browse mode
     }
     setLoading(true);
     setError("");
@@ -56,11 +54,7 @@ export default function Storefront() {
       const res = await fetch("/api/search", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          q: nextQ,
-          category: nextCat || undefined,
-          maxPrice: nextMax ? Number(nextMax) : undefined,
-        }),
+        body: JSON.stringify({ q: nextQ, category: nextCat || undefined }),
       });
       const data = (await res.json()) as { hits: Hit[] };
       setSearchHits(data.hits ?? []);
@@ -71,23 +65,20 @@ export default function Storefront() {
     }
   }
 
-  // Browse mode filters the catalog client-side; search mode is server-ranked.
   const displayed = useMemo(() => {
     if (activeQ.trim()) return searchHits;
-    const cap = maxPrice ? Number(maxPrice) : Infinity;
-    return all.filter((h) => (!category || h.category === category) && h.price <= cap);
-  }, [activeQ, searchHits, all, category, maxPrice]);
+    return all.filter((h) => !category || h.category === category);
+  }, [activeQ, searchHits, all, category]);
 
   function pickCategory(c: string) {
     const next = category === c ? "" : c;
     setCategory(next);
-    if (activeQ.trim()) runSearch(activeQ, next, maxPrice);
+    if (activeQ.trim()) runSearch(activeQ, next);
   }
 
   return (
     <div style={{ minHeight: "100dvh" }}>
       <main style={st.shell}>
-        {/* asymmetric, left-aligned masthead */}
         <header style={st.masthead}>
           <div style={st.brandRow}>
             <span style={st.mark} aria-hidden />
@@ -99,34 +90,24 @@ export default function Storefront() {
             not the exact name.
           </h1>
           <p style={st.lead}>
-            A Sri-Lankan apparel catalog on Porulle, searched by samesake. Try &ldquo;linen shirt for men&rdquo;,
-            &ldquo;something for a beach wedding&rdquo;, or just browse.
+            A Sri-Lankan apparel catalog on Porulle, searched by samesake. Budgets are understood — try
+            &ldquo;party wear under 3000&rdquo;, &ldquo;linen shirt for men&rdquo;, or just browse.
           </p>
 
           <form
             style={st.controls}
             onSubmit={(e) => {
               e.preventDefault();
-              runSearch(q, category, maxPrice);
+              runSearch(q, category);
             }}
           >
             <input
               className="sf-input"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search the catalog"
+              placeholder="Search — intent, attributes, budget"
               aria-label="Search"
-              style={{ flex: 1, minWidth: 240 }}
-            />
-            <input
-              className="sf-input"
-              value={maxPrice}
-              onChange={(e) => setMaxPrice(e.target.value)}
-              onBlur={() => activeQ && runSearch(activeQ, category, maxPrice)}
-              placeholder="Max LKR"
-              inputMode="numeric"
-              aria-label="Max price"
-              style={{ maxWidth: 130 }}
+              style={{ flex: 1, minWidth: 260 }}
             />
             <button className="sf-btn" type="submit">
               Search
@@ -174,9 +155,7 @@ export default function Storefront() {
           ) : displayed.length === 0 ? (
             <div style={st.empty}>
               <p style={st.emptyTitle}>Nothing matched.</p>
-              <p style={st.emptyBody}>
-                Try a broader phrase, clear the price cap, or pick a different category.
-              </p>
+              <p style={st.emptyBody}>Try a broader phrase or a different category.</p>
             </div>
           ) : (
             <div className="sf-grid">

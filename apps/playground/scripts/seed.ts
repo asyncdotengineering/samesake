@@ -14,14 +14,27 @@ const SUBSET = join(import.meta.dir, "..", "..", "..", "examples", "fashion-sear
 
 type Product = { id: string; title: string; brand: string; category: string; colors: string[]; material: string; price: number; available: boolean };
 
-function imageById(): Record<string, string> {
+// price_numeric is unreliable (commas truncate "21,320.31" -> 21); re-parse the
+// price string when it looks junk, and treat genuinely unpriced items as null.
+function parsePrice(r: Record<string, unknown>): number | null {
+  const num = typeof r.price_numeric === "number" ? r.price_numeric : null;
+  if (num != null && num >= 200) return num;
+  const m = String(r.price ?? "").match(/(?:LKR\s*)?([\d,]+(?:\.\d+)?)/);
+  if (m) {
+    const n = Math.round(Number(m[1]!.replace(/,/g, "")));
+    if (n >= 200) return n;
+  }
+  return null; // no usable price -> skip
+}
+
+function sourceMeta(): Record<string, { imageUrl: string; price: number | null }> {
   const dir = join(SUBSET, "source");
-  const out: Record<string, string> = {};
+  const out: Record<string, { imageUrl: string; price: number | null }> = {};
   for (const file of readdirSync(dir).filter((f) => /^q\d+\.json$/.test(f))) {
     const key = file.replace(".json", "");
     const snap = JSON.parse(readFileSync(join(dir, file), "utf8")) as { results: Record<string, unknown>[] };
     snap.results.forEach((r, i) => {
-      if (r.image) out[`${key}-${i + 1}`] = String(r.image);
+      out[`${key}-${i + 1}`] = { imageUrl: r.image ? String(r.image) : "", price: parsePrice(r) };
     });
   }
   return out;
@@ -44,11 +57,17 @@ async function main() {
   };
 
   const { products } = JSON.parse(readFileSync(join(SUBSET, "corpus.json"), "utf8")) as { products: Product[] };
-  const images = imageById();
+  const meta = sourceMeta();
 
   let created = 0;
-  let failed = 0;
+  let skipped = 0;
   for (const p of products) {
+    const m = meta[p.id] ?? { imageUrl: "", price: null };
+    if (m.price == null) {
+      skipped++;
+      console.warn(`  skip ${p.id} (no usable price): ${p.title}`);
+      continue;
+    }
     const res = await kernel.services.catalog.create(
       {
         type: "product",
@@ -60,23 +79,23 @@ async function main() {
           material: p.material || "",
           color: p.colors[0] ?? "",
           category: p.category || "other",
-          imageUrl: images[p.id] ?? "",
+          imageUrl: m.imageUrl,
         },
       },
       staff
     );
     if (!res.ok) {
-      failed++;
+      skipped++;
       console.warn(`  skip ${p.id}: ${res.error?.message ?? res.error}`);
       continue;
     }
     const id = res.value.id;
-    await kernel.services.pricing.setBasePrice({ entityId: id, currency: "LKR", amount: p.price }, staff);
+    await kernel.services.pricing.setBasePrice({ entityId: id, currency: "LKR", amount: m.price }, staff);
     if (p.available) await kernel.services.catalog.publish(id, staff);
     created++;
   }
 
-  console.log(`seeded ${created}/${products.length} products into Porulle (failed: ${failed})`);
+  console.log(`seeded ${created}/${products.length} products into Porulle (skipped: ${skipped})`);
   process.exit(0);
 }
 

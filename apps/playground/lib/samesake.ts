@@ -1,6 +1,7 @@
 import { collection, f, Channels } from "@samesake/core";
 import { createMatcher } from "@samesake/server";
 import { geminiEmbed } from "./embed";
+import { geminiGenerate } from "./generate";
 
 export const PROJECT = "playground";
 export const COLLECTION = "products";
@@ -26,6 +27,9 @@ export const products = collection("products", {
       Channels.cosine({ embedding: "doc", weight: 1 }),
     ],
     combiner: "rrf",
+    // Parse natural-language intent + budgets ("under 3000") into hard filters.
+    // `price` is marked budget:true, so a stated cap becomes price <= cap.
+    nlq: { enable: true, semanticRewrite: true },
   },
 });
 
@@ -40,6 +44,7 @@ export function getMatcher() {
     apiKey: process.env.API_KEY!,
     migrate: "eager",
     embed: geminiEmbed,
+    generate: geminiGenerate,
   });
   return _matcher;
 }
