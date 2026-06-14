@@ -247,20 +247,21 @@ returned whatever was vaguely "a dress" — including red ones for a black query
 and writes structured attributes into the row's `enriched` jsonb.
 
 ```ts
+import { z } from "zod";
+
 enrich: pipeline(
   stage("vision", {
     model: "gemini-3.1-flash-lite",
     images: (ctx) => (ctx.data.image_url ? [String(ctx.data.image_url)] : []),
     prompt: (ctx) => `Describe this product's colours and pattern as JSON.`,
-    schema: () => ({
-      type: "object",
-      properties: {
-        color_text: { type: "string" },          // "light blue and white striped"
-        colors: { type: "array", items: { type: "string" } },
-        pattern: { type: "string" },
-      },
-      required: ["color_text"],
-    }),
+    // a zod schema (or a plain JSON Schema object) — samesake converts zod to
+    // JSON Schema and hands it to your generate.
+    schema: () =>
+      z.object({
+        color_text: z.string(),                    // "light blue and white striped"
+        colors: z.array(z.string()).optional(),
+        pattern: z.string().optional(),
+      }),
   })
 ),
 embeddings: {
@@ -281,7 +282,7 @@ dead-ends the query — let intent + budget through, and leave colour to the emb
 
 ```ts
 nlq: { enable: true, semanticRewrite: true,
-  schema: { type: "object", properties: { semantic_query: { type: "string" }, max_price: { type: "number" } }, required: ["semantic_query"] } }
+  schema: z.object({ semantic_query: z.string(), max_price: z.number().optional() }) }
 ```
 
 > **Honest result.** With real colours the black dress ranks **#1** (it was buried before), but at a

@@ -47,15 +47,22 @@ a multimodal stage that calls your `generate` with the image + a schema and writ
 fields into `enriched`:
 
 ```ts
+import { z } from "zod";
+
 enrich: pipeline(
   stage("vision", {
     model: "your-vision-model",
     images: (ctx) => (ctx.data.image_url ? [String(ctx.data.image_url)] : []),
     prompt: () => "Describe this product's colours and pattern as JSON.",
-    schema: () => ({ type: "object", properties: { color_text: { type: "string" }, pattern: { type: "string" } }, required: ["color_text"] }),
+    schema: () => z.object({ color_text: z.string(), pattern: z.string().optional() }),
   })
 )
 ```
+
+The `schema` callback takes a **zod schema or a plain JSON Schema object** — samesake
+converts zod to JSON Schema and hands it to your `generate`. (The same goes for a
+constrained NLQ `schema`.) Provider-dialect mapping — e.g. Gemini's `responseSchema`
+vs `responseJsonSchema` — stays in your `generate` function.
 
 Run with `matcher.enrich(project, collection)`. Colours went from mostly-empty to accurate
 ("RED PUFF SLEEVE MAXI DRESS" → `solid red`). See [the full pipeline](/guides/porulle-fashion-app/#enrich-attributes-from-the-image-samesake-enrich-pipeline).
