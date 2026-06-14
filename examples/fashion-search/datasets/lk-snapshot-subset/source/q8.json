@@ -1,0 +1,62 @@
+{
+  "query": "oversized streetwear tshirt",
+  "country": "LK",
+  "expansions": [
+    "loose casual wear",
+    "street fashion tee",
+    "large casual shirt"
+  ],
+  "results": [
+    {
+      "title": "STRIPED OVERSIZED SHIRT",
+      "url": "https://thecultoriginal.lk/products/striped-ocersized-shirt-tco-1256?_pos=1&_sid=e92e0e741&_ss=r",
+      "price": "4250.00",
+      "price_numeric": 4250,
+      "currency": null,
+      "image": null,
+      "description": null,
+      "source": "thecultoriginal.lk",
+      "source_url": "https://thecultoriginal.lk",
+      "platform": "shopify",
+      "vendor": null,
+      "tags": [],
+      "product_type": null,
+      "available": true,
+      "handle": "/products/striped-ocersized-shirt-tco-1256?_pos=1&_sid=e92e0e741&_ss=r"
+    },
+    {
+      "title": "EDGE Men's Essentials Embossed Oversized T-Shirt - 53672",
+      "url": "https://edgecasual.com/products/mens-essentials-embossed-oversized-t-shirt-53672?_pos=3&_sid=3a33fa43b&_ss=r",
+      "price": "2790.00",
+      "price_numeric": 2790,
+      "currency": null,
+      "image": "https://edgecasual.com/cdn/shop/files/53672.png?v=1771226424&width=800",
+      "description": null,
+      "source": "edgecasual.com",
+      "source_url": "https://edgecasual.com",
+      "platform": "shopify",
+      "vendor": null,
+      "tags": [],
+      "product_type": null,
+      "available": true,
+      "handle": "/products/mens-essentials-embossed-oversized-t-shirt-53672?_pos=3&_sid=3a33fa43b&_ss=r"
+    },
+    {
+      "title": "STRIPED OVERSIZED SHIRT - BLUE & WHITE STRIPE",
+      "url": "https://thecultoriginal.lk/products/striped-oversized-shirt-blue-white-stripe-tco-1232-blue-white-stripe?_pos=2&_sid=e92e0e741&_ss=r",
+      "price": "4500.00",
+      "price_numeric": 4500,
+      "currency": null,
+      "image": null,
+      "description": null,
+      "source": "thecultoriginal.lk",
+      "source_url": "https://thecultoriginal.lk",
+      "platform": "shopify",
+      "vendor": null,
+      "tags": [],
+      "product_type": null,
+      "available": true,
+      "handle": "/products/striped-oversized-shirt-blue-white-stripe-tco-1232-blue-white-stripe?_pos=2&_sid=e92e0e741&_ss=r"
+    }
+  ]
+}

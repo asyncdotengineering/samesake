@@ -1,0 +1,62 @@
+{
+  "query": "party saree",
+  "country": "LK",
+  "expansions": [
+    "festival dress",
+    "celebration wear",
+    "evening saree"
+  ],
+  "results": [
+    {
+      "title": "Blue Fancy Fabric Embroidered Work Trendy Saree for Ceremonial",
+      "url": "https://www.sareeka.com/blue-fancy-fabric-embroidered-work-trendy-saree-for-ceremonial-342519.html",
+      "price": "LKR21,320.31                    \n                    \n                      LKR26,650.39                    \n                  \n                                            \n                            \n                              \n                                20% off",
+      "price_numeric": 21,
+      "currency": null,
+      "image": null,
+      "description": null,
+      "source": "sareeka.com",
+      "source_url": "https://www.sareeka.com",
+      "platform": "custom",
+      "vendor": null,
+      "tags": [],
+      "product_type": null,
+      "available": true,
+      "handle": null
+    },
+    {
+      "title": "Honourable Cream Fancy Fabric Traditional Saree",
+      "url": "https://www.sareeka.com/honourable-cream-fancy-fabric-traditional-saree-342517.html",
+      "price": "LKR21,320.31                    \n                    \n                      LKR26,650.39                    \n                  \n                                            \n                            \n                              \n                                20% off",
+      "price_numeric": 21,
+      "currency": null,
+      "image": null,
+      "description": null,
+      "source": "sareeka.com",
+      "source_url": "https://www.sareeka.com",
+      "platform": "custom",
+      "vendor": null,
+      "tags": [],
+      "product_type": null,
+      "available": true,
+      "handle": null
+    },
+    {
+      "title": "Black Fancy Fabric Classic Saree with Embroidered Work",
+      "url": "https://www.sareeka.com/black-fancy-fabric-classic-saree-with-embroidered-work-for-women-342520.html",
+      "price": "LKR21,320.31                    \n                    \n                      LKR26,650.39                    \n                  \n                                            \n                            \n                              \n                                20% off",
+      "price_numeric": 21,
+      "currency": null,
+      "image": null,
+      "description": null,
+      "source": "sareeka.com",
+      "source_url": "https://www.sareeka.com",
+      "platform": "custom",
+      "vendor": null,
+      "tags": [],
+      "product_type": null,
+      "available": true,
+      "handle": null
+    }
+  ]
+}

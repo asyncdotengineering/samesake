@@ -1,0 +1,127 @@
+---
+title: Build a search experience
+description: You have an idea for a shopping experience where people search by what they mean, not the exact product name. Here is how to think about it and build it with samesake — start to finish, in plain language.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+So you have an idea. Someone lands on your store and types *"something light for a beach wedding under 15,000"* — or pastes a screenshot of an outfit they liked — and they want the right things back. Not a "no results" page because they didn't type the exact product title.
+
+Let's build that. We'll go slowly, and by the end you'll have a working search you can poke at.
+
+## First, what is search actually doing?
+
+Strip away the jargon. Search has one job: someone gives you words (or a picture), and you hand back the products most likely to be what they meant, best ones first.
+
+The hard part is that "most likely to be what they meant" is doing a lot of work. Think about how *you* would do it by hand if a friend asked for "a light beach-wedding outfit under 15k":
+
+1. You'd throw out anything over 15,000. That's not a preference — it's a hard line.
+2. You'd throw out anything sold out. No point showing it.
+3. Among what's left, you'd lean toward things that *feel* right — airy fabrics, summer colours, dressy-but-not-stiff — even if the word "beach" isn't in the title.
+
+Notice you did three different kinds of thinking there. Two of them are strict and yes/no (price, availability). One of them is fuzzy and about meaning ("feels like a beach wedding"). Good search keeps these separate, because they fail differently. If you blur them together, "under 15,000" quietly becomes "kind of cheap-ish," and now you've shown someone a 40,000 dress. That erodes trust fast.
+
+This is the whole idea behind samesake: **the strict things stay strict, the fuzzy things stay fuzzy, and you decide how much each one matters.**
+
+## The three signals, concretely
+
+Here's the same idea in the three signals samesake combines:
+
+- **Keywords** — the literal words match the product text. Fast, exact, and dumb in a useful way. "linen shirt" finds products with "linen" and "shirt".
+- **Meaning** — you turn the query and each product into a list of numbers (an *embedding*) such that similar *meanings* end up close together. Now "beach wedding outfit" can find a "breezy ivory linen dress" even with no shared words. You don't compute these numbers yourself — you hand samesake a function that calls a model (Gemini, OpenAI, a local one, whatever you like).
+- **Filters** — the strict yes/no lines. Price ≤ 15,000. In stock. These get pushed straight into the database as real conditions. They are never "mostly."
+
+samesake runs all three and merges the rankings into one list. The fuzzy signals argue about *order*; the strict filters decide *who's even allowed in the room*.
+
+<Aside type="note">
+You don't have to use all three. A keyword-only setup is a fine place to start and needs no model at all. Add meaning and images when you want them.
+</Aside>
+
+## You describe your catalog in TypeScript
+
+Most search tools make you wrangle a separate service with its own dashboard and config language. samesake is different: you write a plain TypeScript file that says *what your products are* and *how you want them searched*, and it builds the database tables and queries for you.
+
+Here's a small one. Read it like a sentence — "products have a title we can search, a brand and price we can filter on, and we search them with keywords plus meaning":
+
+```ts title="catalog.ts"
+import { collection, f, Channels } from "@samesake/core";
+
+export const products = collection("products", {
+  fields: {
+    title: f.text({ searchable: true }),
+    brand: f.text({ filterable: true }),
+    price: f.number({ filterable: true, budget: true }),
+    color: f.text({ filterable: true }),
+    available: f.boolean({ filterable: true }),
+  },
+  embeddings: {
+    // "meaning" vectors, built from this text, using a model you supply below
+    doc: { source: "$title $brand $color", model: "gemini-embedding-2", dim: 1536 },
+  },
+  search: {
+    channels: [
+      Channels.fts({ fields: ["title", "brand", "color"], weight: 1 }), // keywords
+      Channels.cosine({ embedding: "doc", weight: 1 }),                  // meaning
+    ],
+    combiner: "rrf", // merge the two rankings fairly
+  },
+});
+```
+
+That's the whole mental model: `fields` are your columns, `searchable`/`filterable` say what each one is *for*, `channels` are the signals you want, and `budget: true` marks the field that "under 15,000" should clamp.
+
+## Wire it up and put data in
+
+You create one `matcher` — that's the thing that holds your database connection and your embedding function — then apply your catalog, push some products, and index them.
+
+```ts title="search.ts"
+import { createMatcher } from "@samesake/server";
+import { products } from "./catalog.ts";
+
+const matcher = createMatcher({
+  databaseUrl: process.env.DATABASE_URL!,
+  apiKey: process.env.API_KEY!,
+  // your embedding function — call any model you like, return the vector
+  embed: async ({ text, dim }) => myEmbed(text, dim),
+});
+
+await matcher.apply("shop", { entities: [], collections: [products] });
+
+await matcher.pushDocuments("shop", "products", [
+  { id: "1", data: { title: "ivory linen slip dress", brand: "atelier", price: 12900, color: "ivory", available: true } },
+  { id: "2", data: { title: "black sequin party dress", brand: "luxe", price: 28000, color: "black", available: true } },
+]);
+
+await matcher.index("shop", "products"); // computes the "meaning" vectors and builds the index
+```
+
+`apply` builds the tables. `pushDocuments` loads rows. `index` is the step that actually computes the embeddings and makes everything searchable. If you only used keywords, indexing is nearly instant; if you used meaning, this is where the model calls happen.
+
+## Now search like your shopper would talk
+
+```ts title="search.ts"
+const hits = await matcher.search("shop", "products", {
+  q: "light dress for a beach wedding under 15000",
+  filters: { available: true },
+  limit: 10,
+});
+```
+
+The ivory linen dress comes back; the 28,000 sequin one does not — not because it's "less relevant," but because the budget was a hard line and it crossed it. That's the behaviour you wanted from the very first paragraph.
+
+Want to see *why* something ranked where it did? Ask for the explanation:
+
+```ts
+const explained = await matcher.searchExplain("shop", "products", { q: "beach wedding dress" });
+// per-result: which signals fired, the rank from each, and the merged score
+```
+
+## What you just built, and where to go
+
+You described a catalog in one file, loaded products, and ran a search that respects budgets and availability while still understanding vague, human phrasing. That's the core loop. Everything else is turning knobs on it:
+
+- **Add images.** Give a product an image URL and an image embedding, and a shopper can search by a screenshot. Same three-signal idea, one more signal.
+- **Tune the mix at query time.** Pass `weights` to dial visual vs intent vs price up or down for a given query — no reindexing.
+- **Connect a real store.** If your catalog already lives somewhere, wire it: [MedusaJS](/integrations/medusajs/), [headless Shopify](/integrations/shopify/), [headless WooCommerce](/integrations/woocommerce/).
+
+When you're ready for the precise, no-narration version, the [Quickstart](/start/quickstart/) does the same thing in fifteen minutes and needs no model at all.

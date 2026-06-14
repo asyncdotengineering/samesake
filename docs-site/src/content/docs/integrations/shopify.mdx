@@ -1,0 +1,115 @@
+---
+title: Headless Shopify
+description: Index a Shopify catalog into samesake with an Admin GraphQL bulk operation, then keep it current with product webhooks — full pull once, low-latency deltas, reconciliation backstop.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+This connects a **headless Shopify** store to samesake: one bulk export for the initial index, product webhooks for deltas. API version pinned to `2026-04` (Shopify ships a new stable quarterly — pin, don't use `unstable`).
+
+## 1. Map the Shopify product to a collection
+
+Storefront/Admin GraphQL expose `title`, `description`, `handle`, `vendor`, `productType`, `tags`, `variants` (`price`, `sku`, `availableForSale`), `images`, and `priceRange`.
+
+```ts title="catalog.ts"
+import { collection, f, Channels } from "@samesake/core";
+
+export const products = collection("products", {
+  fields: {
+    title: f.text({ searchable: true }),
+    description: f.text({ searchable: true }),
+    handle: f.text({ filterable: true }),
+    vendor: f.text({ filterable: true }),
+    product_type: f.text({ filterable: true }),
+    price: f.number({ filterable: true, budget: true }),
+    available: f.boolean({ filterable: true }),
+  },
+  embeddings: { doc: { source: "$title $description $product_type $vendor", model: "your-model", dim: 1536 } },
+  search: {
+    channels: [
+      Channels.fts({ fields: ["title", "description", "product_type", "vendor"], weight: 1 }),
+      Channels.cosine({ embedding: "doc", weight: 1 }),
+    ],
+    combiner: "rrf",
+  },
+});
+```
+
+## 2. Initial index — Admin GraphQL bulk operation
+
+For the full catalog, use a **bulk operation**, not paginated queries: one async job returns the whole catalog as a single streamable JSONL file, exempt from per-query rate limits and the 250-item page ceiling. Source: [bulk operation queries](https://shopify.dev/docs/api/usage/bulk-operations/queries).
+
+<Steps>
+
+1. Kick it off (`X-Shopify-Access-Token` from a custom app with `read_products`):
+
+   ```graphql
+   mutation {
+     bulkOperationRunQuery(query: """
+       { products { edges { node {
+         id title handle bodyHtml vendor productType tags
+         variants { edges { node { sku price inventoryQuantity } } }
+       } } } }
+     """) { bulkOperation { id status } userErrors { message } }
+   }
+   ```
+
+2. Poll `bulkOperation(id:)` until `status == COMPLETED`, then download the JSONL from its `url`.
+
+3. Reassemble: nested connections (variants, images) are separate lines carrying `__parentId`. Group them onto the parent, map to docs, and `pushDocuments` in batches, then `index`.
+
+   ```ts
+   // for each reassembled product p:
+   const doc = { id: p.id, data: {
+     title: p.title, description: stripHtml(p.bodyHtml), handle: p.handle,
+     vendor: p.vendor, product_type: p.productType,
+     price: Number(p.variants?.[0]?.price ?? 0),
+     available: p.variants?.some((v) => v.inventoryQuantity > 0) ?? true,
+   } };
+   await matcher.pushDocuments("shop", "products", batch);
+   await matcher.index("shop", "products");
+   ```
+
+</Steps>
+
+<Aside type="note">
+The public `/products.json` endpoint needs no token but only exposes published products, has no cursor pagination or metafields, and is undocumented/throttled. Fine for a spot-check, not for a real sync.
+</Aside>
+
+## 3. Keep in sync — product webhooks
+
+Subscribe to `products/create`, `products/update`, `products/delete`. App-config TOML (auto-syncs in dev):
+
+```toml
+[[webhooks.subscriptions]]
+topics = ["products/create", "products/update", "products/delete"]
+uri = "https://your-app.example.com/webhooks/shopify"
+```
+
+Verify the HMAC over the **raw** body, ACK `200` within 5 seconds, then process async. Source: [deliver webhooks through HTTPS](https://shopify.dev/docs/apps/build/webhooks/subscribe/https).
+
+```ts title="webhooks/shopify.ts"
+import crypto from "node:crypto";
+
+export function verify(rawBody: Buffer, hmacHeader: string, secret: string) {
+  const digest = crypto.createHmac("sha256", secret).update(rawBody).digest("base64");
+  return crypto.timingSafeEqual(Buffer.from(digest, "base64"), Buffer.from(hmacHeader, "base64"));
+}
+
+// after verify + res.status(200):
+const topic = req.get("X-Shopify-Topic");
+const product = JSON.parse(rawBody.toString("utf8"));
+if (topic === "products/delete") await matcher.removeDocuments("shop", "products", [String(product.id)]);
+else { await matcher.pushDocuments("shop", "products", [toDoc(product)]); await matcher.index("shop", "products"); }
+```
+
+Webhooks are unordered and may be duplicated — dedupe on `X-Shopify-Webhook-Id` and keep writes idempotent (upsert/remove by id).
+
+## 4. Recommended shape
+
+1. **Custom app** with `read_products`; capture the Admin token + app client secret (the secret signs webhooks).
+2. **Initial index:** one Admin GraphQL bulk operation → stream JSONL → batch `pushDocuments` → `index`.
+3. **Deltas:** `products/create|update|delete` webhooks → verify HMAC → push/index or remove.
+4. **Backstop:** periodic reconciliation with a bulk query filtered by `updated_at:>{lastSync}` to catch missed events. `handle` is your stable join key back to the storefront route.
+
+Auth summary: **Storefront access token** (buyer-facing, browser-safe) vs **Admin access token** (full read, bulk ops, webhook registration). Product sync needs Admin `read_products`.

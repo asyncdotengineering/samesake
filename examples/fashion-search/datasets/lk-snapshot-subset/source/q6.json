@@ -1,0 +1,62 @@
+{
+  "query": "something comfortable for a beach wedding",
+  "country": "LK",
+  "expansions": [
+    "wedding guest attire",
+    "beach wedding outfit",
+    "summer formal dress"
+  ],
+  "results": [
+    {
+      "title": "Rainbow Bliss Beach Strap Dress",
+      "url": "https://kiaandkel.com/products/rainbow-bliss-beach-strap-dress?_pos=4&_sid=c161ea712&_ss=r",
+      "price": "990.00",
+      "price_numeric": 990,
+      "currency": null,
+      "image": "https://kiaandkel.com/cdn/shop/files/5_36aa4bc1-d405-48e8-9cea-196ae3240a34.jpg?v=1778174372&width=800",
+      "description": null,
+      "source": "kiaandkel.com",
+      "source_url": "https://kiaandkel.com",
+      "platform": "shopify",
+      "vendor": null,
+      "tags": [],
+      "product_type": null,
+      "available": true,
+      "handle": "/products/rainbow-bliss-beach-strap-dress?_pos=4&_sid=c161ea712&_ss=r"
+    },
+    {
+      "title": "Festive Forest Beach Strap Dress",
+      "url": "https://kiaandkel.com/products/festive-forest-beach-strap-dress?_pos=7&_sid=c161ea712&_ss=r",
+      "price": "990.00",
+      "price_numeric": 990,
+      "currency": null,
+      "image": "https://kiaandkel.com/cdn/shop/files/2_7da1ca69-0a0b-4f9f-b002-15d9b27d6ce6.jpg?v=1778174368&width=800",
+      "description": null,
+      "source": "kiaandkel.com",
+      "source_url": "https://kiaandkel.com",
+      "platform": "shopify",
+      "vendor": null,
+      "tags": [],
+      "product_type": null,
+      "available": true,
+      "handle": "/products/festive-forest-beach-strap-dress?_pos=7&_sid=c161ea712&_ss=r"
+    },
+    {
+      "title": "Dino Unicorn Rainbow Beach Strap Dress",
+      "url": "https://kiaandkel.com/products/dino-unicorn-rainbow-beach-strap-dress?_pos=10&_sid=c161ea712&_ss=r",
+      "price": "990.00",
+      "price_numeric": 990,
+      "currency": null,
+      "image": "https://kiaandkel.com/cdn/shop/files/7_a531c158-c8ff-4d2d-8ddd-9ac9d53424d1.jpg?v=1778174374&width=800",
+      "description": null,
+      "source": "kiaandkel.com",
+      "source_url": "https://kiaandkel.com",
+      "platform": "shopify",
+      "vendor": null,
+      "tags": [],
+      "product_type": null,
+      "available": true,
+      "handle": "/products/dino-unicorn-rainbow-beach-strap-dress?_pos=10&_sid=c161ea712&_ss=r"
+    }
+  ]
+}

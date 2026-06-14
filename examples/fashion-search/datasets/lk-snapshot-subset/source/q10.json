@@ -1,0 +1,62 @@
+{
+  "query": "gym leggings women",
+  "country": "LK",
+  "expansions": [
+    "women's sport wear",
+    "athleisure pants",
+    "fitness tights"
+  ],
+  "results": [
+    {
+      "title": "Women’s High-Waisted Color Block Capri Leggings | Cropped Athletic Yoga Pants",
+      "url": "https://trendy.lk/product/womens-high-waisted-color-block-capri-leggings-cropped-athletic-yoga-pants/",
+      "price": null,
+      "price_numeric": null,
+      "currency": null,
+      "image": null,
+      "description": "Move with confidence in our Women’s High-Waisted Color Block Capri Leggings . Designed with a flattering high-rise waistband and bold, geometric panels, these cropped yoga pants combine a sculpted fit with breathable, four-way stretch fabric. Whether you&#8217;re hitting the mat or the pavement, ...",
+      "source": "trendy.lk",
+      "source_url": "https://trendy.lk",
+      "platform": "woocommerce",
+      "vendor": null,
+      "tags": [],
+      "product_type": null,
+      "available": true,
+      "handle": null
+    },
+    {
+      "title": "Sky Blue Knee Leggings &#8211; B1 Aesthetics",
+      "url": "https://b1aesthetics.com/product/b1-sky-blue-knee-length-leggings/",
+      "price": null,
+      "price_numeric": null,
+      "currency": null,
+      "image": null,
+      "description": "&#x2705; Features &amp; Specifications Fabric Composition: High-performance Poly-spandex with 4-way stretch. Color: Sky Blue (Vibrant, refreshing, and trendy). Fit Type: Tight Fit / Compression fit for muscle support. Length: 3/4 Knee Length – optimized for cooling and mobility. Waistband: Extra-...",
+      "source": "b1aesthetics.com",
+      "source_url": "https://b1aesthetics.com",
+      "platform": "woocommerce",
+      "vendor": null,
+      "tags": [],
+      "product_type": null,
+      "available": true,
+      "handle": null
+    },
+    {
+      "title": "RUTHLESS LIFTING",
+      "url": "https://spd-clothing.com/products/ruthless-lifting-1?_pos=3&_sid=7fdf2087e&_ss=r",
+      "price": "6700.00",
+      "price_numeric": 6700,
+      "currency": null,
+      "image": "https://spd-clothing.com/cdn/shop/files/Artboard_1_4.png?v=1772603873&width=800",
+      "description": null,
+      "source": "spd-clothing.com",
+      "source_url": "https://spd-clothing.com",
+      "platform": "shopify",
+      "vendor": null,
+      "tags": [],
+      "product_type": null,
+      "available": true,
+      "handle": "/products/ruthless-lifting-1?_pos=3&_sid=7fdf2087e&_ss=r"
+    }
+  ]
+}

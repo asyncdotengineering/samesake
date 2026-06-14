@@ -1,0 +1,143 @@
+---
+title: MedusaJS
+description: Sync a Medusa v2 product catalog into samesake and serve hybrid search from a custom store route — bulk index once, then keep in sync with subscribers.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+This wires **Medusa v2** (`@medusajs/framework`) to samesake: pull the catalog once, keep it current with event subscribers, and expose a `/store/products/search` route. The official `medusajs/examples` **Algolia integration** is the closest template — the shape below mirrors it, swapping the Algolia client for samesake.
+
+<Aside type="caution">
+This targets **Medusa v2**. v1 used `@medusajs/medusa` service imports and class-based subscribers — a different architecture. If you see those, you're on v1 docs.
+</Aside>
+
+## 1. Map the Medusa product to a samesake collection
+
+Medusa's `Product` gives you `title`, `description`, `handle`, `status`, `thumbnail`, `tags`, `categories`, `collection`, `type`, and `variants` (with `sku` and, via the Pricing module, `calculated_price`). Declare a collection that mirrors it:
+
+```ts title="search/catalog.ts"
+import { collection, f, Channels } from "@samesake/core";
+
+export const products = collection("products", {
+  fields: {
+    title: f.text({ searchable: true }),
+    description: f.text({ searchable: true }),
+    handle: f.text({ filterable: true }),
+    category: f.text({ filterable: true }),
+    collection: f.text({ filterable: true }),
+    price: f.number({ filterable: true, budget: true }),
+    available: f.boolean({ filterable: true }),
+  },
+  embeddings: { doc: { source: "$title $description $category", model: "your-model", dim: 1536 } },
+  search: {
+    channels: [
+      Channels.fts({ fields: ["title", "description", "category"], weight: 1 }),
+      Channels.cosine({ embedding: "doc", weight: 1 }),
+    ],
+    combiner: "rrf",
+  },
+});
+```
+
+A small mapper turns a Medusa product into a samesake document. **In v2 there is no inline `variant.prices`** — read `variants.calculated_price` with a pricing context (region + currency):
+
+```ts title="search/to-doc.ts"
+export function toDoc(p: any) {
+  const price = p.variants?.[0]?.calculated_price?.calculated_amount ?? null;
+  return {
+    id: p.id,
+    data: {
+      title: p.title,
+      description: p.description ?? "",
+      handle: p.handle,
+      category: p.categories?.[0]?.name ?? "",
+      collection: p.collection?.title ?? "",
+      price,
+      available: p.status === "published",
+    },
+  };
+}
+```
+
+## 2. Bulk index once (in-process Query graph)
+
+Prefer Medusa's internal `query.graph` over HTTP for same-process sync. Page until you've covered `metadata.count`. Source: [Medusa price-aware query guide](https://docs.medusajs.com/resources/commerce-modules/product/guides/price).
+
+```ts title="src/workflows/index-products.ts (sketch)"
+import { QueryContext } from "@medusajs/framework/utils";
+
+export async function bulkIndex(container, matcher) {
+  const query = container.resolve("query");
+  let skip = 0;
+  for (;;) {
+    const { data, metadata } = await query.graph({
+      entity: "product",
+      fields: ["id","title","description","handle","status","tags.value",
+        "categories.name","collection.title","variants.id","variants.sku","variants.calculated_price.*"],
+      filters: { status: "published" },
+      pagination: { take: 100, skip },
+      context: { variants: { calculated_price: QueryContext({ region_id: process.env.REGION_ID, currency_code: "usd" }) } },
+    });
+    if (!data.length) break;
+    await matcher.pushDocuments("store", "products", data.map(toDoc));
+    skip += 100;
+    if (skip >= (metadata?.count ?? 0)) break;
+  }
+  await matcher.index("store", "products");
+}
+```
+
+## 3. Keep in sync (subscribers)
+
+v2 subscribers live in `src/subscribers/` and export a default handler plus a `config`. Product events carry `{ id }`. Subscribe to create/update (re-index) and delete (remove). Source: [Events & subscribers](https://docs.medusajs.com/learn/fundamentals/events-and-subscribers), [events reference](https://docs.medusajs.com/resources/references/events).
+
+```ts title="src/subscribers/samesake-sync.ts"
+import type { SubscriberArgs, SubscriberConfig } from "@medusajs/framework";
+
+export default async function handler({ event: { data }, container }: SubscriberArgs<{ id: string }>) {
+  const query = container.resolve("query");
+  const matcher = container.resolve("samesake"); // your module wrapping createMatcher
+  const { data: [p] } = await query.graph({
+    entity: "product",
+    fields: ["id","title","description","handle","status","categories.name","collection.title","variants.calculated_price.*"],
+    filters: { id: data.id },
+  });
+  if (p?.status === "published") {
+    await matcher.pushDocuments("store", "products", [toDoc(p)]);
+    await matcher.index("store", "products");
+  } else {
+    await matcher.removeDocuments("store", "products", [data.id]);
+  }
+}
+
+export const config: SubscriberConfig = { event: ["product.created", "product.updated"] };
+```
+
+A second subscriber on `product.deleted` calls `matcher.removeDocuments(...)`.
+
+<Aside type="note">
+The default in-memory Local Event Bus is dev-only. Use the **Redis Event Bus** module in production so events survive restarts and retry.
+</Aside>
+
+## 4. A search route
+
+File-based routing: `src/api/store/products/search/route.ts` → `POST /store/products/search`. Resolve your samesake module and proxy the query (the client never holds search creds). Source: [API routes](https://docs.medusajs.com/learn/fundamentals/api-routes).
+
+```ts title="src/api/store/products/search/route.ts"
+import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
+
+export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  const matcher = req.scope.resolve("samesake");
+  const { q, filters, limit } = req.body as any;
+  res.json(await matcher.search("store", "products", { q, filters, limit: limit ?? 20 }));
+}
+```
+
+Store routes require an `x-publishable-api-key`. For the Admin API during bulk sync, use a **Secret API key** as HTTP Basic (in v2 the key is the username, no base64).
+
+## Recommended shape
+
+1. Custom **samesake module** (`src/modules/samesake`) wrapping `createMatcher`.
+2. **Bulk index** via the Query graph on first boot / a one-off admin route.
+3. **Subscribers** for `product.created|updated|deleted` → push/index or remove.
+4. **`/store/products/search`** proxying to `matcher.search`.

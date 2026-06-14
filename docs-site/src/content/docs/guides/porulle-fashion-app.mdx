@@ -1,0 +1,230 @@
+---
+title: Fashion app with Porulle + Next.js
+description: Build a single Next.js app where Porulle is the commerce backend and samesake is search — one process, one database, a real Sri-Lankan apparel catalog. Includes the run-it-yourself steps and the same-DB-vs-separate design answer.
+---
+
+import { Steps, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+This builds the [`apps/playground`](https://github.com/asyncdotengineering/samesake/tree/main/apps/playground) example: one Next.js app that runs **Porulle** (headless commerce) and **samesake** (search) together, over a real 30-product Sri-Lankan fashion catalog, in a single process against a single Postgres database.
+
+<Aside type="tip" title="Live demo">
+Running on Vercel: **[playground-octalpixels-projects.vercel.app](https://playground-octalpixels-projects.vercel.app)** — browse the catalog and try a search like &ldquo;linen shirt for men&rdquo; or &ldquo;denim jacket&rdquo;. Serverless functions hit Neon (pooled) + Gemini; the catalog is the 30 products seeded into Porulle.
+</Aside>
+
+```
+Next.js (one process)
+├── /api/[[...route]]   →  Porulle Hono app  (catalog, pricing, inventory, auth)
+├── /api/search         →  samesake.search   (NLQ-free hybrid: FTS + cosine ANN)
+└── /                   →  minimalist search UI
+        │
+        ▼
+  one Postgres database
+  ├── public.*            Porulle commerce tables
+  └── samesake_*, project_playground.*   samesake (namespaced)
+```
+
+<Aside type="caution" title="Porulle 0.1.0 is alpha — two install workarounds">
+While building this we hit (and filed) packaging bugs in `@porulle/*@0.1.0`. Until they're republished, an external install needs two workarounds, both shown below:
+- adapters declare `@porulle/core: "workspace:*"` ([porulle#24](https://github.com/asyncdotengineering/porulle/issues/24)) → pin core with a root `overrides`;
+- `@porulle/core` imports `@better-auth/api-key` without declaring it ([porulle#25](https://github.com/asyncdotengineering/porulle/issues/25)) → add it directly.
+</Aside>
+
+## 1. One database, or two? (the design answer)
+
+You can run samesake and your commerce backend in **one Postgres database**. We verified it: in the playground DB, Porulle owns the `public` schema (`sellable_entities`, `prices`, …) while samesake namespaces itself — six `samesake_*` system tables plus a `project_<slug>` schema for each project's search tables. **No name collisions.** Separate databases also work and give stronger blast-radius isolation; pick based on ops preference, not necessity. samesake never writes to your commerce tables — it only reads the catalog and maintains its own.
+
+The playground uses a dedicated database (`createdb`-style isolation) so the demo is reproducible and droppable.
+
+## 2. Scaffold + dependencies
+
+```bash
+bunx create-next-app@latest apps/playground --ts --app --no-tailwind --no-src-dir --skip-install --yes
+```
+
+```jsonc
+// apps/playground/package.json (deps)
+"@porulle/core": "^0.1.0",
+"@porulle/adapter-postgres": "^0.1.0",
+"@porulle/adapter-local-storage": "^0.1.0",
+"@samesake/core": "...",
+"@samesake/server": "...",
+"better-auth": "1.6.18",
+"@better-auth/api-key": "1.6.18",   // workaround for porulle#25
+"hono": "^4.12.0", "drizzle-orm": "^0.45.1", "postgres": "^3.4.0", "zod": "^4.0.0"
+```
+
+```jsonc
+// root package.json — workaround for porulle#24
+"overrides": { "@porulle/core": "0.1.0" }
+```
+
+```ts title="next.config.ts"
+const nextConfig = {
+  serverExternalPackages: ["@porulle/core", "@porulle/adapter-postgres", "@porulle/adapter-local-storage",
+    "@samesake/core", "@samesake/server", "drizzle-orm", "postgres", "better-auth"],
+};
+```
+
+## 3. Porulle commerce config + schema
+
+```ts title="commerce.config.ts"
+import { consoleEmailAdapter, defineConfig } from "@porulle/core";
+import { postgresAdapter } from "@porulle/adapter-postgres";
+import { localStorageAdapter } from "@porulle/adapter-local-storage";
+
+export default defineConfig({
+  storeName: "Samesake Fashion Playground",
+  database: { provider: "postgresql" },
+  databaseAdapter: postgresAdapter({ connectionString: process.env.DATABASE_URL! }),
+  storage: localStorageAdapter({ basePath: "./.data/media", baseUrl: "http://localhost:3000/assets" }),
+  email: consoleEmailAdapter(),
+  auth: { requireEmailVerification: false, apiKeys: { enabled: true }, trustedOrigins: ["http://localhost:3000"],
+    roles: { owner: { permissions: ["*:*"] }, admin: { permissions: ["*:*"] } } },
+  entities: {
+    product: {
+      fields: [
+        { name: "material", type: "text" }, { name: "color", type: "text" },
+        { name: "category", type: "text" }, { name: "imageUrl", type: "text" },
+      ],
+      variants: { enabled: true, optionTypes: ["size", "color"] },
+      fulfillment: "physical",
+    },
+  },
+});
+```
+
+Porulle ships its Drizzle schema as a re-export barrel, so one entry covers every table:
+
+```ts title="drizzle.config.ts"
+export default { dialect: "postgresql",
+  schema: ["./node_modules/@porulle/core/dist/kernel/database/schema.js"],
+  dbCredentials: { url: process.env.DATABASE_URL! } };
+```
+
+```bash
+psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;"
+bun run db:push   # bunx drizzle-kit push
+```
+
+## 4. Seed the catalog (in-process kernel)
+
+Porulle's services are callable in-process via `createKernel`. Each call returns a `Result` — check `.ok`. (The README's `/api/admin/entities` SDK example is wrong; the real surface is `/api/catalog/*` — [porulle#29](https://github.com/asyncdotengineering/porulle/issues/29).)
+
+```ts title="scripts/seed.ts"
+import { createKernel, ensureDefaultOrg, DEFAULT_ORG_ID, type Actor } from "@porulle/core";
+import config from "../commerce.config.ts";
+
+const kernel = createKernel(await config);
+await ensureDefaultOrg(kernel.database.db, "Samesake Fashion Playground");
+const staff: Actor = { type: "user", userId: "seed", email: "seed@x.dev", name: "Seed",
+  vendorId: null, organizationId: DEFAULT_ORG_ID, role: "owner", permissions: ["*:*"] };
+
+const res = await kernel.services.catalog.create({
+  type: "product", slug: "q3-1",
+  attributes: { title: "Heritage Linen Stripe Short Sleeve Shirt" },
+  metadata: { brand: "AnationZ" },
+  customFields: { material: "linen", color: "blue", category: "shirt", imageUrl: "https://…" },
+}, staff);
+if (!res.ok) throw res.error;
+await kernel.services.pricing.setBasePrice({ entityId: res.value.id, currency: "LKR", amount: 5490 }, staff);
+await kernel.services.catalog.publish(res.value.id, staff);
+```
+
+## 5. samesake collection + sync
+
+samesake reads the Porulle catalog and indexes it. The collection mirrors the synced fields:
+
+```ts title="lib/samesake.ts"
+export const products = collection("products", {
+  fields: {
+    title: f.text({ searchable: true }),
+    brand: f.text({ filterable: true }), category: f.text({ filterable: true }),
+    color: f.text({ filterable: true }), material: f.text({ filterable: true }),
+    price: f.number({ filterable: true, budget: true }), available: f.boolean({ filterable: true }),
+    image_url: f.text(),
+  },
+  embeddings: { doc: { source: "$title $brand $category $color $material", model: "gemini-embedding-2", dim: 1536 } },
+  search: { channels: [Channels.fts({ fields: ["title","brand","category","color","material"], weight: 1 }),
+    Channels.cosine({ embedding: "doc", weight: 1 })], combiner: "rrf" },
+});
+```
+
+The sync reads active products (here straight from Porulle's tables — `GET /api/catalog/entities?status=active&include=attributes,pricing` is the API equivalent), maps them, and indexes:
+
+```ts title="scripts/sync-to-samesake.ts"
+await matcher.migrate();                                  // create samesake_* tables if absent
+await matcher.apply("playground", { entities: [], collections: [products] });
+await matcher.pushDocuments("playground", "products", docs);
+await matcher.index("playground", "products");
+```
+
+## 6. Routes + UI
+
+```ts title="app/api/[[...route]]/route.ts — Porulle, embedded"
+import { handle } from "hono/vercel";
+import { createServer } from "@porulle/core";
+import config from "@/commerce.config";
+export const runtime = "nodejs";
+const { app } = await createServer(await config);
+export const GET = handle(app); export const POST = handle(app); /* PUT/PATCH/DELETE */
+```
+
+```ts title="app/api/search/route.ts — samesake (specific route wins over the catch-all)"
+export const runtime = "nodejs";
+export async function POST(req: Request) {
+  const { q, maxPrice } = await req.json();
+  const filters: Record<string, unknown> = { available: true };
+  if (maxPrice) filters.price = { $lte: Number(maxPrice) };
+  const result = await getMatcher().search("playground", "products", { q, filters, limit: 24 });
+  return Response.json({ hits: result.hits });
+}
+```
+
+A specific route (`/api/search`) takes precedence over the optional catch-all (`/api/[[...route]]`), so samesake owns search while Porulle owns everything else under `/api`.
+
+## 7. Run it
+
+```bash
+bun --env-file=.env scripts/seed.ts            # 30 products into Porulle
+bun --env-file=.env scripts/sync-to-samesake.ts # index into samesake
+bun run dev                                     # http://localhost:3000
+```
+
+Verified end-to-end:
+
+```bash
+curl -s localhost:3000/api/health                                   # {"status":"ok"}  (Porulle)
+curl -s -XPOST localhost:3000/api/search -d '{"q":"linen shirt"}'   # 3 linen shirts
+curl -s -XPOST localhost:3000/api/search -d '{"q":"denim jacket"}'  # denim outerwear
+```
+
+<Aside type="note">
+Each search makes one Gemini embedding call (~0.5–1s) plus the Postgres hybrid query (sub-ms at this size). For a snappier demo, drop the cosine channel for keyword-only, or precompute/cache query embeddings.
+</Aside>
+
+## Deploy to Vercel
+
+The app is a standard Next.js app, so `vercel` deploys it as-is. Two things matter for serverless:
+
+- **Use Neon's pooled connection string** for `DATABASE_URL` (the `-pooler` host) — serverless functions open many short-lived connections.
+- The routes are `runtime = "nodejs"` and build lazily (no DB at build), so the build never needs the database.
+
+```bash
+cd apps/playground
+vercel link --yes --scope <your-scope>
+# production env (pooler host!)
+printf '%s' "$NEON_POOLER_URL" | vercel env add DATABASE_URL production
+printf '%s' "$GEMINI_API_KEY"  | vercel env add GEMINI_API_KEY production
+printf '%s' "$API_KEY"         | vercel env add API_KEY production
+printf '%s' "$BETTER_AUTH_SECRET" | vercel env add BETTER_AUTH_SECRET production
+vercel deploy --prod --yes --scope <your-scope>
+```
+
+Two gotchas worth knowing:
+
+- **`@samesake/*` as `workspace:*` won't resolve in a standalone Vercel build.** Reference the published versions (`"@samesake/core": "^1.1.0"`) — in a Bun workspace this still links the local package locally while Vercel pulls from npm.
+- New Vercel projects ship with **Deployment Protection (Vercel Authentication)** on, so the demo returns "Authentication Required". Turn it off for a public demo (Project → Settings → Deployment Protection, or `PATCH /v9/projects/<id>` with `{"ssoProtection": null}`).
+
+## What this proves
+
+A commerce backend you own (Porulle) and a search layer you own (samesake) compose in **one app, one database**, with the search reading the catalog and never touching the commerce tables. The same pattern applies to [Medusa](/integrations/medusajs/), [Shopify](/integrations/shopify/), and [WooCommerce](/integrations/woocommerce/) — only the catalog-read + sync step changes.

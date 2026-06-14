@@ -1,0 +1,74 @@
+---
+title: Eval from search snapshots
+description: Turn a folder of real search snapshots into a running eval harness — offline keyword baseline first, then the live hybrid engine — and read an honest keyword-vs-hybrid scorecard.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+You can't tune what you don't measure. This guide builds a small product corpus from real search snapshots, runs the `examples/fashion-search` eval harness offline (zero dependencies), then against the live hybrid engine, and reads the scorecard honestly.
+
+```
+raw snapshots  →  subset corpus  →  offline eval (keyword)  →  live ingest  →  live eval (hybrid)
+```
+
+## 1. Build a subset corpus
+
+Each snapshot is `{ query, results[] }` — a search query and the products returned for it upstream. Take a few results from each file → a small `corpus.json` of `Product` + `EvalQuery` records, where each query's `relevant` set is the products taken from its snapshot.
+
+```bash
+cd examples/fashion-search
+LK_SNAPSHOTS_DIR=/path/to/search-snapshots bun build-lk-subset.ts --per 3
+# → 30 products / 10 queries; q7 ("…under 5000") becomes a price-constrained query
+```
+
+The harness data model (validated by `eval.ts`):
+
+```ts
+type Product   = { id, title, brand, category, colors[], material, price, available };
+type EvalQuery = { name, q, filters?, constraints?, relevant: string[] };
+```
+
+## 2. Run offline (no Postgres, no model)
+
+With no live server configured, `eval.ts` runs an in-process keyword search — your baseline.
+
+```bash
+FASHION_DATASET_DIR=datasets/lk-snapshot-subset bun eval.ts
+```
+
+It scores **relevance@3** (does each query surface its own products), **constraint compliance** (do hits respect price/availability), zero-result and relaxation rates, and latency, writing `.samesake/fashion-eval.{json,md}`.
+
+## 3. Go live (real hybrid engine)
+
+Push the same products through the real pipeline — enrich → embed → index — into a dedicated project, then run the same queries through `matcher.search` (NLQ + FTS + cosine ANN).
+
+<Aside type="caution" title="Use a dedicated project">
+A default project can carry an *orphaned* catalog: if a prior ingest's project row was deleted, its schema and tables survive. A clean check must look at the **table row count**, not just the project registry row. Use a fresh project slug for an isolated, deterministic eval.
+</Aside>
+
+## 4. Keyword vs hybrid — read it honestly
+
+On a deliberately tiny 30-product corpus, this is a real result (not spin):
+
+| metric | offline keyword | live hybrid |
+|---|---:|---:|
+| relevance@3 (mean) | 0.70 | 0.63 |
+| constraint compliance | 1.00 | 1.00 |
+| relaxation rate | 0.00 | 0.10 |
+
+- **Where hybrid wins:** the price query "modest dress for work under 5000" went 0.00 → 0.33 — NLQ parsed the budget into a `price ≤ 5000` filter and relaxed soft filters to avoid a dead-end.
+- **Where it regresses:** broad/use-case queries. With only 30 docs, vector recall pulls cross-category neighbours that score as misses against a narrow `relevant` set.
+
+The takeaway: **corpus size matters.** Embedding recall needs a catalog big enough to disambiguate; at 30 docs you mostly measure keyword overlap plus constraint handling. Scale up (`--per 20`, or the full set) — the harness, metrics, and commands are identical.
+
+## 5. Benchmark a real catalog
+
+Against a ~5.5k-product catalog with 50 golden queries (label-free: objective + behavioural metrics):
+
+- **zero-result rate: 0** across all 50 queries
+- **budget enforcement:** 4/5 explicit "under N" queries returned **0% over-budget** results in the top 5 — hard filters held. The one miss was an *implicit* "cheap" query (a percentile heuristic that didn't match the stated cap) — an actionable gap, surfaced honestly.
+- **latency:** ~2s/query, dominated by the per-query model calls (NLQ rewrite + query embed); the Postgres hybrid SQL itself is sub-millisecond at this scale.
+
+<Aside type="note">
+Relevance@k needs labels. Without them you can still benchmark the objective signals — constraint compliance, zero-result rate, price-violation, latency — which is often what actually erodes or earns shopper trust.
+</Aside>

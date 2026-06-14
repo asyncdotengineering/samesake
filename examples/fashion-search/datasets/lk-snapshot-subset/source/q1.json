@@ -1,0 +1,82 @@
+{
+  "query": "red dress",
+  "country": "LK",
+  "expansions": [
+    "red evening gown",
+    "short formal dresses",
+    "holiday party wear"
+  ],
+  "results": [
+    {
+      "title": "Red Mirage Shift Dress",
+      "url": "https://www.aviratefashion.com/products/red-mirage-shift-dress",
+      "price": "5280.00",
+      "price_numeric": 5280,
+      "currency": null,
+      "image": "https://cdn.shopify.com/s/files/1/0020/1732/9251/files/CopyofPRO_3097.jpg?v=1774424761",
+      "description": null,
+      "source": "aviratefashion.com",
+      "source_url": "https://www.aviratefashion.com",
+      "platform": "shopify",
+      "vendor": "Avirate",
+      "tags": [
+        "Occasion wear"
+      ],
+      "product_type": null,
+      "available": true,
+      "handle": "red-mirage-shift-dress"
+    },
+    {
+      "title": "RED PUFF SLEEVE MAXI DRESS",
+      "url": "https://hellywild.lk/products/red-puff-sleeve-maxi-dress",
+      "price": "5450.00",
+      "price_numeric": 5450,
+      "currency": null,
+      "image": "https://cdn.shopify.com/s/files/1/0812/8108/9757/files/DSC07499-copy-2.jpg?v=1771412601",
+      "description": null,
+      "source": "hellywild.lk",
+      "source_url": "https://hellywild.lk",
+      "platform": "shopify",
+      "vendor": "My Store",
+      "tags": [],
+      "product_type": null,
+      "available": true,
+      "handle": "red-puff-sleeve-maxi-dress"
+    },
+    {
+      "title": "Cici Dress",
+      "url": "https://www.arienti.lk/products/cici-dress-2",
+      "price": "6200.00",
+      "price_numeric": 6200,
+      "currency": null,
+      "image": "https://cdn.shopify.com/s/files/1/0589/5045/1245/files/267412_CiciDress_Week12Palms_2026_4.jpg?v=1775707723",
+      "description": null,
+      "source": "arienti.lk",
+      "source_url": "https://www.arienti.lk",
+      "platform": "shopify",
+      "vendor": "Palms",
+      "tags": [
+        "Casual",
+        "DRESSES",
+        "DRESSES/JUMPSUIT",
+        "Dresses/Jumpsuits",
+        "New Arrivals",
+        "New Home Page",
+        "Palm",
+        "Palms",
+        "PD",
+        "TEEBAR CORE 2021",
+        "Week 01 Tailored 2020",
+        "Week 12 Palms(2026)",
+        "Week 14 (2022)",
+        "Week 17 (2023)",
+        "Week 36(2022)",
+        "Week 6 (2022)",
+        "Women"
+      ],
+      "product_type": null,
+      "available": true,
+      "handle": "cici-dress-2"
+    }
+  ]
+}

@@ -20,6 +20,10 @@
     "drizzle-kit": "^0.31.10",
     "tsup": "^8.5.1"
   },
+  "//overrides": "Porulle 0.1.0 adapters publish '@porulle/core: workspace:*' (alpha publish bug); pin it to a real version so npm consumers can resolve it.",
+  "overrides": {
+    "@porulle/core": "0.1.0"
+  },
   "peerDependencies": {
     "typescript": "^5"
   }

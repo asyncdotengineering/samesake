@@ -1,0 +1,489 @@
+{
+  "meta": {
+    "source": "LK fashion search snapshots",
+    "perFile": 3,
+    "files": 10
+  },
+  "products": [
+    {
+      "id": "q1-1",
+      "title": "Red Mirage Shift Dress",
+      "brand": "Avirate",
+      "category": "dresses",
+      "colors": [
+        "red"
+      ],
+      "material": "",
+      "price": 5280,
+      "available": true
+    },
+    {
+      "id": "q1-2",
+      "title": "RED PUFF SLEEVE MAXI DRESS",
+      "brand": "My Store",
+      "category": "dresses",
+      "colors": [
+        "red"
+      ],
+      "material": "",
+      "price": 5450,
+      "available": true
+    },
+    {
+      "id": "q1-3",
+      "title": "Cici Dress",
+      "brand": "Palms",
+      "category": "dresses",
+      "colors": [],
+      "material": "",
+      "price": 6200,
+      "available": true
+    },
+    {
+      "id": "q2-1",
+      "title": "Office Muse Blouse",
+      "brand": "aviratefashion.com",
+      "category": "tops",
+      "colors": [],
+      "material": "",
+      "price": 6280,
+      "available": true
+    },
+    {
+      "id": "q2-2",
+      "title": "Alice Bodycon dress",
+      "brand": "aviratefashion.com",
+      "category": "dresses",
+      "colors": [],
+      "material": "",
+      "price": 5980,
+      "available": true
+    },
+    {
+      "id": "q2-3",
+      "title": "Princess Line Dress with Belt",
+      "brand": "Spring & Summer",
+      "category": "dress",
+      "colors": [
+        "black",
+        "white"
+      ],
+      "material": "",
+      "price": 4890,
+      "available": true
+    },
+    {
+      "id": "q3-1",
+      "title": "Heritage Linen Stripe Short Sleeve Shirt - Open Sky",
+      "brand": "AnationZ",
+      "category": "shirt",
+      "colors": [],
+      "material": "cotton",
+      "price": 5490,
+      "available": true
+    },
+    {
+      "id": "q3-2",
+      "title": "Heritage Linen Stripe Short Sleeve Shirt - Pale Horizon",
+      "brand": "AnationZ",
+      "category": "shirt",
+      "colors": [],
+      "material": "cotton",
+      "price": 5490,
+      "available": true
+    },
+    {
+      "id": "q3-3",
+      "title": "Heritage Linen Stripe Short Sleeve Shirt - Raw Canvas",
+      "brand": "AnationZ",
+      "category": "shirt",
+      "colors": [],
+      "material": "cotton",
+      "price": 5490,
+      "available": true
+    },
+    {
+      "id": "q4-1",
+      "title": "Blue Fancy Fabric Embroidered Work Trendy Saree for Ceremonial",
+      "brand": "sareeka.com",
+      "category": "saree",
+      "colors": [
+        "blue"
+      ],
+      "material": "",
+      "price": 21,
+      "available": true
+    },
+    {
+      "id": "q4-2",
+      "title": "Honourable Cream Fancy Fabric Traditional Saree",
+      "brand": "sareeka.com",
+      "category": "saree",
+      "colors": [
+        "cream"
+      ],
+      "material": "",
+      "price": 21,
+      "available": true
+    },
+    {
+      "id": "q4-3",
+      "title": "Black Fancy Fabric Classic Saree with Embroidered Work",
+      "brand": "sareeka.com",
+      "category": "saree",
+      "colors": [
+        "black"
+      ],
+      "material": "",
+      "price": 21,
+      "available": true
+    },
+    {
+      "id": "q5-1",
+      "title": "Denim Jackets",
+      "brand": "Reviz",
+      "category": "outerwear",
+      "colors": [
+        "blue"
+      ],
+      "material": "denim",
+      "price": 5750,
+      "available": true
+    },
+    {
+      "id": "q5-2",
+      "title": "TRF denim jacket",
+      "brand": "Kelly Felder",
+      "category": "outerwear",
+      "colors": [],
+      "material": "denim",
+      "price": 9490,
+      "available": true
+    },
+    {
+      "id": "q5-3",
+      "title": "SQUALO DENIM JACKET",
+      "brand": "SUMMER BOY",
+      "category": "outerwear",
+      "colors": [],
+      "material": "denim",
+      "price": 8450,
+      "available": true
+    },
+    {
+      "id": "q6-1",
+      "title": "Rainbow Bliss Beach Strap Dress",
+      "brand": "kiaandkel.com",
+      "category": "dresses",
+      "colors": [],
+      "material": "",
+      "price": 990,
+      "available": true
+    },
+    {
+      "id": "q6-2",
+      "title": "Festive Forest Beach Strap Dress",
+      "brand": "kiaandkel.com",
+      "category": "dresses",
+      "colors": [],
+      "material": "",
+      "price": 990,
+      "available": true
+    },
+    {
+      "id": "q6-3",
+      "title": "Dino Unicorn Rainbow Beach Strap Dress",
+      "brand": "kiaandkel.com",
+      "category": "dresses",
+      "colors": [],
+      "material": "",
+      "price": 990,
+      "available": true
+    },
+    {
+      "id": "q7-1",
+      "title": "Formal Basic Shirt",
+      "brand": "aviratefashion.com",
+      "category": "dresses",
+      "colors": [],
+      "material": "",
+      "price": 7280,
+      "available": true
+    },
+    {
+      "id": "q7-2",
+      "title": "Alice Bodycon dress",
+      "brand": "aviratefashion.com",
+      "category": "dresses",
+      "colors": [],
+      "material": "",
+      "price": 5980,
+      "available": true
+    },
+    {
+      "id": "q7-3",
+      "title": "Dress & Jumpsuits",
+      "brand": "thecultoriginal.lk",
+      "category": "dresses",
+      "colors": [],
+      "material": "",
+      "price": 0,
+      "available": true
+    },
+    {
+      "id": "q8-1",
+      "title": "STRIPED OVERSIZED SHIRT",
+      "brand": "thecultoriginal.lk",
+      "category": "tops",
+      "colors": [],
+      "material": "",
+      "price": 4250,
+      "available": true
+    },
+    {
+      "id": "q8-2",
+      "title": "EDGE Men's Essentials Embossed Oversized T-Shirt - 53672",
+      "brand": "edgecasual.com",
+      "category": "tops",
+      "colors": [],
+      "material": "",
+      "price": 2790,
+      "available": true
+    },
+    {
+      "id": "q8-3",
+      "title": "STRIPED OVERSIZED SHIRT - BLUE & WHITE STRIPE",
+      "brand": "thecultoriginal.lk",
+      "category": "tops",
+      "colors": [
+        "white",
+        "blue"
+      ],
+      "material": "",
+      "price": 4500,
+      "available": true
+    },
+    {
+      "id": "q9-1",
+      "title": "Cotton Check Long Sleeve Shirt",
+      "brand": "MORA",
+      "category": "tops",
+      "colors": [],
+      "material": "cotton",
+      "price": 5650,
+      "available": true
+    },
+    {
+      "id": "q9-2",
+      "title": "White Blouse with Embroidered Neck",
+      "brand": "Pearl",
+      "category": "tops",
+      "colors": [
+        "white"
+      ],
+      "material": "",
+      "price": 2303,
+      "available": true
+    },
+    {
+      "id": "q9-3",
+      "title": "White Blouse with Embroidered Detail",
+      "brand": "Pearl Collection",
+      "category": "tops",
+      "colors": [
+        "white"
+      ],
+      "material": "",
+      "price": 3790,
+      "available": true
+    },
+    {
+      "id": "q10-1",
+      "title": "Women’s High-Waisted Color Block Capri Leggings | Cropped Athletic Yoga Pants",
+      "brand": "trendy.lk",
+      "category": "other",
+      "colors": [],
+      "material": "",
+      "price": 0,
+      "available": true
+    },
+    {
+      "id": "q10-2",
+      "title": "Sky Blue Knee Leggings &#8211; B1 Aesthetics",
+      "brand": "b1aesthetics.com",
+      "category": "other",
+      "colors": [
+        "blue"
+      ],
+      "material": "",
+      "price": 0,
+      "available": true
+    },
+    {
+      "id": "q10-3",
+      "title": "RUTHLESS LIFTING",
+      "brand": "spd-clothing.com",
+      "category": "other",
+      "colors": [],
+      "material": "",
+      "price": 6700,
+      "available": true
+    }
+  ],
+  "queries": [
+    {
+      "name": "q1",
+      "q": "red dress",
+      "relevant": [
+        "q1-1",
+        "q1-2",
+        "q1-3"
+      ],
+      "filters": {
+        "available": true
+      },
+      "constraints": {
+        "available": true
+      }
+    },
+    {
+      "name": "q2",
+      "q": "ladies office wear",
+      "relevant": [
+        "q2-1",
+        "q2-2",
+        "q2-3"
+      ],
+      "filters": {
+        "available": true
+      },
+      "constraints": {
+        "available": true
+      }
+    },
+    {
+      "name": "q3",
+      "q": "linen shirt men",
+      "relevant": [
+        "q3-1",
+        "q3-2",
+        "q3-3"
+      ],
+      "filters": {
+        "available": true
+      },
+      "constraints": {
+        "available": true
+      }
+    },
+    {
+      "name": "q4",
+      "q": "party saree",
+      "relevant": [
+        "q4-1",
+        "q4-2",
+        "q4-3"
+      ],
+      "filters": {
+        "available": true
+      },
+      "constraints": {
+        "available": true
+      }
+    },
+    {
+      "name": "q5",
+      "q": "denim jacket",
+      "relevant": [
+        "q5-1",
+        "q5-2",
+        "q5-3"
+      ],
+      "filters": {
+        "available": true
+      },
+      "constraints": {
+        "available": true
+      }
+    },
+    {
+      "name": "q6",
+      "q": "something comfortable for a beach wedding",
+      "relevant": [
+        "q6-1",
+        "q6-2",
+        "q6-3"
+      ],
+      "filters": {
+        "available": true
+      },
+      "constraints": {
+        "available": true
+      }
+    },
+    {
+      "name": "q7",
+      "q": "modest dress for work under 5000",
+      "relevant": [
+        "q7-1",
+        "q7-2",
+        "q7-3"
+      ],
+      "filters": {
+        "price": {
+          "$lte": 5000
+        },
+        "available": true
+      },
+      "constraints": {
+        "maxPrice": 5000,
+        "available": true
+      }
+    },
+    {
+      "name": "q8",
+      "q": "oversized streetwear tshirt",
+      "relevant": [
+        "q8-1",
+        "q8-2",
+        "q8-3"
+      ],
+      "filters": {
+        "available": true
+      },
+      "constraints": {
+        "available": true
+      }
+    },
+    {
+      "name": "q9",
+      "q": "white cotton blouse long sleeve",
+      "relevant": [
+        "q9-1",
+        "q9-2",
+        "q9-3"
+      ],
+      "filters": {
+        "available": true
+      },
+      "constraints": {
+        "available": true
+      }
+    },
+    {
+      "name": "q10",
+      "q": "gym leggings women",
+      "relevant": [
+        "q10-1",
+        "q10-2",
+        "q10-3"
+      ],
+      "filters": {
+        "available": true
+      },
+      "constraints": {
+        "available": true
+      }
+    }
+  ]
+}

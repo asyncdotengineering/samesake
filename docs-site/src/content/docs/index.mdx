@@ -1,0 +1,65 @@
+---
+title: samesake
+description: A TypeScript-first search engine compiler for visual commerce. Declare your catalog and retrieval in TypeScript; run a Postgres-backed hybrid search layer inside your app.
+template: splash
+hero:
+  tagline: Search built for shoppers who don't know the product name — screenshots, vague intent, budgets, occasion, and availability. You declare the catalog and retrieval in TypeScript; samesake compiles it into a Postgres-backed search layer you run inside your app.
+  actions:
+    - text: Build a search experience
+      link: /start/build-a-search-experience/
+      icon: right-arrow
+      variant: primary
+    - text: What is samesake
+      link: /start/what-is-samesake/
+      icon: right-arrow
+      variant: minimal
+    - text: GitHub
+      link: https://github.com/asyncdotengineering/samesake
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What it does
+
+<CardGrid>
+  <Card title="Hybrid retrieval, typed">
+    Keyword full-text, vector similarity, and structured filters combine through
+    reciprocal-rank fusion. You declare the channels in TypeScript; the schema and SQL
+    are generated per project at runtime.
+  </Card>
+  <Card title="Hard filters stay hard">
+    "Under 20,000" and "available now" compile to typed constraint predicates pushed
+    into SQL — not soft semantic vibes. Every search carries an auditable constraint trace.
+  </Card>
+  <Card title="Image and intent together">
+    Image similarity, text intent, price, freshness, and availability are separate,
+    query-time-weighted signals. Tune visual vs intent vs price without reindexing.
+  </Card>
+  <Card title="Two containers in production">
+    Postgres (pgvector + pg_trgm) and your app process. Bring your own embedding and
+    generation models. No Redis, no Elasticsearch, no hosted vector DB.
+  </Card>
+</CardGrid>
+
+## Start
+
+<CardGrid>
+  <Card title="New to this?">
+    [Build a search experience](/start/build-a-search-experience/) walks from an idea to a
+    working search, in plain language.
+  </Card>
+  <Card title="Already know what you want?">
+    [Quickstart](/start/quickstart/) — collection to push to index to search in about
+    fifteen minutes, no LLM required.
+  </Card>
+  <Card title="Have a store already?">
+    Wire it up: [MedusaJS](/integrations/medusajs/), [headless Shopify](/integrations/shopify/),
+    or [headless WooCommerce](/integrations/woocommerce/).
+  </Card>
+  <Card title="Want proof?">
+    [Eval from search snapshots](/guides/eval-from-snapshots/) builds a corpus from real
+    catalogs and scores keyword vs hybrid.
+  </Card>
+</CardGrid>

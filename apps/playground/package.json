@@ -1,0 +1,44 @@
+{
+  "name": "playground",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:push": "bunx drizzle-kit push --config drizzle.config.ts",
+    "seed": "bun run scripts/seed.ts",
+    "sync": "bun run scripts/sync-to-samesake.ts"
+  },
+  "dependencies": {
+    "next": "16.2.9",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "@porulle/core": "^0.1.0",
+    "@porulle/adapter-postgres": "^0.1.0",
+    "@porulle/adapter-local-storage": "^0.1.0",
+    "@samesake/core": "^1.1.0",
+    "@samesake/server": "^1.1.0",
+    "better-auth": "1.6.18",
+    "@better-auth/api-key": "1.6.18",
+    "hono": "^4.12.0",
+    "@hono/zod-validator": "^0.8.0",
+    "drizzle-orm": "^0.45.1",
+    "postgres": "^3.4.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^5"
+  },
+  "ignoreScripts": ["sharp", "unrs-resolver"],
+  "trustedDependencies": ["sharp", "unrs-resolver"],
+  "//overrides": "Self-contained so a standalone build (e.g. Vercel/npm) resolves the Porulle adapters' transitive workspace:* core dep. Nested form avoids npm EOVERRIDE with the direct @porulle/core dep. Remove once porulle#24 is fixed.",
+  "overrides": {
+    "@porulle/adapter-postgres": { "@porulle/core": "0.1.0" },
+    "@porulle/adapter-local-storage": { "@porulle/core": "0.1.0" }
+  }
+}

@@ -1,0 +1,101 @@
+/* samesake docs — premium utilitarian minimalism.
+   Warm monochrome, editorial serif headings, geometric sans body, 1px borders, no shadows. */
+
+:root {
+  /* Geometric sans for body/UI (no Inter/Roboto); editorial serif for display; mono for code. */
+  --sl-font: "Instrument Sans", "Helvetica Neue", system-ui, -apple-system, sans-serif;
+  --sl-font-system-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+  --font-editorial: "Newsreader", Georgia, "Times New Roman", serif;
+
+  --sl-content-width: 47rem;
+  --sl-text-5xl: 3.25rem;
+}
+
+/* Light = warm editorial paper (primary look) */
+:root[data-theme="light"] {
+  --sl-color-bg: #fbfbfa;
+  --sl-color-bg-nav: #fbfbfaee;
+  --sl-color-bg-sidebar: #fbfbfa;
+  --sl-color-text: #2f3437;
+  --sl-color-text-accent: #111111;
+  --sl-color-white: #111111;
+  --sl-color-gray-1: #1a1a1a;
+  --sl-color-gray-2: #2f3437;
+  --sl-color-gray-3: #787774;
+  --sl-color-gray-4: #9b9a97;
+  --sl-color-gray-5: #eaeaea;
+  --sl-color-gray-6: #f2f1ee;
+  --sl-color-gray-7: #f7f6f3;
+  --sl-color-hairline: #eaeaea;
+  /* Monochrome accent ramp — links/buttons read near-black, never colored. */
+  --sl-color-accent-low: #e8e8e6;
+  --sl-color-accent: #111111;
+  --sl-color-accent-high: #000000;
+}
+
+/* Dark = charcoal, same restraint */
+:root[data-theme="dark"] {
+  --sl-color-bg: #0e0e0d;
+  --sl-color-bg-nav: #0e0e0dcc;
+  --sl-color-bg-sidebar: #0e0e0d;
+  --sl-color-text: #d8d7d3;
+  --sl-color-text-accent: #ffffff;
+  --sl-color-gray-5: #2a2a28;
+  --sl-color-gray-6: #1a1a18;
+  --sl-color-hairline: #2a2a28;
+  --sl-color-accent-low: #2a2a28;
+  --sl-color-accent: #f2f1ee;
+  --sl-color-accent-high: #ffffff;
+}
+
+/* Editorial display type for headings + hero */
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.hero h1,
+h1#_top {
+  font-family: var(--font-editorial);
+  letter-spacing: -0.025em;
+  line-height: 1.12;
+  font-weight: 500;
+}
+
+body { line-height: 1.6; }
+
+/* Flat surfaces: 1px hairlines, crisp radius, no heavy shadows */
+.card,
+.sl-markdown-content :is(table, pre) {
+  border: 1px solid var(--sl-color-hairline) !important;
+  border-radius: 8px;
+  box-shadow: none !important;
+}
+
+/* Hero actions: solid charcoal primary, flat */
+.hero .actions a[data-variant="primary"] {
+  background: var(--sl-color-accent);
+  color: var(--sl-color-bg);
+  border-radius: 5px;
+  border: 1px solid var(--sl-color-accent);
+  transition: transform 0.15s ease;
+}
+.hero .actions a[data-variant="primary"]:active { transform: scale(0.98); }
+.hero .actions a[data-variant="minimal"] { border-radius: 5px; }
+
+/* Card grid: bento, generous padding, hairline borders, ultra-diffuse hover */
+.card {
+  background: var(--sl-color-bg);
+  padding: 1.75rem;
+  transition: box-shadow 0.2s ease;
+}
+.card:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important; }
+
+/* Inline code as a quiet pale chip */
+.sl-markdown-content code:not(pre code) {
+  background: var(--sl-color-gray-7);
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 4px;
+  font-size: 0.85em;
+  padding: 0.1em 0.35em;
+}
+
+/* Tighter, calmer site title */
+.site-title { letter-spacing: -0.03em; font-weight: 600; }

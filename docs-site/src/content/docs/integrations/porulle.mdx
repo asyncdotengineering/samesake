@@ -1,0 +1,137 @@
+---
+title: Porulle
+description: Add samesake search to a Porulle commerce backend — bulk-index the catalog once, then keep it in sync with entity hooks. Both run in one TypeScript app, optionally one database.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+[Porulle](https://porulle-docs.vercel.app) is a TypeScript-first, self-host headless commerce framework. Because both Porulle and samesake are TypeScript libraries you embed (not hosted services), they compose in **one app** — and, if you like, **one Postgres database**. This guide wires samesake search onto a Porulle catalog: index once, then sync on catalog changes.
+
+For a complete, runnable build (Next.js storefront + live demo), see [Fashion app with Porulle + Next.js](/guides/porulle-fashion-app/).
+
+## Install
+
+```bash
+bun add @porulle/core @porulle/adapter-postgres @samesake/core @samesake/server
+```
+
+<Aside type="note">
+Porulle and samesake can share a single Postgres database. Porulle owns the `public` schema (`sellable_entities`, `prices`, …); samesake namespaces itself with `samesake_*` system tables plus a `project_<slug>` schema per project — no collisions. Use separate databases instead if you prefer stronger isolation; samesake only ever reads the catalog and maintains its own tables.
+</Aside>
+
+## 1. Map the Porulle product to a collection
+
+A Porulle product is a `sellable_entity` with localized `attributes` (title/description), `pricing`, and declared `customFields`. Mirror what you want searchable/filterable:
+
+```ts title="catalog.ts"
+import { collection, f, Channels } from "@samesake/core";
+
+export const products = collection("products", {
+  fields: {
+    title: f.text({ searchable: true }),
+    brand: f.text({ filterable: true }),
+    category: f.text({ filterable: true }),
+    color: f.text({ filterable: true }),
+    material: f.text({ filterable: true }),
+    price: f.number({ filterable: true, budget: true }),
+    available: f.boolean({ filterable: true }),
+    image_url: f.text(),
+  },
+  embeddings: { doc: { source: "$title $brand $category $color $material", model: "your-model", dim: 1536 } },
+  search: {
+    channels: [
+      Channels.fts({ fields: ["title", "brand", "category", "color", "material"], weight: 1 }),
+      Channels.cosine({ embedding: "doc", weight: 1 }),
+    ],
+    combiner: "rrf",
+  },
+});
+```
+
+A mapper turns a hydrated Porulle entity into a samesake document. Title comes from `attributes`, price from `pricing` (base price = the `variant_id IS NULL` row), apparel attributes from `customFields`:
+
+```ts title="to-doc.ts"
+export function toDoc(e: any) {
+  const attr = e.attributes?.find((a: any) => a.locale === "en") ?? e.attributes?.[0];
+  const base = e.pricing?.find((p: any) => p.currency === "LKR");
+  return {
+    id: e.slug,
+    data: {
+      title: attr?.title ?? "",
+      brand: String(e.metadata?.brand ?? "unknown"),
+      category: e.customFields?.category ?? "other",
+      color: e.customFields?.color ?? "",
+      material: e.customFields?.material ?? "",
+      price: base?.amount ?? 0,
+      available: e.status === "active",
+      image_url: e.customFields?.imageUrl ?? "",
+    },
+  };
+}
+```
+
+## 2. Bulk index once
+
+Read the live catalog from Porulle's REST API (`x-api-key` auth), paging until you've covered `meta.pagination.total`, and `include` the relations you map:
+
+```ts title="bulk-index.ts"
+async function bulkIndex(base: string, apiKey: string, matcher: any) {
+  await matcher.apply("store", { entities: [], collections: [products] });
+  for (let page = 1; ; page++) {
+    const res = await fetch(
+      `${base}/api/catalog/entities?status=active&include=attributes,pricing&limit=100&page=${page}`,
+      { headers: { "x-api-key": apiKey } }
+    );
+    const { data, meta } = await res.json();
+    if (!data.length) break;
+    await matcher.pushDocuments("store", "products", data.map(toDoc));
+    if (page >= meta.pagination.totalPages) break;
+  }
+  await matcher.index("store", "products");
+}
+```
+
+<Aside type="tip">
+In-process? Skip HTTP and read via the kernel: `createKernel(config).services.catalog.list({ filter: { status: "active" } }, actor)` returns the same hydrated entities.
+</Aside>
+
+## 3. Keep in sync with entity hooks
+
+Porulle entity config supports lifecycle **hooks** (`afterCreate`, `afterUpdate`, `afterDelete`, …). Hang the sync off them so the index tracks catalog mutations with no extra infrastructure:
+
+```ts title="commerce.config.ts"
+import { matcher } from "./samesake"; // your createMatcher instance + products collection
+
+export default defineConfig({
+  // …
+  entities: {
+    product: {
+      fields: [ /* material, color, category, imageUrl */ ],
+      hooks: {
+        afterCreate: [async (ctx) => { await matcher.pushDocuments("store", "products", [toDoc(ctx.entity)]); await matcher.index("store", "products"); }],
+        afterUpdate: [async (ctx) => { await matcher.pushDocuments("store", "products", [toDoc(ctx.entity)]); await matcher.index("store", "products"); }],
+        afterDelete: [async (ctx) => { await matcher.removeDocuments("store", "products", [ctx.entity.slug]); }],
+      },
+    },
+  },
+});
+```
+
+(If you'd rather decouple, Porulle's webhooks module can POST catalog events to a samesake-sync endpoint instead — same shape as the [Shopify](/integrations/shopify/) / [WooCommerce](/integrations/woocommerce/) webhook flows.)
+
+## 4. Serve search
+
+Expose a search route that proxies to samesake — in Next.js that's one route handler; under Porulle's Hono app it's a custom route:
+
+```ts
+const result = await matcher.search("store", "products", { q, filters: { available: true }, limit: 24 });
+```
+
+## Recommended shape
+
+1. One `createMatcher` instance with the `products` collection (same DB as Porulle, or its own).
+2. **Bulk index** the active catalog via `/api/catalog/entities` (or the in-process kernel) on first boot.
+3. **Sync** via `afterCreate`/`afterUpdate`/`afterDelete` hooks on the product entity.
+4. A search route calling `matcher.search`.
+
+See the [full Next.js build](/guides/porulle-fashion-app/) for a working end-to-end example with a storefront and a live demo.

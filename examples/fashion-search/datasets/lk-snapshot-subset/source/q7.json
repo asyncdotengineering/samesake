@@ -1,0 +1,62 @@
+{
+  "query": "modest dress for work under 5000",
+  "country": "LK",
+  "expansions": [
+    "work outfit",
+    "professional clothing",
+    "office attire"
+  ],
+  "results": [
+    {
+      "title": "Formal Basic Shirt",
+      "url": "https://www.aviratefashion.com/products/collections/vendors?q=Avirate",
+      "price": "7280.00",
+      "price_numeric": 7280,
+      "currency": null,
+      "image": "https://paykoko.com/img/logo1.7ff549c0.png",
+      "description": null,
+      "source": "aviratefashion.com",
+      "source_url": "https://www.aviratefashion.com",
+      "platform": "shopify",
+      "vendor": null,
+      "tags": [],
+      "product_type": null,
+      "available": true,
+      "handle": "/collections/vendors?q=Avirate"
+    },
+    {
+      "title": "Alice Bodycon dress",
+      "url": "https://www.aviratefashion.com/products/alice-bodycon-dress-av00002696?_pos=2&_sid=27dce04cb&_ss=r",
+      "price": "5980.00",
+      "price_numeric": 5980,
+      "currency": null,
+      "image": "https://www.aviratefashion.com/cdn/shop/files/HI_RES_-_AVIRATE-330.jpg?v=1756891093&width=800",
+      "description": null,
+      "source": "aviratefashion.com",
+      "source_url": "https://www.aviratefashion.com",
+      "platform": "shopify",
+      "vendor": null,
+      "tags": [],
+      "product_type": null,
+      "available": true,
+      "handle": "/products/alice-bodycon-dress-av00002696?_pos=2&_sid=27dce04cb&_ss=r"
+    },
+    {
+      "title": "Dress & Jumpsuits",
+      "url": "https://thecultoriginal.lk/products/collections/all-dresses",
+      "price": null,
+      "price_numeric": null,
+      "currency": null,
+      "image": null,
+      "description": null,
+      "source": "thecultoriginal.lk",
+      "source_url": "https://thecultoriginal.lk",
+      "platform": "shopify",
+      "vendor": null,
+      "tags": [],
+      "product_type": null,
+      "available": true,
+      "handle": "/collections/all-dresses"
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+---
+title: Headless WooCommerce
+description: Index a WooCommerce catalog into samesake over the wc/v3 REST API, then keep it current with product webhooks — paginated pull once, signed deltas, variation-aware.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+This connects **headless WooCommerce** to samesake using the `wc/v3` REST API: paginate the catalog once, then keep it current with product webhooks. Base URL: `https://<store>/wp-json/wc/v3/`.
+
+## 1. Map the Woo product to a collection
+
+`GET /products` returns `name`, `slug`, `description`, `short_description`, `sku`, `price`, `stock_status`, `categories`, `tags`, `images`, `attributes`, `type`. Monetary values are **strings**; descriptions are **HTML** — strip before indexing.
+
+```ts title="catalog.ts"
+import { collection, f, Channels } from "@samesake/core";
+
+export const products = collection("products", {
+  fields: {
+    title: f.text({ searchable: true }),       // <- Woo "name"
+    description: f.text({ searchable: true }),
+    slug: f.text({ filterable: true }),
+    category: f.text({ filterable: true }),
+    price: f.number({ filterable: true, budget: true }),
+    available: f.boolean({ filterable: true }), // stock_status === "instock"
+  },
+  embeddings: { doc: { source: "$title $description $category", model: "your-model", dim: 1536 } },
+  search: {
+    channels: [
+      Channels.fts({ fields: ["title", "description", "category"], weight: 1 }),
+      Channels.cosine({ embedding: "doc", weight: 1 }),
+    ],
+    combiner: "rrf",
+  },
+});
+```
+
+## 2. Auth
+
+WooCommerce admin → **Settings → Advanced → REST API → Add key**, **Read** permission. You get `ck_...` / `cs_...`. Over HTTPS, use HTTP Basic (key = user, secret = password):
+
+```bash
+curl https://store.example/wp-json/wc/v3/products -u ck_xxx:cs_xxx
+```
+
+<Aside type="caution">
+HTTPS is required for Basic auth (plain HTTP forces OAuth 1.0a). If the host strips the `Authorization` header (CGI/FastCGI), fall back to `?consumer_key=...&consumer_secret=...` — but that leaks creds into access logs, so prefer the header. Create a dedicated read-only key.
+</Aside>
+
+## 3. Initial index — paginate
+
+`per_page` max is **100**; total pages come from the `X-WP-TotalPages` response header. Order by a stable key to avoid skips on a mutating catalog.
+
+```ts title="bulk-index.ts"
+async function bulkIndex(base: string, auth: string, matcher: any) {
+  let page = 1, totalPages = 1;
+  do {
+    const res = await fetch(`${base}/products?status=publish&per_page=100&orderby=id&order=asc&page=${page}`, {
+      headers: { Authorization: `Basic ${auth}` },
+    });
+    totalPages = Number(res.headers.get("X-WP-TotalPages") ?? 1);
+    const products = await res.json();
+    await matcher.pushDocuments("shop", "products", products.map(toDoc));
+    page++;
+  } while (page <= totalPages);
+  await matcher.index("shop", "products");
+}
+```
+
+For **variable** products (`type: "variable"`), the parent price is only a range — fetch `GET /products/<id>/variations` and flatten size/price/stock into the doc (or one doc per variation).
+
+## 4. Keep in sync — product webhooks
+
+Create webhooks (UI: **Settings → Advanced → Webhooks**, or `POST /webhooks`) for topics `product.created`, `product.updated`, `product.deleted` pointing at one HTTPS endpoint with a strong shared `secret`.
+
+The `X-WC-Webhook-Signature` header is **Base64(HMAC-SHA256(raw body, secret))**. Hash the **raw bytes** as received, constant-time compare, ACK 2xx fast (Woo retries and auto-disables after repeated failures), then process. Source: [WooCommerce webhooks](https://woocommerce.github.io/woocommerce-rest-api-docs/#webhooks).
+
+```ts title="webhooks/woo.ts"
+import crypto from "node:crypto";
+
+export function verify(rawBody: Buffer, sigHeader: string, secret: string) {
+  const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("base64");
+  const a = Buffer.from(sigHeader), b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// after verify + res.sendStatus(200):
+const topic = req.get("X-WC-Webhook-Topic");      // product.updated
+const payload = JSON.parse(rawBody.toString("utf8"));
+if (topic === "product.deleted") await matcher.removeDocuments("shop", "products", [String(payload.id)]);
+else { await matcher.pushDocuments("shop", "products", [toDoc(payload)]); await matcher.index("shop", "products"); }
+```
+
+A `*.deleted` payload carries only `{ id }`. On `product.updated` for a variable product, re-fetch its variations.
+
+## 5. Recommended shape
+
+1. **Read-only REST key**; store on HTTPS so Basic auth works.
+2. **Backfill:** paginate `/products?status=publish&per_page=100` to `X-WP-TotalPages`; flatten variations; strip HTML.
+3. **Webhooks:** `product.created|updated|deleted` → verify raw-body HMAC → push/index or remove.
+4. **Backstop:** nightly reconciliation with `?modified_after=<ISO8601>` to repair missed events.

@@ -1,0 +1,137 @@
+---
+title: Quickstart
+description: Collection to push to index to search in about fifteen minutes. Keyword-only path needs no model; add embeddings when you want meaning and image search.
+---
+
+import { Tabs, TabItem, Aside, Steps } from '@astrojs/starlight/components';
+
+This is the precise, no-narration version of [Build a search experience](/start/build-a-search-experience/). Keyword-only search needs no LLM.
+
+## Prerequisites
+
+- Bun 1.3+ (Node also works)
+- Postgres 15+ with the required extensions
+
+```bash
+createdb samesake_dev
+psql samesake_dev -c "CREATE EXTENSION vector; CREATE EXTENSION pg_trgm; CREATE EXTENSION unaccent; CREATE EXTENSION fuzzystrmatch;"
+```
+
+## Install
+
+<Tabs syncKey="pkg">
+  <TabItem label="bun">
+
+```bash
+bun add @samesake/core @samesake/server
+```
+
+  </TabItem>
+  <TabItem label="npm">
+
+```bash
+npm install @samesake/core @samesake/server
+```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+```bash
+pnpm add @samesake/core @samesake/server
+```
+
+  </TabItem>
+</Tabs>
+
+```bash title=".env"
+DATABASE_URL=postgres://localhost:5432/samesake_dev
+API_KEY=dev-key-please-change
+```
+
+## Build it
+
+<Steps>
+
+1. **Declare the catalog.** `searchable` fields feed keyword search; `filterable` fields become hard filters.
+
+   ```ts title="catalog.ts"
+   import { collection, f, Channels } from "@samesake/core";
+
+   export const products = collection("products", {
+     fields: {
+       title: f.text({ searchable: true }),
+       brand: f.text({ filterable: true }),
+       price: f.number({ filterable: true, budget: true }),
+       color: f.text({ filterable: true }),
+       available: f.boolean({ filterable: true }),
+     },
+     embeddings: {
+       doc: { source: "$title $brand $color", model: "your-model", dim: 1536 },
+     },
+     search: {
+       channels: [
+         Channels.fts({ fields: ["title", "brand", "color"], weight: 1 }),
+         Channels.cosine({ embedding: "doc", weight: 1 }),
+       ],
+       combiner: "rrf",
+     },
+   });
+   ```
+
+2. **Create the matcher.** Supply your embedding function. For a keyword-only smoke test, a stub embedding is fine.
+
+   ```ts title="search.ts"
+   import { createMatcher } from "@samesake/server";
+   import { products } from "./catalog.ts";
+
+   const matcher = createMatcher({
+     databaseUrl: process.env.DATABASE_URL!,
+     apiKey: process.env.API_KEY!,
+     embed: async ({ text, dim }) => stubEmbed(text, dim), // swap for a real model later
+   });
+   ```
+
+3. **Apply, push, index.**
+
+   ```ts title="search.ts"
+   await matcher.apply("shop", { entities: [], collections: [products] });
+
+   await matcher.pushDocuments("shop", "products", [
+     { id: "1", data: { title: "ivory linen slip dress", brand: "atelier", price: 12900, color: "ivory", available: true } },
+     { id: "2", data: { title: "black sequin party dress", brand: "luxe", price: 28000, color: "black", available: true } },
+   ]);
+
+   await matcher.index("shop", "products");
+   ```
+
+4. **Search.**
+
+   ```ts title="search.ts"
+   const hits = await matcher.search("shop", "products", {
+     q: "linen dress under 15000",
+     filters: { available: true },
+     limit: 10,
+   });
+   console.log(hits.map((h) => h.id));
+   ```
+
+</Steps>
+
+## Serve it over HTTP
+
+The same matcher exposes a web-standard `fetch` handler and a Hono app:
+
+```ts
+// Bun.serve / Workers / Vercel / Deno
+export default { fetch: (req: Request) => matcher.fetch(req) };
+```
+
+## Where to go next
+
+- [Build a search experience](/start/build-a-search-experience/) — the same thing, explained from scratch.
+- Connect a real store: [MedusaJS](/integrations/medusajs/) · [headless Shopify](/integrations/shopify/) · [headless WooCommerce](/integrations/woocommerce/).
+- [Eval from search snapshots](/guides/eval-from-snapshots/) — measure keyword vs hybrid on a real corpus.
+
+<Aside type="tip">
+`matcher.searchExplain(...)` returns per-leg ranks and the constraint trace — invaluable when a result ranks somewhere surprising.
+</Aside>

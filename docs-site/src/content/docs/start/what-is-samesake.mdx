@@ -1,0 +1,72 @@
+---
+title: What is samesake
+description: A TypeScript-first search engine compiler for visual commerce. One factory, two capabilities — hybrid product search and entity resolution — over Postgres + pgvector.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+samesake is a **search engine compiler for visual commerce**, starting with fashion. You declare your catalog and retrieval spaces in TypeScript; samesake compiles them into a Postgres-backed search layer you run inside your own app — no separate search cluster, no hosted vector database.
+
+It is built for shoppers who do not know the product name: screenshots, similar-look search, vague intent, budget constraints, occasion, size, availability, and merchant ranking policy.
+
+## What makes it different
+
+It is not a hosted vector DB, a generic RAG framework, or keyword search alone. It is a typed retrieval layer for commerce catalogs where:
+
+- image similarity, text intent, structured attributes, price, freshness, and availability are **separate signals**;
+- **hard filters stay hard** — "under 20000" and "available now" are typed constraint predicates pushed into SQL, not soft semantic vibes;
+- **query-time weights** tune visual, intent, price, and freshness influence without reindexing;
+- every search emits an **auditable constraint trace** (`/search/explain` shows per-leg ranks and space cosines);
+- the same factory also does **entity resolution** and deduplication for catalog/customer records.
+
+## How a search is composed
+
+```
+catalog.ts                      collection() + entity() declarations
+      │
+      ▼
+createMatcher({ embed, generate?, ... })
+      ├── schema generation     →  per-project search tables (fts, vector, filter columns)
+      ├── ingest / enrich / index →  connectors, enrichment pipeline, embeddings
+      ├── search / facets / nlq →  hybrid RRF retrieval (keyword + cosine + optional spaces)
+      └── match / dedup / explain →  entity resolution
+      │
+      ▼
+Postgres (pgvector + pg_trgm + unaccent + fuzzystrmatch)
+```
+
+Three retrieval signals combine through **reciprocal-rank fusion (RRF)**:
+
+- **FTS** — Postgres full-text keyword matching.
+- **Cosine ANN** — vector similarity over embeddings you supply (bring your own model).
+- **Spaces** *(optional)* — typed segmented vectors (style / price / freshness / category / image) with query-time weights. Off by default; enable behind your own eval gate.
+
+Hard filters (`price ≤ X`, `available = true`, `colors ∋ red`) compile to SQL predicates that gate the result set before ranking.
+
+## Three ways to call it
+
+`createMatcher(config)` returns one object you can call three ways:
+
+| Surface | Use when |
+|---|---|
+| **In-process** — `matcher.search(...)` | hot paths inside your app; no HTTP overhead |
+| **Web-standard** — `matcher.fetch(request)` | Bun.serve, Cloudflare Workers, Vercel, Deno |
+| **Composable** — `matcher.app` (Hono) | mount at `/v1` inside an existing Hono service |
+
+## The stack
+
+| Layer | Choice |
+|---|---|
+| Runtime | Bun 1.3+ (Node supported) |
+| HTTP | Hono — universal `fetch` handler |
+| Database | Postgres 15+ with pgvector, pg_trgm, unaccent, fuzzystrmatch |
+| Validation | Zod |
+| AI | Bring your own — you supply `embed` and optional `generate` / `parse` |
+
+<Aside type="note">
+Two containers in production: Postgres and your app process. No Redis, no Elasticsearch, no LanceDB.
+</Aside>
+
+Packages: **`@samesake/core`** (SDK), **`@samesake/server`**, **`@samesake/cli`**.
+
+Next: [build a search experience](/start/build-a-search-experience/) in plain language, or jump to the [Quickstart](/start/quickstart/).
