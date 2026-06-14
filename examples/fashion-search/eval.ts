@@ -9,29 +9,40 @@ type Product = {
   category: string;
   colors: string[];
   material: string;
+  price: number;
   available: boolean;
+};
+
+type ConstraintSpec = {
+  maxPrice?: number;
+  requiredColors?: string[];
+  excludedColors?: string[];
+  available?: boolean;
 };
 
 type EvalQuery = {
   name: string;
   q: string;
   filters?: Record<string, unknown>;
+  constraints?: ConstraintSpec;
   relevant: string[];
   image?: string;
 };
 
 const fixture: Product[] = [
-  { id: "red-dress", title: "red cotton summer dress", brand: "Luna", category: "dresses", colors: ["red"], material: "cotton", available: true },
-  { id: "blue-dress", title: "blue linen office dress", brand: "Aster", category: "dresses", colors: ["blue"], material: "linen", available: true },
-  { id: "black-jeans", title: "black denim straight jeans", brand: "North", category: "bottoms", colors: ["black"], material: "denim", available: true },
-  { id: "sold-red", title: "red party dress", brand: "Aster", category: "dresses", colors: ["red"], material: "polyester", available: false },
+  { id: "red-dress", title: "red cotton summer dress", brand: "Luna", category: "dresses", colors: ["red"], material: "cotton", price: 72, available: true },
+  { id: "blue-dress", title: "blue linen office dress", brand: "Aster", category: "dresses", colors: ["blue"], material: "linen", price: 118, available: true },
+  { id: "black-jeans", title: "black denim straight jeans", brand: "North", category: "bottoms", colors: ["black"], material: "denim", price: 64, available: true },
+  { id: "sold-red", title: "red party dress", brand: "Aster", category: "dresses", colors: ["red"], material: "polyester", price: 140, available: false },
 ];
 
 const queries: EvalQuery[] = [
-  { name: "keyword", q: "red dress", filters: { available: true }, relevant: ["red-dress"] },
-  { name: "constraint", q: "office dress", filters: { colors: ["blue"], available: true }, relevant: ["blue-dress"] },
-  { name: "image", q: "", image: "red", filters: { available: true }, relevant: ["red-dress"] },
-  { name: "full", q: "cotton summer dress", image: "red", filters: { category: "dresses", available: true }, relevant: ["red-dress"] },
+  { name: "keyword", q: "red dress", filters: { available: true }, constraints: { available: true }, relevant: ["red-dress"] },
+  { name: "color-required", q: "office dress in blue", filters: { colors: ["blue"], available: true }, constraints: { requiredColors: ["blue"], available: true }, relevant: ["blue-dress"] },
+  { name: "color-excluded", q: "straight jeans not blue", filters: { colors: { $nin: ["blue"] }, available: true }, constraints: { excludedColors: ["blue"], available: true }, relevant: ["black-jeans"] },
+  { name: "price-cap", q: "dress under 100", filters: { price: { $lte: 100 }, available: true }, constraints: { maxPrice: 100, available: true }, relevant: ["red-dress"] },
+  { name: "image", q: "", image: "red", filters: { available: true }, constraints: { available: true }, relevant: ["red-dress"] },
+  { name: "full", q: "cotton summer dress", image: "red", filters: { category: "dresses", available: true }, constraints: { available: true }, relevant: ["red-dress"] },
 ];
 
 function terms(s: string): string[] {
@@ -41,6 +52,18 @@ function terms(s: string): string[] {
 function passesFilters(p: Product, filters: Record<string, unknown> = {}): boolean {
   for (const [key, value] of Object.entries(filters)) {
     const raw = (p as unknown as Record<string, unknown>)[key];
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      const op = value as Record<string, unknown>;
+      if (typeof op.$lte === "number" && !(typeof raw === "number" && raw <= op.$lte)) return false;
+      if (typeof op.$lt === "number" && !(typeof raw === "number" && raw < op.$lt)) return false;
+      if (typeof op.$gte === "number" && !(typeof raw === "number" && raw >= op.$gte)) return false;
+      if (typeof op.$gt === "number" && !(typeof raw === "number" && raw > op.$gt)) return false;
+      if (Array.isArray(op.$nin)) {
+        if (Array.isArray(raw) && raw.some((v) => op.$nin!.includes(v))) return false;
+        if (!Array.isArray(raw) && op.$nin.includes(raw)) return false;
+      }
+      continue;
+    }
     if (Array.isArray(value)) {
       if (!Array.isArray(raw) || !value.some((v) => raw.includes(v))) return false;
       continue;
@@ -48,6 +71,38 @@ function passesFilters(p: Product, filters: Record<string, unknown> = {}): boole
     if (raw !== value) return false;
   }
   return true;
+}
+
+function checkConstraints(p: Product, constraints: ConstraintSpec = {}): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  if (constraints.maxPrice !== undefined) out.price = p.price <= constraints.maxPrice;
+  if (constraints.available !== undefined) out.available = p.available === constraints.available;
+  if (constraints.requiredColors?.length) {
+    out.colorRequired = constraints.requiredColors.some((c) => p.colors.includes(c));
+  }
+  if (constraints.excludedColors?.length) {
+    out.colorExcluded = constraints.excludedColors.every((c) => !p.colors.includes(c));
+  }
+  return out;
+}
+
+function constraintMetrics(hits: Product[], constraints: ConstraintSpec = {}, k = 5): Record<string, number> {
+  const top = hits.slice(0, k);
+  if (!top.length) return { overall: 0, perfect: 0 };
+  const checked = top.map((p) => checkConstraints(p, constraints));
+  const keys = Array.from(new Set(checked.flatMap((r) => Object.keys(r))));
+  const metrics: Record<string, number> = {};
+  for (const key of keys) {
+    const vals = checked.map((r) => r[key]).filter((v): v is boolean => typeof v === "boolean");
+    metrics[key] = vals.length ? vals.filter(Boolean).length / vals.length : 1;
+  }
+  const perProduct = checked.map((r) => {
+    const vals = Object.values(r);
+    return vals.length ? vals.every(Boolean) : true;
+  });
+  metrics.overall = perProduct.filter(Boolean).length / perProduct.length;
+  metrics.perfect = perProduct.every(Boolean) ? 1 : 0;
+  return metrics;
 }
 
 function localSearch(query: EvalQuery): Product[] {
@@ -97,6 +152,7 @@ async function remoteSearch(query: EvalQuery): Promise<Product[]> {
     colors: Array.isArray(h.colors) ? h.colors.map(String) : [],
     material: String(h.material ?? ""),
     available: h.available === true,
+    price: Number(h.price ?? 0),
     latency,
   } as Product));
 }
@@ -118,6 +174,7 @@ async function main() {
       topIds: ids.slice(0, 5),
       relevanceAt3: relevanceAtK(ids, query.relevant, 3),
       constraintCompliance: hits.every((h) => passesFilters(h, query.filters)) ? 1 : 0,
+      constraintMetrics: constraintMetrics(hits, query.constraints),
       zeroResult: hits.length === 0,
     });
   }
@@ -135,6 +192,8 @@ async function main() {
     metrics: {
       relevanceAt3: rows.reduce((sum, r) => sum + r.relevanceAt3, 0) / rows.length,
       constraintCompliance: rows.reduce((sum, r) => sum + r.constraintCompliance, 0) / rows.length,
+      constraintOverallAt5: rows.reduce((sum, r) => sum + r.constraintMetrics.overall, 0) / rows.length,
+      perfectConstraintAt5: rows.reduce((sum, r) => sum + r.constraintMetrics.perfect, 0) / rows.length,
       zeroResultRate: rows.filter((r) => r.zeroResult).length / rows.length,
       latencyMs: Date.now() - started,
       estimatedCostUsd: 0,
@@ -152,13 +211,15 @@ async function main() {
     "",
     `- relevance@3: ${report.metrics.relevanceAt3.toFixed(2)}`,
     `- constraint compliance: ${report.metrics.constraintCompliance.toFixed(2)}`,
+    `- constraint overall@5: ${report.metrics.constraintOverallAt5.toFixed(2)}`,
+    `- perfect constraint@5: ${report.metrics.perfectConstraintAt5.toFixed(2)}`,
     `- zero-result rate: ${report.metrics.zeroResultRate.toFixed(2)}`,
     `- latency: ${report.metrics.latencyMs}ms`,
     `- estimated cost: $${report.metrics.estimatedCostUsd.toFixed(2)}`,
     "",
     "| query | top ids | relevance@3 | constraints |",
     "| --- | --- | ---: | ---: |",
-    ...rows.map((r) => `| ${r.name} | ${r.topIds.join(", ")} | ${r.relevanceAt3.toFixed(2)} | ${r.constraintCompliance.toFixed(2)} |`),
+    ...rows.map((r) => `| ${r.name} | ${r.topIds.join(", ")} | ${r.relevanceAt3.toFixed(2)} | ${r.constraintMetrics.overall.toFixed(2)} |`),
     "",
   ].join("\n");
   await writeFile(".samesake/fashion-eval.md", md);
