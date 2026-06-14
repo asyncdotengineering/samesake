@@ -239,6 +239,56 @@ Three gotchas worth knowing:
 - **`@samesake/*` as `workspace:*` won't resolve in a standalone Vercel build.** Reference the published versions (`"@samesake/core": "^1.1.0"`) — in a Bun workspace this still links the local package locally while Vercel pulls from npm.
 - New Vercel projects ship with **Deployment Protection (Vercel Authentication)** on, so the demo returns "Authentication Required". Turn it off for a public demo (Project → Settings → Deployment Protection, or `PATCH /v9/projects/<id>` with `{"ssoProtection": null}`).
 
+## Enrich attributes from the image (samesake enrich pipeline)
+
+Heuristic "colour-from-title" left most products with no colour at all, so colour queries
+returned whatever was vaguely "a dress" — including red ones for a black query. samesake's
+**`enrich` pipeline** fixes this at the source: a multimodal `stage` reads each product image
+and writes structured attributes into the row's `enriched` jsonb.
+
+```ts
+enrich: pipeline(
+  stage("vision", {
+    model: "gemini-3.1-flash-lite",
+    images: (ctx) => (ctx.data.image_url ? [String(ctx.data.image_url)] : []),
+    prompt: (ctx) => `Describe this product's colours and pattern as JSON.`,
+    schema: () => ({
+      type: "object",
+      properties: {
+        color_text: { type: "string" },          // "light blue and white striped"
+        colors: { type: "array", items: { type: "string" } },
+        pattern: { type: "string" },
+      },
+      required: ["color_text"],
+    }),
+  })
+),
+embeddings: {
+  // pull the enriched attributes into the doc text the embedding is built from
+  doc: { source: "$title $brand $category $enriched.color_text $enriched.pattern", model: "gemini-embedding-2", dim: 1536 },
+},
+```
+
+`matcher.enrich(project, collection)` runs the pipeline — it fetches each image through the
+SSRF-hardened fetcher and calls your `generate` with the image bytes + schema, then stores the
+JSON in `enriched`. The order in the sync is **push → enrich → index**. Now the colours are real
+("RED PUFF SLEEVE MAXI DRESS" → `solid red`, "Princess Line Dress" → `solid black`), and because
+the doc embedding `source` includes `$enriched.color_text`, "black dress with white" cosine-favours
+genuinely black products.
+
+Pair it with a **constrained NLQ schema** so a sparse colour tag can't become a hard filter that
+dead-ends the query — let intent + budget through, and leave colour to the embedding + visual signals:
+
+```ts
+nlq: { enable: true, semanticRewrite: true,
+  schema: { type: "object", properties: { semantic_query: { type: "string" }, max_price: { type: "number" } }, required: ["semantic_query"] } }
+```
+
+> **Honest result.** With real colours the black dress ranks **#1** (it was buried before), but at a
+> 27-product corpus colour is a weak discriminator, so a couple of other-coloured dresses still appear
+> in the top few. A larger catalog and a colour soft-boost would sharpen it further — the enrichment is
+> the foundation that makes either possible.
+
 ## Visual & cross-modal search
 
 `gemini-embedding-2` is multimodal, so adding a visual space embeds both product images and

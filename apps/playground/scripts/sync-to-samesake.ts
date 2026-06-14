@@ -61,6 +61,15 @@ async function main() {
   await matcher.migrate(); // create samesake system tables (samesake_projects, ...) if absent
   await matcher.apply(PROJECT, { entities: [], collections: [products] });
   await matcher.pushDocuments(PROJECT, COLLECTION, docs);
+
+  // Vision enrichment — read colours/pattern off each product image (samesake enrich pipeline).
+  console.log("enriching (vision)...");
+  for (let pass = 0; pass < 5; pass++) {
+    const e = await matcher.enrich(PROJECT, COLLECTION, { concurrency: 6, limit: docs.length });
+    console.log(`  enrich pass ${pass}: enriched=${e.enriched} failed=${e.failed}`);
+    if (e.enriched === 0) break;
+  }
+
   const indexed = await matcher.index(PROJECT, COLLECTION);
   console.log(`indexed into samesake:`, indexed);
 
