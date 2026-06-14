@@ -252,29 +252,38 @@ export function makeFashionSearchService(
       offset: req.offset,
     };
 
-    let base = await searchService.search(projectSlug, collectionName, opts);
+    // One retrieval yields both hits and (when requested) the explain breakdown.
+    // The breakdown must reflect the filters actually applied, so it is recomputed
+    // alongside the hits whenever the no-results fallback relaxes them.
+    const wantExplain = req.debug || req.explain;
+    let base: Awaited<ReturnType<SearchService["search"]>>;
+    let explain: Awaited<ReturnType<SearchService["searchExplain"]>> | null = null;
+    if (wantExplain) {
+      const both = await searchService.searchWithExplain(projectSlug, collectionName, opts);
+      base = both.result;
+      explain = both.explain;
+    } else {
+      base = await searchService.search(projectSlug, collectionName, opts);
+    }
     let fallback: FashionSearchResponse["fallback"];
     let appliedFilters = filters;
 
     if (base.hits.length === 0 && req.recoverNoResults) {
       const relaxed = relaxFilters(filters);
       if (relaxed.relaxed.length) {
-        base = await searchService.search(projectSlug, collectionName, {
-          ...opts,
-          filters: relaxed.filters,
-        });
+        const relaxedOpts = { ...opts, filters: relaxed.filters };
+        if (wantExplain) {
+          const both = await searchService.searchWithExplain(projectSlug, collectionName, relaxedOpts);
+          base = both.result;
+          explain = both.explain;
+        } else {
+          base = await searchService.search(projectSlug, collectionName, relaxedOpts);
+        }
         appliedFilters = relaxed.filters;
         fallback = { reason: "no_results", relaxedFilters: relaxed.relaxed };
       }
     }
 
-    const explain = req.debug || req.explain
-      ? await searchService.searchExplain(projectSlug, collectionName, {
-          ...opts,
-          filters: appliedFilters,
-          limit: Math.min(limit, 20),
-        })
-      : null;
     const policy = mergeRankingPolicy(req.rankingPolicy, !!image, !!req.personalization);
     const ranked = rankHits(base.hits, policy, req.personalization, visualCosines(explain));
 

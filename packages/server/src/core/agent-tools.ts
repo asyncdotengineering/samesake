@@ -378,26 +378,24 @@ export function makeAgentToolsService(
     const filters = constraintsToFilters(constraints);
     const weights = imageOnlyWeights(def, intent, image);
 
-    // search and explain use identical filters here (no fallback dependency between them),
-    // so run the two independent retrieval passes concurrently instead of serially.
-    const [search, explain] = await Promise.all([
-      searchService.search(projectSlug, collectionName, {
-        q: intent,
-        image,
-        filters,
-        limit: Math.min(Math.max(req.limit ?? 10, 1), 50),
-        weights,
-      }),
-      req.explain
-        ? searchService.searchExplain(projectSlug, collectionName, {
-            q: intent,
-            image,
-            filters,
-            limit: Math.min(Math.max(req.limit ?? 10, 1), 20),
-            weights,
-          })
-        : Promise.resolve(null),
-    ]);
+    // When explain is requested, a single retrieval feeds both the hits and the
+    // per-leg breakdown (one embed/image-fetch/NLQ pass instead of two).
+    const searchOpts: SearchOpts = {
+      q: intent,
+      image,
+      filters,
+      limit: Math.min(Math.max(req.limit ?? 10, 1), 50),
+      weights,
+    };
+    let search: Awaited<ReturnType<SearchService["search"]>>;
+    let explain: Awaited<ReturnType<SearchService["searchExplain"]>> | null = null;
+    if (req.explain) {
+      const both = await searchService.searchWithExplain(projectSlug, collectionName, searchOpts);
+      search = both.result;
+      explain = both.explain;
+    } else {
+      search = await searchService.search(projectSlug, collectionName, searchOpts);
+    }
     const explainById = new Map(explain?.docs.map((doc) => [doc.id, doc]) ?? []);
     const metadata = await loadMetadata(projectSlug, collectionName, search.hits.map((h) => h.id));
     const products = search.hits
