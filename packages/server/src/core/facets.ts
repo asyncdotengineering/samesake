@@ -1,21 +1,10 @@
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { CollectionDef, CollectionFieldDef } from "@samesake/core";
 import { sanitiseIdent } from "./schema-gen.ts";
+import { getPgClient } from "./db-utils.ts";
 
 const FACET_VALUE_CAP = 25;
 const RANGE_BUCKETS = 6;
-
-type PgUnsafe = {
-  unsafe: (query: string, params?: unknown[]) => Promise<Record<string, unknown>[]>;
-};
-
-function pgClient(db: PostgresJsDatabase): PgUnsafe {
-  const session = (db as { session?: { client?: PgUnsafe } }).session;
-  if (!session?.client?.unsafe) {
-    throw new Error("postgres client unavailable for facet query");
-  }
-  return session.client;
-}
 
 export interface FacetBucket {
   lo: number;
@@ -110,7 +99,7 @@ async function computeBooleanFacet(
   where: string,
   params: unknown[]
 ): Promise<FacetCountResult> {
-  const rows = await pgClient(db).unsafe(
+  const rows = await getPgClient(db, "facet query").unsafe(
     `SELECT CASE WHEN ${col} THEN 'true' ELSE 'false' END AS value, count(*)::int AS count
      FROM ${table}
      WHERE ${where} AND ${col} IS NOT NULL
@@ -134,7 +123,7 @@ async function computeScalarFacet(
   where: string,
   params: unknown[]
 ): Promise<FacetCountResult> {
-  const rows = await pgClient(db).unsafe(
+  const rows = await getPgClient(db, "facet query").unsafe(
     `SELECT ${col}::text AS value, count(*)::int AS count
      FROM ${table}
      WHERE ${where} AND ${col} IS NOT NULL
@@ -158,7 +147,7 @@ async function computeArrayFacet(
   where: string,
   params: unknown[]
 ): Promise<FacetCountResult> {
-  const rows = await pgClient(db).unsafe(
+  const rows = await getPgClient(db, "facet query").unsafe(
     `SELECT val AS value, count(*)::int AS count
      FROM ${table}, unnest(${col}) AS val
      WHERE ${where} AND ${col} IS NOT NULL
@@ -182,7 +171,7 @@ async function computeRangeFacet(
   where: string,
   params: unknown[]
 ): Promise<FacetRangeResult> {
-  const stats = await pgClient(db).unsafe(
+  const stats = await getPgClient(db, "facet query").unsafe(
     `SELECT min(${col})::float AS lo, max(${col})::float AS hi, count(*)::int AS n
      FROM ${table}
      WHERE ${where} AND ${col} IS NOT NULL`,
@@ -206,7 +195,7 @@ async function computeRangeFacet(
   }
 
   const width = (hi - lo) / RANGE_BUCKETS;
-  const bucketRows = await pgClient(db).unsafe(
+  const bucketRows = await getPgClient(db, "facet query").unsafe(
     `SELECT
        least(${RANGE_BUCKETS - 1}, greatest(0, floor((${col} - $${params.length + 1}) / $${params.length + 2})))::int AS bucket,
        count(*)::int AS count

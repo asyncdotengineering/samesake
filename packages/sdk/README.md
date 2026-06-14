@@ -1,6 +1,6 @@
 # @samesake/core
 
-Config-as-code DSL for commerce search and entity resolution. Declare `collection()` and `entity()` with compile-time validation.
+Config-as-code DSL for Samesake, a TypeScript-first visual-commerce search engine compiler starting with fashion. Declare `collection()` for multi-space commerce search and `entity()` for entity resolution, both with compile-time validation.
 
 ```bash
 bun add @samesake/core

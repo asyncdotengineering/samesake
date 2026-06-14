@@ -9,6 +9,7 @@ This section is action-oriented. Each page solves one concrete problem with a sp
 
 | Guide | Problem it solves |
 |---|---|
+| [Build fashion search](./build-fashion-search.md) | You have a messy fashion catalog and want reverse image + intent + constraint search with current Samesake primitives. |
 | [Onboarding samesake into an existing system](./onboarding-existing-system.md) | You have a production system with data already. You want to add samesake without disrupting users. Covers prepare → bootstrap → cut-over → ongoing sync. |
 
 More how-tos as they're written:

@@ -1,26 +1,10 @@
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { CollectionDef, ConnectorDef } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
-import { sanitiseIdent } from "./schema-gen.ts";
 import { computeContentHash } from "../connectors/normalize.ts";
 import { connectorFromDef, type PullConnector } from "../connectors/index.ts";
-
-type PgUnsafe = {
-  unsafe: (query: string, params?: unknown[]) => Promise<Record<string, unknown>[]>;
-};
-
-function pgClient(db: PostgresJsDatabase): PgUnsafe {
-  const session = (db as { session?: { client?: PgUnsafe } }).session;
-  if (!session?.client?.unsafe) {
-    throw new Error("postgres client unavailable for ingest");
-  }
-  return session.client;
-}
-
-function tableName(schema: string, collection: string): string {
-  return `${schema}.c_${sanitiseIdent(collection)}`;
-}
+import { searchResultCache } from "./search-cache.ts";
+import { collectionTableName, getPgClient } from "./db-utils.ts";
 
 export interface IngestDocument {
   id: string;
@@ -43,7 +27,7 @@ export function makeIngestService(ctx: MatcherCtx, projectsService: ProjectsServ
     const def = await projectsService.getCollectionDef(projectSlug, collectionName);
     if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
 
-    const table = tableName(project.schema_name, collectionName);
+    const table = collectionTableName(project.schema_name, collectionName);
     let upserted = 0;
 
     for (const doc of docs) {
@@ -52,7 +36,7 @@ export function makeIngestService(ctx: MatcherCtx, projectsService: ProjectsServ
         (data.content_hash as string | undefined) ?? computeContentHash(data);
       data.content_hash = contentHash;
 
-      await pgClient(ctx.db).unsafe(
+      await getPgClient(ctx.db, "ingest").unsafe(
         `INSERT INTO ${table} (id, data, content_hash, ingested_at, updated_at)
          VALUES ($1, $2::jsonb, $3, now(), now())
          ON CONFLICT (id) DO UPDATE SET
@@ -77,6 +61,10 @@ export function makeIngestService(ctx: MatcherCtx, projectsService: ProjectsServ
         [doc.id, JSON.stringify(data), contentHash]
       );
       upserted++;
+    }
+
+    if (upserted > 0) {
+      searchResultCache.invalidateProjectCollection(projectSlug, collectionName);
     }
 
     return { upserted };

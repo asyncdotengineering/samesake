@@ -69,8 +69,8 @@ describeIf("observability counters", () => {
   test("search and cache counters increment", async () => {
     const before = matcher.metrics();
     const q = "widget alpha";
-    await matcher.search(projectSlug, "obs", { q });
-    await matcher.search(projectSlug, "obs", { q });
+    await matcher.search(projectSlug, "obs", { q, cache: true });
+    await matcher.search(projectSlug, "obs", { q, cache: true });
     const after = matcher.metrics();
     expect(after.searches_total).toBeGreaterThan(before.searches_total + 1);
     expect(after.search_cache_hits).toBeGreaterThan(before.search_cache_hits);

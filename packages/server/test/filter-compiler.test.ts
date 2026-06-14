@@ -1,11 +1,33 @@
 import { describe, expect, test } from "bun:test";
 import { collection, f, Channels } from "@samesake/core";
 import { buildFilterSql } from "../src/core/search.ts";
+import { normalizeFiltersToConstraintPredicates } from "../src/core/search-filter.ts";
 import { testProductsCollection } from "./fixtures.ts";
 
 const def = testProductsCollection;
 
 describe("buildFilterSql", () => {
+  test("normalizes raw filters into typed predicates before SQL compilation", () => {
+    const predicates = normalizeFiltersToConstraintPredicates(
+      { price: { $gt: 10, $lte: 100 }, colors: ["red"], brand: { $not: "a+b" } },
+      def,
+      "explicit"
+    );
+
+    expect(predicates).toEqual([
+      expect.objectContaining({ field: "price", fieldType: "number", operator: "gt", value: 10, source: "explicit" }),
+      expect.objectContaining({ field: "price", fieldType: "number", operator: "lte", value: 100, source: "explicit" }),
+      expect.objectContaining({ field: "colors", fieldType: "array", operator: "contains", value: ["red"], soft: true }),
+      expect.objectContaining({ field: "brand", fieldType: "text", operator: "not", value: "a+b" }),
+    ]);
+  });
+
+  test("normalization preserves validation failures", () => {
+    expect(() =>
+      normalizeFiltersToConstraintPredicates({ price: { $lte: "cheap" } }, def, "explicit")
+    ).toThrow(/requires a numeric value/);
+  });
+
   test("shorthand eq on text", () => {
     const r = buildFilterSql({ brand: "nike" }, def, { soft: true }, 4);
     expect(r.where).toBe("brand = $4");
@@ -34,6 +56,18 @@ describe("buildFilterSql", () => {
     const r = buildFilterSql({ brand: { $nin: ["x"] } }, def, { soft: true }, 4);
     expect(r.where).toBe("(brand IS NULL OR NOT (brand = ANY($4::text[])))");
     expect(r.params).toEqual([["x"]]);
+  });
+
+  test("$in on number field casts to numeric[] (not text[])", () => {
+    const r = buildFilterSql({ price: { $in: [100, 200] } }, def, { soft: true }, 4);
+    expect(r.where).toBe("price = ANY($4::numeric[])");
+    expect(r.params).toEqual([[100, 200]]);
+  });
+
+  test("$nin on number field casts to numeric[]", () => {
+    const r = buildFilterSql({ price: { $nin: [100] } }, def, { soft: true }, 4);
+    expect(r.where).toBe("(price IS NULL OR NOT (price = ANY($4::numeric[])))");
+    expect(r.params).toEqual([[100]]);
   });
 
   test("$ne operator", () => {

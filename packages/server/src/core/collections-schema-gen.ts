@@ -1,6 +1,7 @@
 import type { CollectionDef, CollectionFieldDef } from "@samesake/core";
 import { totalSpaceDims } from "./spaces.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
+import { assertIndexableVectorDimension } from "./vector-dim.ts";
 
 export interface CollectionsSchemaGenConfig {
   projectPrefix: string;
@@ -54,9 +55,23 @@ export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
     const embedDim = c.embeddings
       ? Math.max(...Object.values(c.embeddings).map((e) => e.dim))
       : 1536;
+    for (const [name, def] of Object.entries(c.embeddings ?? {})) {
+      assertIndexableVectorDimension({
+        owner: `collection ${c.name}`,
+        field: `embeddings.${name}`,
+        dimensions: def.dim,
+      });
+    }
 
     const spaceDimTotal =
       c.spaces && Object.keys(c.spaces).length > 0 ? totalSpaceDims(c.spaces) : 0;
+    if (spaceDimTotal > 0) {
+      assertIndexableVectorDimension({
+        owner: `collection ${c.name}`,
+        field: "spaces total",
+        dimensions: spaceDimTotal,
+      });
+    }
     const spaceVecCol =
       spaceDimTotal > 0 ? `,\n        space_vec vector(${spaceDimTotal})` : "";
 

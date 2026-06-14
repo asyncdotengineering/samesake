@@ -10,20 +10,18 @@ From the repo root, with `.env` pointing at a Postgres instance for tests:
 git status --short          # must be clean (no root debris, no stray scratchpads)
 bun test                    # read N pass / N fail — do not pipe through tail
 bun run typecheck
-bun scripts/pack-assert.ts  # all 4 packages + LICENSE + npm install smoke
+bun scripts/pack-assert.ts  # drift gates + all 4 packages + LICENSE + npm install smoke
 ```
 
 All four must pass. `bun test | tail` swallows exit codes — read the `N pass / N fail` line, not the pipe exit code.
 
-### Rename grep (zero stale names)
+### Drift gate
 
 ```bash
-# Stale-name scan (see WBS R-04 pattern); exclude CHANGELOG + README history notes
-rg -n 'samesake|SAMESAKE|samesake —|bun cli/samesake' \
-  --glob '!CHANGELOG.md' --glob '!README.md'
+bun scripts/release-drift-gates.ts
 ```
 
-Only approved historical notes in CHANGELOG/README may remain.
+This fails on deprecated project naming in current docs/source, stale current-doc architecture references, missing local docs/example paths, broken public example imports, and invalid generated CLI configs. `bun scripts/pack-assert.ts` runs this gate automatically.
 
 ### Root debris check
 

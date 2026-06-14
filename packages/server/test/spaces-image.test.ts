@@ -5,7 +5,7 @@ import type { EmbedRequest } from "../src/types.ts";
 import { collection, f, Channels, s } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
-import { fetchImageBytes } from "../src/core/fetch-image.ts";
+import { fetchRemoteImageSafe, __setImageTransport } from "../src/core/fetch-image.ts";
 import { encodeImage } from "../src/core/spaces.ts";
 import { stubEmbed } from "./fixtures.ts";
 
@@ -28,44 +28,168 @@ function multimodalStub(req: EmbedRequest): number[] {
   throw new Error("stub needs text or image");
 }
 
-describe("fetchImageBytes", () => {
-  test("rejects non-image content-type", async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch() {
-        return new Response("not an image", {
-          headers: { "content-type": "text/plain" },
-        });
-      },
+function mockFetch(responseFor: (url: string) => Response) {
+  __setImageTransport(async ({ url }) => {
+    const res = responseFor(url.href);
+    const headers: Record<string, string | undefined> = {};
+    res.headers.forEach((v, k) => {
+      headers[k] = v;
     });
-    try {
-      const url = `http://127.0.0.1:${server.port}/x`;
-      expect(await fetchImageBytes(url)).toBeNull();
-    } finally {
-      server.stop();
+    const buf = new Uint8Array(await res.arrayBuffer());
+    async function* body() {
+      if (buf.byteLength) yield buf;
+    }
+    return { status: res.status, headers, body: body() };
+  });
+  return () => __setImageTransport(null);
+}
+
+const publicResolve = async () => ["93.184.216.34"];
+
+describe("fetchRemoteImageSafe", () => {
+  test("rejects non-http schemes", async () => {
+    const got = await fetchRemoteImageSafe("file:///etc/passwd");
+    expect(got).toEqual({ ok: false, reason: "invalid_url", finalUrl: "file:///etc/passwd" });
+  });
+
+  test("rejects localhost, loopback, private, link-local, and metadata destinations", async () => {
+    for (const url of [
+      "http://localhost/x.png",
+      "http://127.0.0.1/x.png",
+      "http://10.0.0.2/x.png",
+      "http://192.168.1.10/x.png",
+      "http://172.16.0.4/x.png",
+      "http://169.254.169.254/latest/meta-data/",
+    ]) {
+      const got = await fetchRemoteImageSafe(url);
+      expect(got.ok).toBe(false);
+      if (!got.ok) expect(got.reason).toBe("blocked_destination");
     }
   });
 
-  test("returns bytes for tiny image response", async () => {
+  test("rejects non-image content-type", async () => {
+    const restore = mockFetch(() =>
+      new Response("not an image", {
+        headers: { "content-type": "text/plain" },
+      })
+    );
+    try {
+      const got = await fetchRemoteImageSafe("https://example.com/x", {
+        resolveHostname: publicResolve,
+      });
+      expect(got.ok).toBe(false);
+      if (!got.ok) expect(got.reason).toBe("unsupported_content_type");
+    } finally {
+      restore();
+    }
+  });
+
+  test("rejects oversized responses before unbounded buffering", async () => {
+    const restore = mockFetch(() =>
+      new Response("x", {
+        headers: { "content-type": "image/png", "content-length": "10" },
+      })
+    );
+    try {
+      const got = await fetchRemoteImageSafe("https://example.com/huge.png", {
+        maxBytes: 4,
+        resolveHostname: publicResolve,
+      });
+      expect(got.ok).toBe(false);
+      if (!got.ok) expect(got.reason).toBe("too_large");
+    } finally {
+      restore();
+    }
+  });
+
+  test("rejects redirect to private destination", async () => {
+    const restore = mockFetch(() =>
+      new Response(null, {
+        status: 302,
+        headers: { location: "http://127.0.0.1/private.png" },
+      })
+    );
+    try {
+      const got = await fetchRemoteImageSafe("https://example.com/redirect.png", {
+        resolveHostname: publicResolve,
+      });
+      expect(got.ok).toBe(false);
+      if (!got.ok) expect(got.reason).toBe("blocked_destination");
+    } finally {
+      restore();
+    }
+  });
+
+  test("returns bytes for tiny public image response", async () => {
     const png = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
       "base64"
     );
-    const server = Bun.serve({
-      port: 0,
-      fetch() {
-        return new Response(png, { headers: { "content-type": "image/png" } });
+    const restore = mockFetch(() => new Response(png, { headers: { "content-type": "image/png" } }));
+    try {
+      const got = await fetchRemoteImageSafe("https://example.com/ok.png", {
+        resolveHostname: publicResolve,
+      });
+      expect(got.ok).toBe(true);
+      if (got.ok) {
+        expect(got.contentType).toBe("image/png");
+        expect(got.bytes.length).toBeGreaterThan(0);
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  test("pins the validated IP for the connection (no second resolution)", async () => {
+    let seenPins: string[] = [];
+    const got = await fetchRemoteImageSafe("https://cdn.example.com/ok.png", {
+      resolveHostname: async () => ["93.184.216.34"],
+      transport: async ({ pinnedIps }) => {
+        seenPins = pinnedIps;
+        async function* body() {
+          yield new Uint8Array([1, 2, 3]);
+        }
+        return { status: 200, headers: { "content-type": "image/png" }, body: body() };
       },
     });
-    try {
-      const url = `http://127.0.0.1:${server.port}/ok.png`;
-      const got = await fetchImageBytes(url);
-      expect(got).not.toBeNull();
-      expect(got!.mimeType).toBe("image/png");
-      expect(got!.bytes.length).toBeGreaterThan(0);
-    } finally {
-      server.stop();
-    }
+    expect(got.ok).toBe(true);
+    expect(seenPins).toEqual(["93.184.216.34"]);
+  });
+
+  test("blocks NAT64-embedded metadata address before connecting", async () => {
+    const got = await fetchRemoteImageSafe("https://evil.example/x.png", {
+      resolveHostname: async () => ["64:ff9b::a9fe:a9fe"], // 169.254.169.254
+      transport: async () => {
+        throw new Error("transport must not be reached for a blocked destination");
+      },
+    });
+    expect(got.ok).toBe(false);
+    if (!got.ok) expect(got.reason).toBe("blocked_destination");
+  });
+
+  test("blocks hex-form IPv4-mapped loopback", async () => {
+    const got = await fetchRemoteImageSafe("https://evil.example/x.png", {
+      resolveHostname: async () => ["::ffff:7f00:1"], // 127.0.0.1
+      transport: async () => {
+        throw new Error("transport must not be reached for a blocked destination");
+      },
+    });
+    expect(got.ok).toBe(false);
+    if (!got.ok) expect(got.reason).toBe("blocked_destination");
+  });
+
+  test("accepts image/avif", async () => {
+    const got = await fetchRemoteImageSafe("https://cdn.example.com/x.avif", {
+      resolveHostname: async () => ["93.184.216.34"],
+      transport: async () => {
+        async function* body() {
+          yield new Uint8Array([1, 2, 3]);
+        }
+        return { status: 200, headers: { "content-type": "image/avif" }, body: body() };
+      },
+    });
+    expect(got.ok).toBe(true);
+    if (got.ok) expect(got.contentType).toBe("image/avif");
   });
 });
 
@@ -145,16 +269,13 @@ describeIf("image space indexing", () => {
   });
 
   test("image segment placed from stubbed embed", async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch() {
-        return new Response(Buffer.from([0xff, 0xd8, 0xff]), {
-          headers: { "content-type": "image/jpeg" },
-        });
-      },
-    });
+    const restore = mockFetch(() =>
+      new Response(Buffer.from([0xff, 0xd8, 0xff]), {
+        headers: { "content-type": "image/jpeg" },
+      })
+    );
     try {
-      const url = `http://127.0.0.1:${server.port}/red.jpg`;
+      const url = "https://example.com/red.jpg";
       await matcher.pushDocuments(projectSlug, "products", [
         { id: "red-doc", data: { title: "red item", image_url: url } },
       ]);
@@ -167,7 +288,7 @@ describeIf("image space indexing", () => {
       await close();
       expect(rows[0]?.space_vec).toContain("0.");
     } finally {
-      server.stop();
+      restore();
     }
   });
 });
@@ -176,21 +297,16 @@ describeIf("image space cross-modal search", () => {
   const projectSlug = `t_${Math.random().toString(36).slice(2, 10)}`;
   let schemaName = "";
   let matcher: ReturnType<typeof createMatcher>;
-  let redUrl = "";
-  let blueUrl = "";
+  const redUrl = "https://example.com/red.jpg";
+  const blueUrl = "https://example.com/blue.jpg";
+  let restoreFetch: (() => void) | null = null;
 
   beforeAll(async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch(req) {
-        const u = new URL(req.url);
-        return new Response(Buffer.from([0xff, 0xd8, 0xff]), {
-          headers: { "content-type": "image/jpeg" },
-        });
-      },
-    });
-    redUrl = `http://127.0.0.1:${server.port}/red.jpg`;
-    blueUrl = `http://127.0.0.1:${server.port}/blue.jpg`;
+    restoreFetch = mockFetch(() =>
+      new Response(Buffer.from([0xff, 0xd8, 0xff]), {
+        headers: { "content-type": "image/jpeg" },
+      })
+    );
 
     matcher = createMatcher({
       databaseUrl: databaseUrl!,
@@ -213,6 +329,7 @@ describeIf("image space cross-modal search", () => {
   }, 60_000);
 
   afterAll(async () => {
+    restoreFetch?.();
     if (schemaName) {
       const { db, close } = createDbFromUrl(databaseUrl!);
       await db.execute(sql.raw(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`));
@@ -252,19 +369,15 @@ describeIf("image embed capability error", () => {
   const projectSlug = `t_${Math.random().toString(36).slice(2, 10)}`;
   let schemaName = "";
   let matcher: ReturnType<typeof createMatcher>;
-  let imageUrl = "";
-  let server: ReturnType<typeof Bun.serve>;
+  const imageUrl = "https://example.com/x.jpg";
+  let restoreFetch: (() => void) | null = null;
 
   beforeAll(async () => {
-    server = Bun.serve({
-      port: 0,
-      fetch() {
-        return new Response(Buffer.from([0xff, 0xd8, 0xff]), {
-          headers: { "content-type": "image/jpeg" },
-        });
-      },
-    });
-    imageUrl = `http://127.0.0.1:${server.port}/x.jpg`;
+    restoreFetch = mockFetch(() =>
+      new Response(Buffer.from([0xff, 0xd8, 0xff]), {
+        headers: { "content-type": "image/jpeg" },
+      })
+    );
 
     matcher = createMatcher({
       databaseUrl: databaseUrl!,
@@ -288,7 +401,7 @@ describeIf("image embed capability error", () => {
   }, 30_000);
 
   afterAll(async () => {
-    server?.stop();
+    restoreFetch?.();
     if (schemaName) {
       const { db, close } = createDbFromUrl(databaseUrl!);
       await db.execute(sql.raw(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`));

@@ -208,7 +208,7 @@ export interface MatcherConfig {
   /**
    * When to apply system migrations.
    *   - "lazy"  (default) — on the first HTTP request, via app middleware
-   *   - "eager"           — synchronously inside createMatcher()
+   *   - "eager"           — start during createMatcher(); await matcher.migrate() for a hard gate
    *   - "manual"          — never automatic; call matcher.migrate() explicitly
    */
   migrate?: "lazy" | "eager" | "manual";

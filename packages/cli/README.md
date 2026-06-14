@@ -1,6 +1,6 @@
 # @samesake/cli
 
-Operations CLI for samesake — apply schemas, seed data, match queries, calibrate thresholds, and manage aliases over HTTP.
+Operations CLI for Samesake — apply visual-commerce search schemas, seed data, run search/match workflows, calibrate thresholds, and manage aliases over HTTP.
 
 ```bash
 bun add -g @samesake/cli

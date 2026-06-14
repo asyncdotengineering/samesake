@@ -4,14 +4,8 @@
 import { desc, eq, and } from "drizzle-orm";
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
-import { sanitiseIdent } from "./schema-gen.ts";
-
-type PgUnsafe = { unsafe: (q: string, p?: unknown[]) => Promise<Record<string, unknown>[]> };
-function pgClient(db: MatcherCtx["db"]): PgUnsafe {
-  const session = (db as { session?: { client?: PgUnsafe } }).session;
-  if (!session?.client?.unsafe) throw new Error("postgres client unavailable");
-  return session.client;
-}
+import { searchResultCache } from "./search-cache.ts";
+import { collectionTableName, getPgClient } from "./db-utils.ts";
 
 export interface ReviewRow {
   id: string;
@@ -25,10 +19,6 @@ export interface ReviewRow {
 export function makeReviewService(ctx: MatcherCtx, projectsService: ProjectsService) {
   const corrections = ctx.systemTables.samesakeCorrections;
 
-  function table(schemaName: string, collection: string): string {
-    return `${sanitiseIdent(schemaName)}.c_${sanitiseIdent(collection)}`;
-  }
-
   async function reviewList(
     projectSlug: string,
     collectionName: string,
@@ -38,12 +28,12 @@ export function makeReviewService(ctx: MatcherCtx, projectsService: ProjectsServ
     if (!project) throw new Error(`project "${projectSlug}" not found`);
     const limit = Math.min(opts?.limit ?? 20, 200);
     const maxConf = opts?.maxConfidence ?? 0.7;
-    const rows = await pgClient(ctx.db).unsafe(
+    const rows = await getPgClient(ctx.db, "review").unsafe(
       `SELECT id, data->>'title' AS title, enriched->>'category' AS category,
               (enriched->>'confidence')::float AS confidence,
               coalesce(enriched->'uncertain_fields', '[]'::jsonb) AS uncertain_fields,
               (enriched ? '_corrected') AS corrected
-       FROM ${table(project.schema_name, collectionName)}
+       FROM ${collectionTableName(project.schema_name, collectionName)}
        WHERE enriched IS NOT NULL
          AND ((enriched->>'confidence')::float < $1
               OR jsonb_array_length(coalesce(enriched->'uncertain_fields', '[]'::jsonb)) > 0)
@@ -75,8 +65,8 @@ export function makeReviewService(ctx: MatcherCtx, projectsService: ProjectsServ
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
     if (!Object.keys(fields).length) throw new Error("no corrections supplied");
-    const t = table(project.schema_name, collectionName);
-    const rows = await pgClient(ctx.db).unsafe(
+    const t = collectionTableName(project.schema_name, collectionName);
+    const rows = await getPgClient(ctx.db, "review").unsafe(
       `SELECT data->>'title' AS title, enriched FROM ${t} WHERE id = $1`,
       [docId]
     );
@@ -96,7 +86,7 @@ export function makeReviewService(ctx: MatcherCtx, projectsService: ProjectsServ
       });
     }
 
-    await pgClient(ctx.db).unsafe(
+    await getPgClient(ctx.db, "review").unsafe(
       `UPDATE ${t}
        SET enriched = coalesce(enriched, '{}'::jsonb) || $1::jsonb || '{"_corrected": true}'::jsonb,
            indexed_at = NULL,
@@ -104,6 +94,7 @@ export function makeReviewService(ctx: MatcherCtx, projectsService: ProjectsServ
        WHERE id = $2`,
       [JSON.stringify(fields), docId]
     );
+    searchResultCache.invalidateProjectCollection(projectSlug, collectionName);
     return { corrected: Object.keys(fields) };
   }
 

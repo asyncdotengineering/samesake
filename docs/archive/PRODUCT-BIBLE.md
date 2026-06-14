@@ -865,3 +865,7 @@ If in doubt, read this section.
 ## 15. THE ONE SENTENCE
 
 > A frugal, schema-flexible, open-source entity-resolution service: cosine + trigram + phonetic + alias + gates over Postgres + pgvector + BM25, with F1-calibrated per-tenant thresholds, idempotent confirms, and the discipline to drop channels that don't earn their cost.
+# OBSOLETE: historical planning document
+
+This document is archived for history only. It describes removed architecture and
+must not be used as the current product, deployment, or API contract.

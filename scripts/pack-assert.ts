@@ -29,6 +29,8 @@ function fail(msg: string): void {
   failed = true;
 }
 
+execSync("bun scripts/release-drift-gates.ts", { cwd: repoRoot, stdio: "inherit" });
+
 for (const { dir } of packages) {
   const pkgRoot = join(repoRoot, dir);
   execSync("bun run build", { cwd: pkgRoot, stdio: "inherit" });

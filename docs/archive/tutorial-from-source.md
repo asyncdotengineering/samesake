@@ -250,3 +250,7 @@ The matcher just learned from a single click. Every subsequent search for `"Pree
 - Read [`RFC.md`](../RFC.md) for the full architectural contract.
 - Read the project [`README.md`](../README.md) for the bulk-import and active-learning workflows.
 - Open [http://localhost:3030/swagger](http://localhost:3030/swagger) while the matcher is running to explore every endpoint interactively.
+# OBSOLETE: historical source tutorial
+
+This document is archived for history only. It references removed examples and
+APIs and must not be used for current onboarding.

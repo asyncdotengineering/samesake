@@ -15,6 +15,7 @@
 import type { EntityDef } from "@samesake/core";
 import { tablesToDDL } from "../db/ddl.ts";
 import { perProjectTables } from "../db/schema/per-project.ts";
+import { assertIndexableVectorDimension } from "./vector-dim.ts";
 
 export interface GeneratedDDL {
   projectSchema: string;
@@ -86,8 +87,14 @@ export function makeSchemaGen(config: SchemaGenConfig) {
 
     const embedCols = e.embeddings
       ? Object.entries(e.embeddings).map(
-          ([name, def]) =>
-            `  ${sanitiseIdent(name)} vector(${def.dim})`
+          ([name, def]) => {
+            assertIndexableVectorDimension({
+              owner: `entity ${e.name}`,
+              field: `embeddings.${name}`,
+              dimensions: def.dim,
+            });
+            return `  ${sanitiseIdent(name)} vector(${def.dim})`;
+          }
         )
       : [];
     const phonCols = e.phonetic

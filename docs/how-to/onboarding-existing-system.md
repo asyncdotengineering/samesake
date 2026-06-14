@@ -23,7 +23,7 @@ The path has **four phases**. Skip ahead to whichever one you're on:
 
 Plus an [operational concerns](#operational-concerns) appendix.
 
-Worked references in this repo: [`examples/hello/`](../examples/hello/) (match smoke), [`examples/bulk-import/`](../examples/bulk-import/) (bulk ingest + human resolve).
+Worked references in this repo: [`examples/hello/`](../../examples/hello/) (match smoke), [`examples/quickstart/`](../../examples/quickstart/) (smallest entity config), and [`examples/hello-search/`](../../examples/hello-search/) (collection search smoke).
 
 ---
 
@@ -548,7 +548,7 @@ Schedule this as a weekly job. The matcher gets visibly better with use without 
 
 `matcher.calibrate` tunes thresholds, not channel weights. If you find a channel is consistently underweighted or overweighted in your data (a brand mismatch should kill candidates harder; phonetic should matter more for an Indian dataset), update the entity declaration's `Scorers.*({ weight: ... })` and re-deploy. Next `matcher.apply` regenerates the SQL — no migration, immediately live.
 
-For empirical weight-tuning, see [`scripts/samesake-weight-tune.ts`](../../docs/explanation/tuning-channel-weights.md) and [`docs/explanation/tuning-channel-weights.md`](../explanation/tuning-channel-weights.md).
+For empirical weight-tuning, see [`docs/explanation/tuning-channel-weights.md`](../explanation/tuning-channel-weights.md).
 
 ---
 
@@ -635,8 +635,8 @@ The hello example ([`examples/hello/run.ts`](../../examples/hello/run.ts)) exerc
 
 ## What this guide deliberately doesn't cover
 
-- **Building the matcher from source** — if you're forking samesake, the repo's [`AGENTS.md`](../../AGENTS.md) and [`PRODUCT-BIBLE.md`](../PRODUCT-BIBLE.md) cover internals.
-- **Choosing between samesake and alternatives** — see [`docs/premise.md`](../premise.md) for the comparison.
+- **Building the matcher from source** — if you're forking samesake, start with the repo [`README.md`](../../README.md), [`docs/quickstart-search.md`](../quickstart-search.md), and [`docs/tutorial.md`](../tutorial.md).
+- **Choosing between samesake and alternatives** — compare the runnable examples, package README files, and benchmark notes against your own dataset before committing.
 - **The 11 deployment shapes** — covered in [`docs/usage-patterns.md`](../usage-patterns.md).
 - **Why each channel exists / how scoring works** — [`docs/explanation/matcher-channels.md`](../explanation/matcher-channels.md).
 - **How to write your `embed` / `parse` functions per provider** — [`docs/recipes/`](../recipes/).

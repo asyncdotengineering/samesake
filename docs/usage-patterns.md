@@ -33,7 +33,7 @@ The same instance gives you all three. Pick the surface that fits your runtime �
 | [10](#10-deterministic-test-stub) | **Deterministic test stub** | Any | function | Tests against real Postgres without hitting an LLM |
 | [11](#11-mixed-providers) | **Mixed providers per call** | Any | function | Different model per entity / length / quality tier |
 
-> **First time using samesake?** Walk through [`examples/bookshop-onboarding/`](../examples/bookshop-onboarding/) — built by acting as a new dev in a fresh directory and walking through this doc step-by-step. It's the verified happy-path end-to-end: `bun init` → install → write `embedder.ts` → `samesake migrate` → write entities → in-process `matcher.apply()` / `match()` / `confirm()`. ~30 lines of consumer code, all surfaces verified green.
+> **First time using samesake?** Start with [`examples/quickstart/`](../examples/quickstart/) for the smallest entity path, then [`examples/hello-search/`](../examples/hello-search/) for the smallest collection search path. Both are tracked smoke examples.
 
 > **Adding samesake to a system you already have in production?** See [How-to → Onboarding samesake into an existing system](./how-to/onboarding-existing-system.md) — the full playbook covering prepare → bootstrap (initial data load) → cut-over → ongoing sync via the outbox pattern → calibration over time.
 
@@ -75,7 +75,7 @@ interface MatcherConfig {
 
   // When to apply system migrations:
   //   "lazy"   (default) — on the first HTTP request via app middleware
-  //   "eager"            — synchronously inside createMatcher()
+  //   "eager"            — start during createMatcher(); await matcher.migrate() for a hard gate
   //   "manual"           — never automatic; call matcher.migrate() yourself
   migrate?: "lazy" | "eager" | "manual";
 }
@@ -391,7 +391,7 @@ Two equivalent surfaces:
 ```bash
 # In your deploy pipeline, before booting the app:
 bunx samesake migrate --db=$DATABASE_URL --schema=public
-# Then deploy/start the app with migrate: "manual" so it doesn't try again
+# Then deploy/start the app with migrate: "manual" so requests do not run migrations
 bun apps/matcher/src/index.ts
 ```
 
@@ -577,7 +577,7 @@ One library, multiple shapes, one connection pool per process — and your `embe
 
 The matcher doesn't care. Pick the one you're already comfortable with:
 
-- **Vercel AI SDK + Gemini** — easiest start, what `apps/matcher` and `examples/bookshop-onboarding` use. See [`docs/recipes/embedder-gemini.ts`](./recipes/embedder-gemini.ts).
+- **Vercel AI SDK + Gemini** — easiest start, and what `apps/matcher` uses. See [`docs/recipes/embedder-gemini.ts`](./recipes/embedder-gemini.ts).
 - **Vercel AI SDK + OpenAI** — [`docs/recipes/embedder-openai.ts`](./recipes/embedder-openai.ts).
 - **Voyage AI** — high-quality multilingual, no SDK needed (raw fetch). [`docs/recipes/embedder-voyage.ts`](./recipes/embedder-voyage.ts).
 - **Local Ollama** — offline / air-gapped / regulated. See pattern 9 above and [`docs/recipes/embedder-ollama.ts`](./recipes/embedder-ollama.ts).

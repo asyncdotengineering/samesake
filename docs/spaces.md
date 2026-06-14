@@ -74,7 +74,7 @@ Runnable demo (stub embed, no LLM): [`examples/hello-spaces/run.ts`](../examples
 2. **Enable the spaces leg only after a harness run** on your corpus. The fashion gate required mean@10 ≥ 2.30 and P@5 ≥ 0.82; flat default weights did not pass ([`spaces-gate.md`](./spaces-gate.md)).
 3. **Zero structural segments** unless the query references them (price, category, freshness). NLQ already parses category/price intent — wire that to `weights.spaces`, not flat 1.0 everywhere.
 4. **Do not double-count text** — if `s.text` shares the doc embedding source, prefer spaces *or* the legacy cosine leg, not both at full weight.
-5. **Sweep on a golden set** — use `samesake eval` for retrieval smoke, then your consumer harness with an LLM judge for graded metrics (see [`docs/context/spike/eval-search.js`](./context/spike/eval-search.js)).
+5. **Sweep on a golden set** — use `samesake eval` for retrieval smoke, then your consumer harness with an LLM judge for graded metrics. Keep the judged dataset and scoring notes beside your app, and compare against the methodology in [`QUALITY.md`](./QUALITY.md).
 
 ## Explain
 

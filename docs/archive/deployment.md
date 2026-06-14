@@ -427,3 +427,7 @@ Gemini API is usually the dominant cost above ~10k matches/day. Cache hits drive
 - [`docker-compose.prod.yml`](../docker-compose.prod.yml) — production overlay
 - [`fly.toml`](../fly.toml) — Fly.io template
 - [`scripts/backup.sh`](../scripts/backup.sh) — pg_dump backup helper
+# OBSOLETE: historical deployment notes
+
+This document is archived for history only. It references removed server
+architecture and must not be used for current deployment guidance.

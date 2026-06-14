@@ -130,7 +130,7 @@ export const customer = entity("customer", {
 });
 ```
 
-You will notice the embedding declaration is pure data: `model: "gemini-embedding-001", dim: 768`. There's no `providers.gemini.embed001(...)` factory. The matcher doesn't care what's behind `"gemini-embedding-001"`; your `embedder.ts` decides that.
+You will notice the embedding declaration is pure data: `model: "gemini-embedding-001", dim: 768`. There is no bundled provider factory. The matcher does not care what service sits behind `"gemini-embedding-001"`; your `embedder.ts` decides that.
 
 You will also notice that every `Scorers.*` channel references a field, embedding, or phonetic block we just declared. If you change `embedding: "name_emb"` to `"nam_emb"` (a typo), TypeScript will immediately complain: `Type '"nam_emb"' is not assignable to type '"name_emb"'`. This is the type-safe DSL doing its job.
 
@@ -293,6 +293,6 @@ That is the one row that explains why the second match in Step 8 jumped above `0
 
 - Browse [`docs/usage-patterns.md`](./usage-patterns.md) to see the other 10 deployment shapes — mounting the matcher in an existing Hono app, deploying to Cloudflare Workers, running standalone on Bun or Node, mixing HTTP and in-process calls on the same matcher, swapping in Ollama for offline use, deterministic test stubs, and per-call provider routing.
 - Browse [`docs/recipes/`](./recipes/) for copy-paste `embedder.ts` / `parser.ts` files for every common provider (Gemini, OpenAI, Voyage, Ollama, mock).
-- Look at [`examples/healthcare-records/`](../examples/healthcare-records/) for a richer schema — three entities (patient, provider, medication), ~20 fields, parse-shape entities with brand and size gates, cross-tenant duplicates.
-- Read [`docs/premise.md`](./premise.md) to understand why this library exists and the entity-resolution problem it is solving.
-- When you are ready to deploy, read [`docs/deployment.md`](./deployment.md) for the six self-host paths and the operational gotchas of each.
+- Look at [`examples/hello/`](../examples/hello/) for a richer schema — three entities with people-shape and parse-shape scoring, active-learning feedback, dedup, variants, and calibration.
+- Read [`docs/quickstart-search.md`](./quickstart-search.md) if you also need collection search.
+- When you are ready to release, run the local gates in [`docs/release.md`](./release.md).

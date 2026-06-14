@@ -73,3 +73,7 @@ When a section above no longer reflects what we are actually building, the right
 - [prior-art/](./prior-art/) — research on midday-ai, Splink, and the broader entity-resolution landscape.
 - [../README.md](../README.md) — what a user sees first.
 - [tutorial.md](./tutorial.md) — fifteen minutes from clone to first match.
+# OBSOLETE: historical premise
+
+This document is archived for history only. It describes removed architecture and
+must not be used as the current product, deployment, or API contract.

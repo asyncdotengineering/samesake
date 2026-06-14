@@ -1,300 +1,36 @@
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import type { CollectionDef, CollectionFieldDef, SearchWeightsInput, SpaceDef } from "@samesake/core";
+import type { CollectionDef, ConstraintTrace, SearchWeightsInput } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
 import { computeFacets } from "./facets.ts";
+import { buildConstraintTrace, relaxedSoftFields } from "./constraint-trace.ts";
 import { mergeFilters, parseNlq, shouldSkipNlq } from "./nlq.ts";
-import type { ProjectsService } from "./projects.ts";
-import { ClientError } from "../errors.ts";
+import type { ProjectsService, ProjectRow } from "./projects.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
+import { collectionTableName, getPgClient } from "./db-utils.ts";
+import { assembleQueryVector, weightedSegmentCosines } from "./spaces.ts";
+import { searchResultCache, type SearchCacheKey } from "./search-cache.ts";
+import { buildFilterSql, type FilterCompileOpts, type SearchFilters } from "./search-filter.ts";
 import {
-  assembleQueryVector,
-  encodeCategorical,
-  encodeNumberQuery,
-  encodeImage,
-  encodeRecencyQuery,
-  encodeText,
-  spaceSegmentDim,
-  weightedSegmentCosines,
-} from "./spaces.ts";
+  buildQueryImageVectors,
+  buildQuerySpaceSegments,
+  parseSearchWeights,
+  type ChannelWeights,
+} from "./search-query.ts";
 
 export { weightedSegmentCosines } from "./spaces.ts";
+export {
+  buildFilterSql,
+  normalizeFiltersToConstraintPredicates,
+  type CompiledFilter,
+  type FilterClause,
+  type FilterCompileOpts,
+  type FilterOperator,
+  type SearchFilters,
+} from "./search-filter.ts";
 
 const RRF_K = 60;
 const CANDIDATES = 150;
-
-export type FilterOperator =
-  | "$eq"
-  | "$ne"
-  | "$gt"
-  | "$gte"
-  | "$lt"
-  | "$lte"
-  | "$in"
-  | "$nin"
-  | "$contains"
-  | "$exclude"
-  | "$not";
-
-export type FilterClause =
-  | string
-  | number
-  | boolean
-  | string[]
-  | number[]
-  | Partial<Record<FilterOperator, string | number | boolean | string[] | number[]>>;
-
-export type SearchFilters = Record<string, FilterClause>;
-
-export interface FilterCompileOpts {
-  soft: boolean;
-  excludeSoft?: boolean;
-  excludeTerms?: string[];
-}
-
-export interface CompiledFilter {
-  where: string;
-  params: unknown[];
-  softFieldsUsed: string[];
-}
-
-type PgUnsafe = {
-  unsafe: (query: string, params?: unknown[]) => Promise<Record<string, unknown>[]>;
-};
-
-function pgClient(db: PostgresJsDatabase): PgUnsafe {
-  const session = (db as { session?: { client?: PgUnsafe } }).session;
-  if (!session?.client?.unsafe) {
-    throw new Error("postgres client unavailable for parameterized search query");
-  }
-  return session.client;
-}
-
-function isOperatorObject(
-  v: FilterClause
-): v is Partial<Record<FilterOperator, string | number | boolean | string[] | number[]>> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-function filterableFields(def: CollectionDef): Map<string, CollectionFieldDef> {
-  const m = new Map<string, CollectionFieldDef>();
-  for (const [k, f] of Object.entries(def.fields)) {
-    if (f.filterable) m.set(k, f);
-  }
-  return m;
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function assertNumeric(val: unknown, field: string, op: string): asserts val is number {
-  if (typeof val !== "number" || Number.isNaN(val)) {
-    throw new ClientError(
-      "invalid_filter_value",
-      `Filter ${op} on field "${field}" requires a numeric value`
-    );
-  }
-}
-
-function filterClientError(code: string, message: string): never {
-  throw new ClientError(code, message);
-}
-
-export function buildFilterSql(
-  filters: SearchFilters,
-  def: CollectionDef,
-  opts: FilterCompileOpts,
-  startIndex: number
-): CompiledFilter {
-  const allowed = filterableFields(def);
-  const clauses: string[] = [];
-  const params: unknown[] = [];
-  const softFieldsUsed: string[] = [];
-  const next = () => `$${startIndex + params.length}`;
-
-  for (const [field, raw] of Object.entries(filters)) {
-    const fieldDef = allowed.get(field);
-    if (!fieldDef) {
-      const valid = [...allowed.keys()].sort().join(", ");
-      filterClientError(
-        "unknown_filter_field",
-        `Unknown filter field "${field}". Filterable fields: ${valid || "(none)"}`
-      );
-    }
-
-    if (fieldDef.soft && opts.excludeSoft) continue;
-    if (fieldDef.soft && opts.soft) softFieldsUsed.push(field);
-
-    const col = sanitiseIdent(field);
-    const isArray = fieldDef.type === "array";
-
-    if (!isOperatorObject(raw)) {
-      if (isArray && Array.isArray(raw)) {
-        clauses.push(`${col} && ${next()}::text[]`);
-        params.push(raw);
-        continue;
-      }
-      if (fieldDef.type === "enum" && fieldDef.alsoMatch?.length && typeof raw === "string") {
-        // next() must be interleaved with params.push — two next() calls in one
-        // template both render the same index (params.length only grows on push).
-        const eqParam = next();
-        params.push(raw);
-        const anyParam = next();
-        params.push([...fieldDef.alsoMatch]);
-        clauses.push(`(${col} = ${eqParam} OR ${col} = ANY(${anyParam}::text[]))`);
-        continue;
-      }
-      if (fieldDef.type === "text" || fieldDef.type === "enum") {
-        clauses.push(`${col} = ${next()}`);
-        params.push(raw);
-        continue;
-      }
-      if (fieldDef.type === "number") {
-        assertNumeric(raw, field, "=");
-        clauses.push(`${col} = ${next()}::numeric`);
-        params.push(raw);
-        continue;
-      }
-      if (fieldDef.type === "boolean") {
-        if (typeof raw !== "boolean") {
-          filterClientError(
-            "invalid_filter_value",
-            `Filter on field "${field}" requires a boolean value`
-          );
-        }
-        clauses.push(`${col} = ${next()}::boolean`);
-        params.push(raw);
-        continue;
-      }
-    }
-
-    const ops = raw as Partial<Record<FilterOperator, unknown>>;
-    for (const [op, val] of Object.entries(ops)) {
-      switch (op as FilterOperator) {
-        case "$eq":
-          if (isArray) {
-            clauses.push(`${col} = ${next()}`);
-            params.push(val);
-          } else if (fieldDef.type === "number") {
-            assertNumeric(val, field, "$eq");
-            clauses.push(`${col} = ${next()}::numeric`);
-            params.push(val);
-          } else if (fieldDef.type === "boolean") {
-            if (typeof val !== "boolean") {
-              filterClientError(
-                "invalid_filter_value",
-                `Filter $eq on field "${field}" requires a boolean value`
-              );
-            }
-            clauses.push(`${col} = ${next()}::boolean`);
-            params.push(val);
-          } else if (
-            fieldDef.type === "enum" &&
-            fieldDef.alsoMatch?.length &&
-            typeof val === "string"
-          ) {
-            const eqParam = next();
-            params.push(val);
-            const anyParam = next();
-            params.push([...fieldDef.alsoMatch]);
-            clauses.push(`(${col} = ${eqParam} OR ${col} = ANY(${anyParam}::text[]))`);
-          } else {
-            clauses.push(`${col} = ${next()}`);
-            params.push(val);
-          }
-          break;
-        case "$ne":
-          clauses.push(`(${col} IS NULL OR ${col} <> ${next()})`);
-          params.push(val);
-          break;
-        case "$gt":
-          assertNumeric(val, field, "$gt");
-          clauses.push(`${col} > ${next()}::numeric`);
-          params.push(val);
-          break;
-        case "$gte":
-          assertNumeric(val, field, "$gte");
-          clauses.push(`${col} >= ${next()}::numeric`);
-          params.push(val);
-          break;
-        case "$lt":
-          assertNumeric(val, field, "$lt");
-          clauses.push(`${col} < ${next()}::numeric`);
-          params.push(val);
-          break;
-        case "$lte":
-          assertNumeric(val, field, "$lte");
-          clauses.push(`${col} <= ${next()}::numeric`);
-          params.push(val);
-          break;
-        case "$in":
-          clauses.push(`${col} = ANY(${next()}::text[])`);
-          params.push(val);
-          break;
-        case "$nin":
-          clauses.push(`(${col} IS NULL OR NOT (${col} = ANY(${next()}::text[])))`);
-          params.push(val);
-          break;
-        case "$contains":
-          if (isArray) {
-            clauses.push(`${col} && ${next()}::text[]`);
-            params.push(val);
-          } else {
-            clauses.push(`${col} ILIKE '%' || ${next()} || '%'`);
-            params.push(val);
-          }
-          break;
-        case "$exclude":
-          if (isArray) {
-            clauses.push(`NOT (${col} && ${next()}::text[])`);
-            params.push(val);
-          } else {
-            filterClientError(
-              "invalid_filter_operator",
-              `Operator $exclude is only supported on array fields (field "${field}")`
-            );
-          }
-          break;
-        case "$not":
-          if (fieldDef.type === "text") {
-            clauses.push(`(${col} IS NULL OR ${col} !~* ${next()})`);
-            params.push(escapeRegex(String(val)));
-          } else {
-            filterClientError(
-              "invalid_filter_operator",
-              `Operator $not is only supported on text fields (field "${field}")`
-            );
-          }
-          break;
-        default:
-          filterClientError(
-            "unknown_filter_operator",
-            `Unknown filter operator "${op}" on field "${field}"`
-          );
-      }
-    }
-  }
-
-  for (const term of opts.excludeTerms ?? []) {
-    const searchableCols = Object.entries(def.fields)
-      .filter(([, f]) => f.type === "text" && f.searchable)
-      .map(([k]) => `coalesce(${sanitiseIdent(k)}, '')`);
-    const textExpr =
-      searchableCols.length > 0
-        ? `(coalesce(doc, '') || ' ' || ${searchableCols.join(" || ' ' || ")})`
-        : "coalesce(doc, '')";
-    clauses.push(`${textExpr} !~* ${next()}`);
-    params.push(escapeRegex(term));
-  }
-
-  return {
-    where: clauses.length ? clauses.join(" AND ") : "true",
-    params,
-    softFieldsUsed,
-  };
-}
 
 export interface IndexDocumentRow {
   id: string;
@@ -316,6 +52,7 @@ export interface SearchHit {
 export interface SearchResult {
   hits: SearchHit[];
   parsed?: Record<string, unknown>;
+  constraintTrace: ConstraintTrace;
   nlq_degraded?: boolean;
   relaxed: boolean;
   took_ms: number;
@@ -338,6 +75,7 @@ export interface ExplainDocBreakdown {
 export interface SearchExplainResult {
   q: string;
   parsed?: Record<string, unknown>;
+  constraintTrace: ConstraintTrace;
   nlq_degraded?: boolean;
   filters: { sql: string; params: Array<{ index: number; type: string }> };
   relaxation: boolean;
@@ -349,34 +87,64 @@ export interface SearchExplainResult {
 
 export interface SearchOpts {
   q: string;
+  image?: {
+    url?: string;
+    bytes?: Uint8Array;
+    bytesBase64?: string;
+    mimeType?: string;
+  };
   filters?: SearchFilters;
   weights?: SearchWeightsInput;
   limit?: number;
   offset?: number;
   facets?: string[];
-  /** Set false to bypass the short-TTL in-process result cache. */
+  /** Set true to opt into the short-TTL in-process result cache. */
   cache?: boolean;
+}
+
+/** Everything expensive and shared between a search and its explain breakdown, computed once. */
+interface Retrieval {
+  project: ProjectRow;
+  def: CollectionDef;
+  collectionName: string;
+  q: string;
+  weights: ChannelWeights;
+  offset: number;
+  nlq: Awaited<ReturnType<typeof parseNlq>>;
+  explicitFilters: SearchFilters;
+  mergedFilters: SearchFilters;
+  filterOpts: FilterCompileOpts;
+  semanticText: string;
+  vector: number[] | null;
+  spaceSegments: Awaited<ReturnType<typeof buildQuerySpaceSegments>> | null;
+  spaceVector: number[] | null;
 }
 
 const MAX_OFFSET = 200;
 
-// ── In-process result cache (Q2) ─────────────────────────────────────────
-// Short-TTL head-query cache: same process, 60s staleness budget, LRU-capped.
-const RESULT_CACHE_TTL_MS = 60_000;
-const RESULT_CACHE_MAX = 500;
-const resultCache = new Map<string, { value: SearchResult; at: number }>();
+function imageFingerprint(image: SearchOpts["image"]): string | null {
+  if (!image) return null;
+  if (image.url) return `url:${image.url}`;
+  const payload = image.bytesBase64 ?? (image.bytes ? Buffer.from(image.bytes).toString("base64") : null);
+  if (payload == null) return null;
+  // djb2 over the payload keeps the key bounded for large base64 images.
+  let h = 5381;
+  for (let i = 0; i < payload.length; i++) h = ((h << 5) + h + payload.charCodeAt(i)) >>> 0;
+  return `bytes:${image.mimeType ?? ""}:${payload.length}:${h.toString(36)}`;
+}
 
-function resultCacheKey(project: string, collection: string, opts: SearchOpts): string {
-  return [
+function resultCacheKey(project: string, collection: string, opts: SearchOpts): SearchCacheKey {
+  return {
     project,
     collection,
-    opts.q.trim().toLowerCase().replace(/\s+/g, " "),
-    JSON.stringify(opts.filters ?? {}),
-    JSON.stringify(opts.weights ?? {}),
-    opts.limit ?? 20,
-    opts.offset ?? 0,
-    JSON.stringify(opts.facets ?? []),
-  ].join("|");
+    query: opts.q,
+    image: imageFingerprint(opts.image),
+    filters: opts.filters ?? {},
+    weights: opts.weights ?? {},
+    limit: opts.limit ?? 20,
+    offset: opts.offset ?? 0,
+    facets: opts.facets ?? [],
+  };
 }
 
 // ── Implied-budget resolution (Q1) ──────────────────────────────────────
@@ -402,7 +170,7 @@ export async function resolveBudgetHints(
 
     const pct = hint === "cheap" ? BUDGET_CHEAP_PCT : BUDGET_PREMIUM_PCT;
     const category = typeof filters.category === "string" ? filters.category : null;
-    const table = tableName(schemaName, collectionName);
+    const table = collectionTableName(schemaName, collectionName);
     const col = sanitiseIdent(field);
     const cacheKey = `${table}|${col}|${category ?? "*"}|${hint}`;
     const cached = budgetPctCache.get(cacheKey);
@@ -413,7 +181,7 @@ export async function resolveBudgetHints(
       const where = category ? `WHERE category = $2 AND ${col} IS NOT NULL` : `WHERE ${col} IS NOT NULL`;
       const params: unknown[] = [pct];
       if (category) params.push(category);
-      const rows = await pgClient(ctx.db).unsafe(
+      const rows = await getPgClient(ctx.db, "parameterized search query").unsafe(
         `SELECT percentile_cont($1) WITHIN GROUP (ORDER BY ${col}) AS v FROM ${table} ${where}`,
         params
       );
@@ -424,97 +192,6 @@ export async function resolveBudgetHints(
     }
     filters[field] = hint === "cheap" ? { $lte: threshold } : { $gte: threshold };
   }
-}
-
-function tableName(schema: string, collection: string): string {
-  return `${schema}.c_${sanitiseIdent(collection)}`;
-}
-
-export interface ChannelWeights {
-  fts: number;
-  cosine: number;
-  recency: number;
-  spaces: number;
-  recencyHalfLife: number;
-  recencyField: string;
-  spaceSegmentWeights: Record<string, number>;
-}
-
-function defaultSpaceWeights(def: CollectionDef): Record<string, number> {
-  const declared = def.search?.defaultSpaceWeights;
-  const keys = def.spaces ? Object.keys(def.spaces) : [];
-  const out: Record<string, number> = {};
-  for (const k of keys) {
-    out[k] = declared?.[k] ?? 1;
-  }
-  return out;
-}
-
-function parseSearchWeights(
-  def: CollectionDef,
-  override?: SearchWeightsInput
-): ChannelWeights {
-  const channels = def.search?.channels ?? [];
-  let fts = 0;
-  let cosine = 0;
-  let recency = 0;
-  let spaces = 0;
-  let recencyHalfLife = 90;
-  let recencyField = "updated_at";
-
-  for (const ch of channels) {
-    if (ch.kind === "fts") fts = ch.weight ?? 0;
-    if (ch.kind === "cosine") cosine = ch.weight ?? 0;
-    if (ch.kind === "recency") {
-      recency = ch.weight ?? 0;
-      recencyHalfLife = ch.halfLifeDays ?? 90;
-      recencyField = ch.field ?? "updated_at";
-    }
-    if (ch.kind === "spaces") spaces = ch.weight ?? 0;
-  }
-
-  const spaceSegmentWeights = defaultSpaceWeights(def);
-
-  if (override?.fts !== undefined) fts = override.fts;
-  if (override?.cosine !== undefined) cosine = override.cosine;
-  if (override?.recency !== undefined) recency = override.recency;
-
-  if (override?.spaces !== undefined) {
-    if (typeof override.spaces === "number") {
-      spaces = override.spaces;
-    } else {
-      spaces = spaces > 0 ? spaces : 1;
-      for (const [k, v] of Object.entries(override.spaces)) {
-        if (k in spaceSegmentWeights && typeof v === "number") spaceSegmentWeights[k] = v;
-      }
-    }
-  }
-
-  return { fts, cosine, recency, spaces, recencyHalfLife, recencyField, spaceSegmentWeights };
-}
-
-function spaceKeys(def: CollectionDef): string[] {
-  return def.spaces ? Object.keys(def.spaces) : [];
-}
-
-async function buildQuerySpaceVector(
-  def: CollectionDef,
-  queryEmbedding: number[] | null,
-  filters: SearchFilters,
-  segmentWeights: Record<string, number>,
-  embedService: EmbedService,
-  semanticText: string
-): Promise<number[] | null> {
-  const built = await buildQuerySpaceSegments(
-    def,
-    queryEmbedding,
-    filters,
-    segmentWeights,
-    embedService,
-    semanticText
-  );
-  if (!built) return null;
-  return assembleQueryVector(built.segments, built.weights, built.dims);
 }
 
 function redactFilterParams(params: unknown[]): Array<{ index: number; type: string }> {
@@ -547,7 +224,7 @@ async function runHybridQuery(
   filterSql: string;
   filterParams: unknown[];
 }> {
-  const table = tableName(schema, collection);
+  const table = collectionTableName(schema, collection);
   const params: unknown[] = [];
   const addParam = (v: unknown) => {
     params.push(v);
@@ -675,8 +352,6 @@ async function runHybridQuery(
     const cosRankCol = hasCos ? "s.rn::int" : "NULL::int";
     const spcRankCol = hasSpc ? "p.rn::int" : "NULL::int";
     const recRankCol = hasRec ? "r.rn::int" : "NULL::int";
-    const legAlias = (kind: string) => rankLegs.find((l) => l.cte === kind)?.alias;
-
     if (mode === "explain") {
       query = `
         WITH ${ctes.join(", ")},
@@ -695,7 +370,6 @@ async function runHybridQuery(
         ORDER BY rrf_score DESC
         LIMIT ${limitRef} OFFSET ${offsetRef}
       `;
-      void legAlias;
     } else {
       query = `
         WITH ${ctes.join(", ")},
@@ -719,7 +393,7 @@ async function runHybridQuery(
     }
   }
 
-  const rows = await pgClient(ctx.db).unsafe(query, params);
+  const rows = await getPgClient(ctx.db, "parameterized search query").unsafe(query, params);
   const totalCandidates =
     mode === "explain"
       ? rows.length
@@ -733,100 +407,6 @@ async function runHybridQuery(
     filterSql: where,
     filterParams: compiled.params,
   };
-}
-
-async function buildQuerySpaceSegments(
-  def: CollectionDef,
-  queryEmbedding: number[] | null,
-  filters: SearchFilters,
-  segmentWeights: Record<string, number>,
-  embedService: EmbedService,
-  semanticText: string
-): Promise<{ segments: Array<number[] | null>; dims: number[]; keys: string[]; weights: number[] } | null> {
-  const keys = spaceKeys(def);
-  if (!keys.length) return null;
-
-  const segments: Array<number[] | null> = [];
-  const dims: number[] = [];
-  const weights: number[] = [];
-  const embKey = def.embeddings ? Object.keys(def.embeddings)[0] : null;
-  const embDef = embKey ? def.embeddings![embKey]! : null;
-
-  for (const name of keys) {
-    const sdef = def.spaces![name] as SpaceDef;
-    dims.push(spaceSegmentDim(sdef));
-    weights.push(segmentWeights[name] ?? 1);
-
-    if (sdef.kind === "text") {
-      if (
-        queryEmbedding &&
-        embDef &&
-        sdef.source === embDef.source &&
-        queryEmbedding.length === sdef.dim
-      ) {
-        segments.push(encodeText(queryEmbedding));
-      } else {
-        try {
-          const vec = await embedService.embedQuery({
-            text: semanticText,
-            model: sdef.model,
-            dim: sdef.dim,
-            taskType: sdef.taskType ?? "RETRIEVAL_QUERY",
-            inputType: "query",
-          });
-          segments.push(encodeText(vec));
-        } catch {
-          segments.push(null);
-        }
-      }
-      continue;
-    }
-    if (sdef.kind === "image") {
-      try {
-        const vec = await embedService.embedQuery({
-          text: semanticText,
-          model: sdef.model,
-          dim: sdef.dim,
-          taskType: sdef.taskType ?? "RETRIEVAL_QUERY",
-          inputType: "query",
-        });
-        segments.push(encodeImage(vec));
-      } catch {
-        segments.push(null);
-      }
-      continue;
-    }
-    if (sdef.kind === "number") {
-      const target =
-        typeof filters[sdef.field] === "number"
-          ? (filters[sdef.field] as number)
-          : typeof filters[sdef.field] === "object" &&
-              filters[sdef.field] !== null &&
-              "$eq" in (filters[sdef.field] as object)
-            ? Number((filters[sdef.field] as { $eq: number }).$eq)
-            : null;
-      segments.push(encodeNumberQuery(target, sdef));
-      continue;
-    }
-    if (sdef.kind === "recency") {
-      segments.push(encodeRecencyQuery(sdef));
-      continue;
-    }
-    if (sdef.kind === "categorical") {
-      const raw = filters[sdef.field];
-      const cat =
-        typeof raw === "string"
-          ? raw
-          : typeof raw === "object" && raw !== null && "$eq" in raw
-            ? String((raw as { $eq: string }).$eq)
-            : null;
-      segments.push(encodeCategorical(cat, sdef));
-      continue;
-    }
-    segments.push(null);
-  }
-
-  return { segments, dims, keys, weights };
 }
 
 export function makeSearchService(
@@ -851,7 +431,7 @@ export function makeSearchService(
     const def = await getCollectionDef(projectSlug, collectionName);
     if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
 
-    const table = tableName(project.schema_name, collectionName);
+    const table = collectionTableName(project.schema_name, collectionName);
     const fieldCols = Object.keys(def.fields).map((k) => sanitiseIdent(k));
     let indexed = 0;
 
@@ -876,7 +456,7 @@ export function makeSearchService(
         .map((c) => `${c} = EXCLUDED.${c}`)
         .join(", ");
 
-      await pgClient(ctx.db).unsafe(
+      await getPgClient(ctx.db, "parameterized search query").unsafe(
         `INSERT INTO ${table} (${cols.join(", ")}, indexed_at, updated_at)
          VALUES (${placeholders}, now(), now())
          ON CONFLICT (id) DO UPDATE SET ${updateSet}, indexed_at = now(), updated_at = now()`,
@@ -888,42 +468,33 @@ export function makeSearchService(
     return { indexed };
   }
 
-  async function search(
+  async function retrieve(
     projectSlug: string,
     collectionName: string,
     opts: SearchOpts
-  ): Promise<SearchResult> {
-    const t0 = Date.now();
-    ctx.observability.inc("searches_total");
-    const cacheKey = opts.cache === false ? null : resultCacheKey(projectSlug, collectionName, opts);
-    if (cacheKey) {
-      const hit = resultCache.get(cacheKey);
-      if (hit && Date.now() - hit.at < RESULT_CACHE_TTL_MS) {
-        ctx.observability.inc("search_cache_hits");
-        return { ...hit.value, took_ms: Date.now() - t0, cached: true };
-      }
-    }
+  ): Promise<Retrieval> {
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
     const def = await getCollectionDef(projectSlug, collectionName);
     if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
 
     const q = opts.q?.trim() ?? "";
-    if (!q) throw new Error("search requires a non-empty q");
+    if (!q && !opts.image) throw new Error("search requires a non-empty q or image");
 
-    const limit = opts.limit ?? 20;
     const offset = Math.min(Math.max(opts.offset ?? 0, 0), MAX_OFFSET);
     const weights = parseSearchWeights(def, opts.weights);
 
     const nlq = await parseNlq(ctx, def, q);
-    const mergedFilters = mergeFilters(nlq.filters, opts.filters);
+    const explicitFilters = opts.filters ?? {};
+    const mergedFilters = mergeFilters(nlq.filters, explicitFilters);
     await resolveBudgetHints(ctx, project.schema_name, collectionName, def, nlq.budgetHints, mergedFilters);
     const filterOpts: FilterCompileOpts = {
       soft: true,
       excludeTerms: nlq.excludeTerms,
     };
 
-    const semanticText = nlq.parsed.semantic_query || q;
+    const semanticText = nlq.parsed.semantic_query || q || "image query";
+    const imageVectors = await buildQueryImageVectors(def, opts.image, embedService);
 
     let vector: number[] | null = null;
     const embKey = def.embeddings ? Object.keys(def.embeddings)[0] : null;
@@ -947,239 +518,179 @@ export function makeSearchService(
       }
     }
 
+    let spaceSegments: Awaited<ReturnType<typeof buildQuerySpaceSegments>> | null = null;
     let spaceVector: number[] | null = null;
     if (weights.spaces > 0 && def.spaces && Object.keys(def.spaces).length > 0) {
-      spaceVector = await buildQuerySpaceVector(
+      spaceSegments = await buildQuerySpaceSegments(
         def,
         vector,
+        imageVectors,
         mergedFilters,
         weights.spaceSegmentWeights,
         embedService,
         semanticText
       );
+      if (spaceSegments) {
+        spaceVector = assembleQueryVector(spaceSegments.segments, spaceSegments.weights, spaceSegments.dims);
+      }
     }
 
-    let { rows, softFieldsUsed, totalCandidates } = await runHybridQuery(
-      ctx,
-      project.schema_name,
+    return {
+      project,
       def,
       collectionName,
       q,
-      vector,
-      spaceVector,
+      weights,
+      offset,
+      nlq,
+      explicitFilters,
       mergedFilters,
       filterOpts,
-      weights,
+      semanticText,
+      vector,
+      spaceSegments,
+      spaceVector,
+    };
+  }
+
+  // Run the hybrid query for one mode, retrying once with soft filters dropped
+  // when too few rows come back. Shared by the search and explain finishers.
+  async function runRanked(
+    r: Retrieval,
+    limit: number,
+    mode: "search" | "explain"
+  ): Promise<{
+    rows: Array<Record<string, unknown>>;
+    totalCandidates: number;
+    filterSql: string;
+    filterParams: unknown[];
+    relaxed: boolean;
+    relaxedFields: string[];
+  }> {
+    let { rows, softFieldsUsed, totalCandidates, filterSql, filterParams } = await runHybridQuery(
+      ctx,
+      r.project.schema_name,
+      r.def,
+      r.collectionName,
+      r.q,
+      r.vector,
+      r.spaceVector,
+      r.mergedFilters,
+      r.filterOpts,
+      r.weights,
       limit,
-      offset
+      r.offset,
+      mode
     );
 
     let relaxed = false;
+    let relaxedFields: string[] = [];
     const hasSoftFilters =
       softFieldsUsed.length > 0 ||
-      Object.keys(mergedFilters).some((k) => def.fields[k]?.soft);
+      Object.keys(r.mergedFilters).some((k) => r.def.fields[k]?.soft);
 
     if (rows.length < 3 && hasSoftFilters) {
       const retry = await runHybridQuery(
         ctx,
-        project.schema_name,
-        def,
-        collectionName,
-        q,
-        vector,
-        spaceVector,
-        mergedFilters,
-        { ...filterOpts, excludeSoft: true },
-        weights,
+        r.project.schema_name,
+        r.def,
+        r.collectionName,
+        r.q,
+        r.vector,
+        r.spaceVector,
+        r.mergedFilters,
+        { ...r.filterOpts, excludeSoft: true },
+        r.weights,
         limit,
-        offset
+        r.offset,
+        mode
       );
       rows = retry.rows;
       totalCandidates = retry.totalCandidates;
+      filterSql = retry.filterSql;
+      filterParams = retry.filterParams;
       relaxed = true;
+      relaxedFields = relaxedSoftFields(r.def, r.mergedFilters, softFieldsUsed);
     }
+
+    return { rows, totalCandidates, filterSql, filterParams, relaxed, relaxedFields };
+  }
+
+  async function finishSearch(r: Retrieval, opts: SearchOpts, t0: number): Promise<SearchResult> {
+    const { rows, totalCandidates, relaxed, relaxedFields } = await runRanked(r, opts.limit ?? 20, "search");
 
     let facets: SearchResult["facets"];
     if (opts.facets?.length) {
-      const compiled = buildFilterSql(mergedFilters, def, filterOpts, 1);
+      const compiled = buildFilterSql(r.mergedFilters, r.def, r.filterOpts, 1);
       facets = await computeFacets(
         ctx.db,
-        tableName(project.schema_name, collectionName),
-        def,
+        collectionTableName(r.project.schema_name, r.collectionName),
+        r.def,
         compiled.where,
         compiled.params,
         opts.facets
       );
     }
 
-    const fieldKeys = Object.keys(def.fields);
-    const hits: SearchHit[] = rows.map((r) => {
+    const fieldKeys = Object.keys(r.def.fields);
+    const hits: SearchHit[] = rows.map((row) => {
       const hit: SearchHit = {
-        id: String(r.id),
-        score: Number(r.score),
-        data: (typeof r.data === "string" ? JSON.parse(r.data as string) : r.data) as Record<
+        id: String(row.id),
+        score: Number(row.score),
+        data: (typeof row.data === "string" ? JSON.parse(row.data as string) : row.data) as Record<
           string,
           unknown
         >,
       };
       for (const k of fieldKeys) {
-        hit[k] = r[sanitiseIdent(k)] ?? r[k];
+        hit[k] = row[sanitiseIdent(k)] ?? row[k];
       }
       return hit;
     });
 
     const result: SearchResult = {
       hits,
+      constraintTrace: buildConstraintTrace(r.def, {
+        semanticQuery: r.semanticText,
+        derivedFilters: r.nlq.filters,
+        explicitFilters: r.explicitFilters,
+        appliedFilters: r.mergedFilters,
+        relaxedFields,
+        excludedTerms: r.nlq.excludeTerms,
+        budgetHints: r.nlq.budgetHints,
+      }),
       relaxed,
       took_ms: Date.now() - t0,
       total_candidates: totalCandidates,
     };
 
-    if (def.search?.nlq && !shouldSkipNlq(def, q)) {
-      result.parsed = nlq.parsed;
-      if (nlq.degraded) {
+    if (r.def.search?.nlq && !shouldSkipNlq(r.def, r.q)) {
+      result.parsed = r.nlq.parsed;
+      if (r.nlq.degraded) {
         result.nlq_degraded = true;
         ctx.observability.inc("nlq_degraded_total");
       }
-    } else if (Object.keys(nlq.filters).length || nlq.excludeTerms.length) {
-      result.parsed = nlq.parsed;
+    } else if (Object.keys(r.nlq.filters).length || r.nlq.excludeTerms.length) {
+      result.parsed = r.nlq.parsed;
     }
 
     if (facets) result.facets = facets;
-
-    if (cacheKey && !nlq.degraded) {
-      if (resultCache.size >= RESULT_CACHE_MAX) {
-        const oldest = resultCache.keys().next().value;
-        if (oldest) resultCache.delete(oldest);
-      }
-      resultCache.set(cacheKey, { value: result, at: Date.now() });
-    }
-
     return result;
   }
 
-  async function searchExplain(
-    projectSlug: string,
-    collectionName: string,
-    opts: SearchOpts
-  ): Promise<SearchExplainResult> {
-    const t0 = Date.now();
-    ctx.observability.inc("searches_total");
-    const cacheKey = opts.cache === false ? null : resultCacheKey(projectSlug, collectionName, opts);
-    let cacheHit = false;
-    if (cacheKey) {
-      const hit = resultCache.get(cacheKey);
-      if (hit && Date.now() - hit.at < RESULT_CACHE_TTL_MS) {
-        cacheHit = true;
-        ctx.observability.inc("search_cache_hits");
-      }
-    }
-
-    const project = await projectsService.getProject(projectSlug);
-    if (!project) throw new Error(`project "${projectSlug}" not found`);
-    const def = await getCollectionDef(projectSlug, collectionName);
-    if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
-
-    const q = opts.q?.trim() ?? "";
-    if (!q) throw new Error("search explain requires a non-empty q");
-
-    const limit = Math.min(opts.limit ?? 20, 20);
-    const offset = Math.min(Math.max(opts.offset ?? 0, 0), MAX_OFFSET);
-    const weights = parseSearchWeights(def, opts.weights);
-
-    const nlq = await parseNlq(ctx, def, q);
-    const mergedFilters = mergeFilters(nlq.filters, opts.filters);
-    await resolveBudgetHints(ctx, project.schema_name, collectionName, def, nlq.budgetHints, mergedFilters);
-    const filterOpts: FilterCompileOpts = {
-      soft: true,
-      excludeTerms: nlq.excludeTerms,
-    };
-
-    const semanticText = nlq.parsed.semantic_query || q;
-
-    let vector: number[] | null = null;
-    const embKey = def.embeddings ? Object.keys(def.embeddings)[0] : null;
-    const needsQueryEmbed =
-      (embKey && weights.cosine > 0) ||
-      (weights.spaces > 0 &&
-        def.spaces &&
-        Object.values(def.spaces).some((s) => s.kind === "text" || s.kind === "image"));
-    if (embKey && needsQueryEmbed) {
-      const embDef = def.embeddings![embKey]!;
-      try {
-        vector = await embedService.embedQuery({
-          text: semanticText,
-          model: embDef.model,
-          dim: embDef.dim,
-          taskType: embDef.taskType ?? "RETRIEVAL_QUERY",
-          inputType: "query",
-        });
-      } catch {
-        vector = null;
-      }
-    }
-
-    const spaceSegments = await buildQuerySpaceSegments(
-      def,
-      vector,
-      mergedFilters,
-      weights.spaceSegmentWeights,
-      embedService,
-      semanticText
-    );
-    const spaceVector =
-      weights.spaces > 0 && spaceSegments
-        ? assembleQueryVector(spaceSegments.segments, spaceSegments.weights, spaceSegments.dims)
-        : null;
-
-    let { rows, softFieldsUsed, filterSql, filterParams } = await runHybridQuery(
-      ctx,
-      project.schema_name,
-      def,
-      collectionName,
-      q,
-      vector,
-      spaceVector,
-      mergedFilters,
-      filterOpts,
-      weights,
-      limit,
-      offset,
+  async function finishExplain(r: Retrieval, opts: SearchOpts, t0: number): Promise<SearchExplainResult> {
+    const { rows, filterSql, filterParams, relaxed, relaxedFields } = await runRanked(
+      r,
+      Math.min(opts.limit ?? 20, 20),
       "explain"
     );
 
-    let relaxed = false;
-    const hasSoftFilters =
-      softFieldsUsed.length > 0 ||
-      Object.keys(mergedFilters).some((k) => def.fields[k]?.soft);
-
-    if (rows.length < 3 && hasSoftFilters) {
-      const retry = await runHybridQuery(
-        ctx,
-        project.schema_name,
-        def,
-        collectionName,
-        q,
-        vector,
-        spaceVector,
-        mergedFilters,
-        { ...filterOpts, excludeSoft: true },
-        weights,
-        limit,
-        offset,
-        "explain"
-      );
-      rows = retry.rows;
-      filterSql = retry.filterSql;
-      filterParams = retry.filterParams;
-      relaxed = true;
-    }
-
-    const table = tableName(project.schema_name, collectionName);
+    const table = collectionTableName(r.project.schema_name, r.collectionName);
     const spaceCosinesById = new Map<string, Record<string, number>>();
-    if (weights.spaces > 0 && spaceSegments && rows.length) {
-      const ids = rows.map((r) => String(r.id));
-      const vecRows = await pgClient(ctx.db).unsafe(
+    if (r.weights.spaces > 0 && r.spaceSegments && rows.length) {
+      const segs = r.spaceSegments;
+      const ids = rows.map((row) => String(row.id));
+      const vecRows = await getPgClient(ctx.db, "parameterized search query").unsafe(
         `SELECT id, space_vec::text AS space_vec FROM ${table} WHERE id = ANY($1::text[])`,
         [ids]
       );
@@ -1193,29 +704,24 @@ export function makeSearchService(
           .map((x) => Number(x.trim()))
           .filter((x) => Number.isFinite(x));
         if (!docVec.length) continue;
-        const cosines = weightedSegmentCosines(
-          docVec,
-          spaceSegments.segments,
-          spaceSegments.weights,
-          spaceSegments.dims
-        );
+        const cosines = weightedSegmentCosines(docVec, segs.segments, segs.weights, segs.dims);
         const perSpace: Record<string, number> = {};
-        spaceSegments.keys.forEach((k, i) => {
+        segs.keys.forEach((k, i) => {
           perSpace[k] = cosines[i] ?? 0;
         });
         spaceCosinesById.set(id, perSpace);
       }
     }
 
-    const docs: ExplainDocBreakdown[] = rows.map((r) => {
-      const id = String(r.id);
+    const docs: ExplainDocBreakdown[] = rows.map((row) => {
+      const id = String(row.id);
       const breakdown: ExplainDocBreakdown = {
         id,
-        fts_rank: r.fts_rank == null ? null : Number(r.fts_rank),
-        cosine_rank: r.cosine_rank == null ? null : Number(r.cosine_rank),
-        spaces_rank: r.spaces_rank == null ? null : Number(r.spaces_rank),
-        recency_rank: r.recency_rank == null ? null : Number(r.recency_rank),
-        rrf_score: Number(r.rrf_score ?? 0),
+        fts_rank: row.fts_rank == null ? null : Number(row.fts_rank),
+        cosine_rank: row.cosine_rank == null ? null : Number(row.cosine_rank),
+        spaces_rank: row.spaces_rank == null ? null : Number(row.spaces_rank),
+        recency_rank: row.recency_rank == null ? null : Number(row.recency_rank),
+        rrf_score: Number(row.rrf_score ?? 0),
       };
       const sc = spaceCosinesById.get(id);
       if (sc) breakdown.space_cosines = sc;
@@ -1223,29 +729,89 @@ export function makeSearchService(
     });
 
     const explain: SearchExplainResult = {
-      q,
+      q: r.q,
+      constraintTrace: buildConstraintTrace(r.def, {
+        semanticQuery: r.semanticText,
+        derivedFilters: r.nlq.filters,
+        explicitFilters: r.explicitFilters,
+        appliedFilters: r.mergedFilters,
+        relaxedFields,
+        excludedTerms: r.nlq.excludeTerms,
+        budgetHints: r.nlq.budgetHints,
+      }),
       relaxation: relaxed,
-      cache_hit: cacheHit,
-      weights,
+      cache_hit: false,
+      weights: r.weights,
       filters: { sql: filterSql, params: redactFilterParams(filterParams) },
       docs,
       took_ms: Date.now() - t0,
     };
 
-    if (def.search?.nlq && !shouldSkipNlq(def, q)) {
-      explain.parsed = nlq.parsed;
-      if (nlq.degraded) {
+    if (r.def.search?.nlq && !shouldSkipNlq(r.def, r.q)) {
+      explain.parsed = r.nlq.parsed;
+      if (r.nlq.degraded) {
         explain.nlq_degraded = true;
         ctx.observability.inc("nlq_degraded_total");
       }
-    } else if (Object.keys(nlq.filters).length || nlq.excludeTerms.length) {
-      explain.parsed = nlq.parsed;
+    } else if (Object.keys(r.nlq.filters).length || r.nlq.excludeTerms.length) {
+      explain.parsed = r.nlq.parsed;
     }
 
     return explain;
   }
 
-  return { search, searchExplain, indexDocuments, getCollectionDef };
+  async function search(
+    projectSlug: string,
+    collectionName: string,
+    opts: SearchOpts
+  ): Promise<SearchResult> {
+    const t0 = Date.now();
+    ctx.observability.inc("searches_total");
+    const cacheKey = opts.cache === true ? resultCacheKey(projectSlug, collectionName, opts) : null;
+    if (cacheKey) {
+      const hit = searchResultCache.get<SearchResult>(cacheKey);
+      if (hit) {
+        ctx.observability.inc("search_cache_hits");
+        return { ...hit, took_ms: Date.now() - t0, cached: true };
+      }
+    }
+    const retrieval = await retrieve(projectSlug, collectionName, opts);
+    const result = await finishSearch(retrieval, opts, t0);
+    if (cacheKey && !retrieval.nlq.degraded) {
+      searchResultCache.set(cacheKey, result);
+    }
+    return result;
+  }
+
+  async function searchExplain(
+    projectSlug: string,
+    collectionName: string,
+    opts: SearchOpts
+  ): Promise<SearchExplainResult> {
+    const t0 = Date.now();
+    ctx.observability.inc("searches_total");
+    const retrieval = await retrieve(projectSlug, collectionName, opts);
+    return finishExplain(retrieval, opts, t0);
+  }
+
+  // Single-pass hits + explain: the expensive embed/image-fetch/NLQ work in retrieve()
+  // runs once, then both mode-specific SQL projections are assembled from it.
+  async function searchWithExplain(
+    projectSlug: string,
+    collectionName: string,
+    opts: SearchOpts
+  ): Promise<{ result: SearchResult; explain: SearchExplainResult }> {
+    const t0 = Date.now();
+    ctx.observability.inc("searches_total");
+    const retrieval = await retrieve(projectSlug, collectionName, opts);
+    const [result, explain] = await Promise.all([
+      finishSearch(retrieval, opts, t0),
+      finishExplain(retrieval, opts, t0),
+    ]);
+    return { result, explain };
+  }
+
+  return { search, searchExplain, searchWithExplain, indexDocuments, getCollectionDef };
 }
 
 export type SearchService = ReturnType<typeof makeSearchService>;
