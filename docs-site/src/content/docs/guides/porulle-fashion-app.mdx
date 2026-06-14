@@ -239,6 +239,31 @@ Three gotchas worth knowing:
 - **`@samesake/*` as `workspace:*` won't resolve in a standalone Vercel build.** Reference the published versions (`"@samesake/core": "^1.1.0"`) — in a Bun workspace this still links the local package locally while Vercel pulls from npm.
 - New Vercel projects ship with **Deployment Protection (Vercel Authentication)** on, so the demo returns "Authentication Required". Turn it off for a public demo (Project → Settings → Deployment Protection, or `PATCH /v9/projects/<id>` with `{"ssoProtection": null}`).
 
+## Visual & cross-modal search
+
+`gemini-embedding-2` is multimodal, so adding a visual space embeds both product images and
+text queries into the **same** vector space:
+
+```ts
+spaces: { visual: s.image({ source: "$image_url", model: "gemini-embedding-2", dim: 768 }) },
+search: { channels: [/* fts, cosine */, Channels.spaces({ weight: 1 })], defaultSpaceWeights: { visual: 1 } }
+```
+
+That unlocks three things over the same index:
+
+- **Search images by text** — "black dress with white" embeds the query text into the visual
+  space and matches it against product *images*, recovering colour/pattern combinations the
+  text fields don't store.
+- **Search by image** — paste an image URL (or "find similar" on a card) and the engine embeds
+  that image and ranks by visual similarity.
+- **Soft attributes matter.** Mark sparse tags like `color` as `soft: true` so an NLQ-extracted
+  `color = black` relaxes instead of dead-ending — letting the visual + text signals rank a
+  "black dress with white" result set rather than returning only the two products literally
+  tagged black.
+
+The embed fn just handles an image part when samesake passes one; samesake fetches the image
+through its SSRF-hardened fetcher and embeds the bytes.
+
 ## What this proves
 
 A commerce backend you own (Porulle) and a search layer you own (samesake) compose in **one app, one database**, with the search reading the catalog and never touching the commerce tables. The same pattern applies to [Medusa](/integrations/medusajs/), [Shopify](/integrations/shopify/), and [WooCommerce](/integrations/woocommerce/) — only the catalog-read + sync step changes.

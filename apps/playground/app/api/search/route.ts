@@ -5,19 +5,22 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-  const body = (await req.json().catch(() => ({}))) as { q?: string; category?: string };
+  const body = (await req.json().catch(() => ({}))) as {
+    q?: string;
+    image?: { url?: string };
+    category?: string;
+  };
   const q = (body.q ?? "").trim();
-  if (!q) return Response.json({ hits: [] });
+  const imageUrl = body.image?.url;
+  if (!q && !imageUrl) return Response.json({ hits: [] });
 
-  // No explicit price filter: NLQ parses budgets ("under 3000") from q into a hard
-  // price constraint. category stays an explicit facet from the storefront chips.
+  // Text queries hit FTS + text cosine + (cross-modal) the visual space; an image query
+  // (find-similar / paste-URL) drives the visual space directly. NLQ parses budgets from q.
   const result = await getMatcher().search(PROJECT, COLLECTION, {
     q,
+    image: imageUrl ? { url: imageUrl } : undefined,
     limit: 24,
-    filters: {
-      available: true,
-      ...(body.category ? { category: body.category } : {}),
-    },
+    filters: { available: true, ...(body.category ? { category: body.category } : {}) },
   });
 
   return Response.json({

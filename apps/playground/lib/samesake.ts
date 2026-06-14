@@ -1,4 +1,4 @@
-import { collection, f, Channels } from "@samesake/core";
+import { collection, f, Channels, s } from "@samesake/core";
 import { createMatcher } from "@samesake/server";
 import { geminiEmbed } from "./embed";
 import { geminiGenerate } from "./generate";
@@ -12,8 +12,10 @@ export const products = collection("products", {
     title: f.text({ searchable: true }),
     brand: f.text({ filterable: true }),
     category: f.text({ filterable: true }),
-    color: f.text({ filterable: true }),
-    material: f.text({ filterable: true }),
+    // soft: a sparse color/material tag is a preference, not a hard gate — so a query like
+    // "black dress with white" relaxes the color filter and lets text + visual ranking decide.
+    color: f.text({ filterable: true, soft: true }),
+    material: f.text({ filterable: true, soft: true }),
     price: f.number({ filterable: true, budget: true }),
     available: f.boolean({ filterable: true }),
     image_url: f.text(),
@@ -21,12 +23,20 @@ export const products = collection("products", {
   embeddings: {
     doc: { source: "$title $brand $category $color $material", model: "gemini-embedding-2", dim: 1536 },
   },
+  // Visual space: embed each product image with the (multimodal) gemini-embedding-2.
+  // Because text and images share one space, a text query is embedded into this space too
+  // (cross-modal text->image), and an image query / "find similar" embeds the image.
+  spaces: {
+    visual: s.image({ source: "$image_url", model: "gemini-embedding-2", dim: 768 }),
+  },
   search: {
     channels: [
       Channels.fts({ fields: ["title", "brand", "category", "color", "material"], weight: 1 }),
       Channels.cosine({ embedding: "doc", weight: 1 }),
+      Channels.spaces({ weight: 1 }),
     ],
     combiner: "rrf",
+    defaultSpaceWeights: { visual: 1 },
     // Parse natural-language intent + budgets ("under 3000") into hard filters.
     // `price` is marked budget:true, so a stated cap becomes price <= cap.
     nlq: { enable: true, semanticRewrite: true },

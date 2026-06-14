@@ -17,9 +17,10 @@ const LKR = (n: number) => `LKR ${Number(n).toLocaleString("en-LK")}`;
 export default function Storefront() {
   const [all, setAll] = useState<Hit[]>([]);
   const [q, setQ] = useState("");
-  const [activeQ, setActiveQ] = useState("");
+  const [imgUrl, setImgUrl] = useState("");
   const [category, setCategory] = useState<string>("");
-  const [searchHits, setSearchHits] = useState<Hit[]>([]);
+  const [results, setResults] = useState<Hit[]>([]);
+  const [label, setLabel] = useState(""); // "" => browse mode
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -42,22 +43,18 @@ export default function Storefront() {
     [all]
   );
 
-  async function runSearch(nextQ: string, nextCat: string) {
-    setActiveQ(nextQ);
-    if (!nextQ.trim()) {
-      setSearchHits([]);
-      return; // browse mode
-    }
+  async function search(body: Record<string, unknown>, lbl: string, excludeId?: string) {
     setLoading(true);
     setError("");
+    setLabel(lbl);
     try {
       const res = await fetch("/api/search", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ q: nextQ, category: nextCat || undefined }),
+        body: JSON.stringify(body),
       });
       const data = (await res.json()) as { hits: Hit[] };
-      setSearchHits(data.hits ?? []);
+      setResults((data.hits ?? []).filter((h) => h.id !== excludeId));
     } catch {
       setError("Search failed. Try again.");
     } finally {
@@ -65,15 +62,36 @@ export default function Storefront() {
     }
   }
 
+  function runText(text: string, cat: string) {
+    if (!text.trim()) {
+      setLabel("");
+      setResults([]);
+      return;
+    }
+    search({ q: text, category: cat || undefined }, `“${text}”`);
+  }
+
+  function runImage(url: string, lbl: string, excludeId?: string) {
+    if (!url.trim()) return;
+    search({ image: { url } }, lbl, excludeId);
+  }
+
+  function clear() {
+    setQ("");
+    setImgUrl("");
+    setLabel("");
+    setResults([]);
+  }
+
   const displayed = useMemo(() => {
-    if (activeQ.trim()) return searchHits;
+    if (label) return results;
     return all.filter((h) => !category || h.category === category);
-  }, [activeQ, searchHits, all, category]);
+  }, [label, results, all, category]);
 
   function pickCategory(c: string) {
     const next = category === c ? "" : c;
     setCategory(next);
-    if (activeQ.trim()) runSearch(activeQ, next);
+    if (label && q.trim()) runText(q, next);
   }
 
   return (
@@ -90,27 +108,48 @@ export default function Storefront() {
             not the exact name.
           </h1>
           <p style={st.lead}>
-            A Sri-Lankan apparel catalog on Porulle, searched by samesake. Budgets are understood — try
-            &ldquo;party wear under 3000&rdquo;, &ldquo;linen shirt for men&rdquo;, or just browse.
+            A Sri-Lankan apparel catalog on Porulle, searched by samesake. Budgets are understood
+            (&ldquo;party wear under 3000&rdquo;), and search runs across the product images too — by text,
+            or by a reference image.
           </p>
 
           <form
             style={st.controls}
             onSubmit={(e) => {
               e.preventDefault();
-              runSearch(q, category);
+              runText(q, category);
             }}
           >
             <input
               className="sf-input"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search — intent, attributes, budget"
+              placeholder="Search — intent, attributes, budget, or look"
               aria-label="Search"
               style={{ flex: 1, minWidth: 260 }}
             />
             <button className="sf-btn" type="submit">
               Search
+            </button>
+          </form>
+
+          <form
+            style={{ ...st.controls, marginTop: 10 }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              runImage(imgUrl, "results for your image");
+            }}
+          >
+            <input
+              className="sf-input"
+              value={imgUrl}
+              onChange={(e) => setImgUrl(e.target.value)}
+              placeholder="…or paste an image URL to search by look"
+              aria-label="Image URL"
+              style={{ flex: 1, minWidth: 260 }}
+            />
+            <button className="sf-btn" type="submit" style={{ background: "transparent", color: "var(--text-strong)" }}>
+              Visual search
             </button>
           </form>
 
@@ -131,11 +170,11 @@ export default function Storefront() {
             {error ? (
               <span style={{ color: "#9f2f2d" }}>{error}</span>
             ) : loading ? (
-              <span>Loading</span>
+              <span>Searching</span>
             ) : (
               <span>
                 {displayed.length} {displayed.length === 1 ? "piece" : "pieces"}
-                {activeQ ? ` for “${activeQ}”` : category ? ` in ${category}` : " in the catalog"}
+                {label ? <> · {label} · <button onClick={clear} style={st.linkBtn}>back to browse</button></> : " in the catalog"}
               </span>
             )}
           </div>
@@ -155,7 +194,7 @@ export default function Storefront() {
           ) : displayed.length === 0 ? (
             <div style={st.empty}>
               <p style={st.emptyTitle}>Nothing matched.</p>
-              <p style={st.emptyBody}>Try a broader phrase or a different category.</p>
+              <p style={st.emptyBody}>Try a broader phrase, a different category, or another image.</p>
             </div>
           ) : (
             <div className="sf-grid">
@@ -172,6 +211,15 @@ export default function Storefront() {
                     <h3 style={st.cardTitle}>{h.title}</h3>
                     <p style={st.cardBrand}>{h.brand}</p>
                     <p style={st.price}>{LKR(h.price)}</p>
+                    {h.imageUrl && (
+                      <button
+                        type="button"
+                        style={st.similar}
+                        onClick={() => runImage(h.imageUrl, `similar to “${h.title}”`, h.id)}
+                      >
+                        Find similar
+                      </button>
+                    )}
                   </div>
                 </article>
               ))}
@@ -190,10 +238,11 @@ const st: Record<string, React.CSSProperties> = {
   mark: { width: 12, height: 12, borderRadius: 3, background: "var(--text-strong)", display: "inline-block" },
   brand: { fontFamily: "var(--font-mono)", fontSize: 13, letterSpacing: "0.04em", color: "var(--text-strong)" },
   h1: { fontFamily: "var(--font-display)", fontSize: 50, lineHeight: 1.04, letterSpacing: "-0.03em", color: "var(--text-strong)", fontWeight: 500 },
-  lead: { marginTop: 18, fontSize: 18, color: "var(--muted)", maxWidth: 560 },
+  lead: { marginTop: 18, fontSize: 18, color: "var(--muted)", maxWidth: 580 },
   controls: { display: "flex", gap: 10, marginTop: 30, flexWrap: "wrap" },
   chips: { display: "flex", gap: 8, marginTop: 18, flexWrap: "wrap" },
   meta: { fontFamily: "var(--font-mono)", fontSize: 12, letterSpacing: "0.03em", color: "var(--muted)", marginBottom: 22, textTransform: "uppercase" },
+  linkBtn: { background: "none", border: "none", padding: 0, color: "var(--accent)", cursor: "pointer", font: "inherit", textDecoration: "underline" },
   empty: { border: "1px dashed var(--hairline)", borderRadius: 12, padding: "56px 28px", textAlign: "center" },
   emptyTitle: { fontFamily: "var(--font-display)", fontSize: 22, color: "var(--text-strong)" },
   emptyBody: { color: "var(--muted)", marginTop: 8 },
@@ -201,4 +250,5 @@ const st: Record<string, React.CSSProperties> = {
   cardTitle: { fontFamily: "var(--font-display)", fontSize: 16.5, lineHeight: 1.25, color: "var(--text-strong)", fontWeight: 500 },
   cardBrand: { fontSize: 13, color: "var(--muted)", marginTop: 4 },
   price: { fontFamily: "var(--font-mono)", fontSize: 14, color: "var(--text-strong)", marginTop: 10 },
+  similar: { marginTop: 12, background: "none", border: "none", padding: 0, font: "inherit", fontSize: 12.5, color: "var(--accent)", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 3 },
 };
