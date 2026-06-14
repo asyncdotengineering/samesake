@@ -21,7 +21,9 @@ export const geminiGenerate: GenerateFn = async ({ prompt, system, schema, image
       generationConfig: {
         temperature: 0,
         responseMimeType: "application/json",
-        ...(schema ? { responseSchema: schema } : {}),
+        // samesake hands us standard JSON Schema (it converts zod for us), so use
+        // Gemini's responseJsonSchema rather than the OpenAPI-dialect responseSchema.
+        ...(schema ? { responseJsonSchema: schema } : {}),
       },
     }),
     signal: AbortSignal.timeout(60000),

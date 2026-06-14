@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { collection, f, Channels, s, pipeline, stage } from "@samesake/core";
 import { createMatcher } from "@samesake/server";
 import { geminiEmbed } from "./embed";
@@ -7,17 +8,17 @@ export const PROJECT = "playground";
 export const COLLECTION = "products";
 
 // Vision enrichment: read the actual colours/pattern off each product image instead of
-// the junk heuristic (most products had no colour at all). The stage's JSON output is
-// merged into the row's `enriched` jsonb and fed into the doc embedding below.
-const VISION_SCHEMA = {
-  type: "object",
-  properties: {
-    color_text: { type: "string", description: "dominant colours as a short phrase, e.g. 'black with white trim'" },
-    colors: { type: "array", items: { type: "string" }, description: "individual colour words" },
-    pattern: { type: "string", description: "solid | striped | floral | printed | checked | embroidered | colour-block | other" },
-  },
-  required: ["color_text"],
-};
+// the junk heuristic (most products had no colour at all). Declared as a zod schema —
+// samesake converts it to JSON Schema before calling generate. The stage's JSON output
+// is merged into the row's `enriched` jsonb and fed into the doc embedding below.
+const VISION_SCHEMA = z.object({
+  color_text: z.string().describe("dominant colours as a short phrase, e.g. 'black with white trim'"),
+  colors: z.array(z.string()).describe("individual colour words").optional(),
+  pattern: z
+    .string()
+    .describe("solid | striped | floral | printed | checked | embroidered | colour-block | other")
+    .optional(),
+});
 
 export const products = collection("products", {
   fields: {
@@ -58,11 +59,7 @@ export const products = collection("products", {
     nlq: {
       enable: true,
       semanticRewrite: true,
-      schema: {
-        type: "object",
-        properties: { semantic_query: { type: "string" }, max_price: { type: "number" } },
-        required: ["semantic_query"],
-      },
+      schema: z.object({ semantic_query: z.string(), max_price: z.number().optional() }),
     },
   },
 });
