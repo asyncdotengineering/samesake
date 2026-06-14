@@ -158,7 +158,7 @@ Concrete next slices:
 2. Done: normalize filter/NLQ output into a typed constraint plan before compiling SQL.
 3. Done: expand `examples/fashion-search/eval.ts` into a real corpus runner with top-k hard-constraint metrics.
 4. Done: document why Samesake measures constraint satisfaction separately from relevance in the fashion-search how-to.
-5. Add synthetic commerce-query generation later, but only after the evaluator is stable.
+5. Done: add deterministic synthetic commerce-query generation for the fashion-search evaluator.
 
 ## Flip Conditions
 

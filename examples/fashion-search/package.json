@@ -5,6 +5,7 @@
   "scripts": {
     "ingest": "bun ingest.ts",
     "pipeline": "bun run-pipeline.ts",
+    "generate:synthetic": "bun generate-synthetic-corpus.ts",
     "eval": "bun eval.ts",
     "serve": "bun serve.ts",
     "typecheck": "tsc --noEmit"

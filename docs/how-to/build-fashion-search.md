@@ -238,6 +238,14 @@ The eval treats relevance and constraint satisfaction as separate gates. A resul
 
 `FASHION_DATASET_DIR` accepts `.json` or `.jsonl` files. Each file can contain `{ "products": [...], "queries": [...] }`, individual product/query records, or JSONL records shaped as `{ "type": "product", "data": ... }` and `{ "type": "query", "data": ... }`.
 
+To generate a deterministic local corpus with price, availability, required-color, and excluded-color constraints:
+
+```bash
+cd examples/fashion-search
+bun run generate:synthetic
+FASHION_DATASET_DIR=.samesake/synthetic-fashion-corpus bun eval.ts
+```
+
 ## Failure Paths
 
 - **Missing image embed capability**: image spaces will fail lazily when indexing or querying needs image embeddings. Either provide an image-capable embedder or remove the `visual` space.
