@@ -292,6 +292,19 @@ export function makeFashionSearchService(
       hits: ranked.hits,
       parsed: base.parsed,
       appliedFilters,
+      constraintTrace: fallback
+        ? {
+            ...base.constraintTrace,
+            explicitFilters: filters,
+            appliedFilters,
+            relaxedFields: [
+              ...new Set([
+                ...base.constraintTrace.relaxedFields,
+                ...fallback.relaxedFilters,
+              ]),
+            ].sort(),
+          }
+        : base.constraintTrace,
       fallback,
       took_ms: Date.now() - started,
     };

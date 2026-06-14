@@ -168,6 +168,11 @@ describeIf("fashionSearch product surface", () => {
     expect(result.hits[0]!.id).toBe("red");
     expect(result.explanations?.[0]?.factors).toHaveProperty("visual");
     expect(result.appliedFilters).toEqual({ available: true });
+    expect(result.constraintTrace?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "available", source: "explicit", kind: "boolean" }),
+      ])
+    );
   });
 
   test("personalization reorders without violating hard filters", async () => {
@@ -201,6 +206,9 @@ describeIf("fashionSearch product surface", () => {
     expect(result.hits.length).toBeGreaterThan(0);
     expect(result.fallback?.reason).toBe("no_results");
     expect(result.fallback?.relaxedFilters).toEqual(expect.arrayContaining(["category", "colors", "material"]));
+    expect(result.constraintTrace?.explicitFilters).toMatchObject({ category: "skirts" });
+    expect(result.constraintTrace?.appliedFilters).toEqual({ available: true });
+    expect(result.constraintTrace?.relaxedFields).toEqual(expect.arrayContaining(["category", "colors", "material"]));
     expect(result.hits.every((h) => h.available === true)).toBe(true);
   });
 

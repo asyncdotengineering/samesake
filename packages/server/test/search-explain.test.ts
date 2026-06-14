@@ -68,11 +68,19 @@ describeIf("search explain", () => {
   test("explain returns per-leg ranks for a known doc", async () => {
     const explain = await matcher.searchExplain(projectSlug, "products", {
       q: "red running shoes",
+      filters: { price: { $lte: 150 }, colors: ["red"] },
       limit: 5,
     });
 
     expect(explain.docs.length).toBeGreaterThan(0);
     expect(explain.filters.sql).toBeTruthy();
+    expect(explain.constraintTrace.appliedFilters).toMatchObject({ colors: ["red"] });
+    expect(explain.constraintTrace.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "price", source: "explicit", kind: "max" }),
+        expect.objectContaining({ field: "colors", source: "explicit", kind: "contains" }),
+      ])
+    );
 
     const top = explain.docs.find((d) => d.id === "1") ?? explain.docs[0]!;
     expect(top.fts_rank).not.toBeNull();

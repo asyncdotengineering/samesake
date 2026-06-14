@@ -1,8 +1,9 @@
-import type { CollectionDef, SearchWeightsInput } from "@samesake/core";
+import type { CollectionDef, ConstraintTrace, SearchWeightsInput } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
 import { computeFacets } from "./facets.ts";
+import { buildConstraintTrace, relaxedSoftFields } from "./constraint-trace.ts";
 import { mergeFilters, parseNlq, shouldSkipNlq } from "./nlq.ts";
 import type { ProjectsService } from "./projects.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
@@ -51,6 +52,7 @@ export interface SearchHit {
 export interface SearchResult {
   hits: SearchHit[];
   parsed?: Record<string, unknown>;
+  constraintTrace: ConstraintTrace;
   nlq_degraded?: boolean;
   relaxed: boolean;
   took_ms: number;
@@ -73,6 +75,7 @@ export interface ExplainDocBreakdown {
 export interface SearchExplainResult {
   q: string;
   parsed?: Record<string, unknown>;
+  constraintTrace: ConstraintTrace;
   nlq_degraded?: boolean;
   filters: { sql: string; params: Array<{ index: number; type: string }> };
   relaxation: boolean;
@@ -463,7 +466,8 @@ export function makeSearchService(
     const weights = parseSearchWeights(def, opts.weights);
 
     const nlq = await parseNlq(ctx, def, q);
-    const mergedFilters = mergeFilters(nlq.filters, opts.filters);
+    const explicitFilters = opts.filters ?? {};
+    const mergedFilters = mergeFilters(nlq.filters, explicitFilters);
     await resolveBudgetHints(ctx, project.schema_name, collectionName, def, nlq.budgetHints, mergedFilters);
     const filterOpts: FilterCompileOpts = {
       soft: true,
@@ -524,6 +528,7 @@ export function makeSearchService(
     );
 
     let relaxed = false;
+    let relaxedFields: string[] = [];
     const hasSoftFilters =
       softFieldsUsed.length > 0 ||
       Object.keys(mergedFilters).some((k) => def.fields[k]?.soft);
@@ -546,6 +551,7 @@ export function makeSearchService(
       rows = retry.rows;
       totalCandidates = retry.totalCandidates;
       relaxed = true;
+      relaxedFields = relaxedSoftFields(def, mergedFilters, softFieldsUsed);
     }
 
     let facets: SearchResult["facets"];
@@ -579,6 +585,15 @@ export function makeSearchService(
 
     const result: SearchResult = {
       hits,
+      constraintTrace: buildConstraintTrace(def, {
+        semanticQuery: semanticText,
+        derivedFilters: nlq.filters,
+        explicitFilters,
+        appliedFilters: mergedFilters,
+        relaxedFields,
+        excludedTerms: nlq.excludeTerms,
+        budgetHints: nlq.budgetHints,
+      }),
       relaxed,
       took_ms: Date.now() - t0,
       total_candidates: totalCandidates,
@@ -633,7 +648,8 @@ export function makeSearchService(
     const weights = parseSearchWeights(def, opts.weights);
 
     const nlq = await parseNlq(ctx, def, q);
-    const mergedFilters = mergeFilters(nlq.filters, opts.filters);
+    const explicitFilters = opts.filters ?? {};
+    const mergedFilters = mergeFilters(nlq.filters, explicitFilters);
     await resolveBudgetHints(ctx, project.schema_name, collectionName, def, nlq.budgetHints, mergedFilters);
     const filterOpts: FilterCompileOpts = {
       soft: true,
@@ -696,6 +712,7 @@ export function makeSearchService(
     );
 
     let relaxed = false;
+    let relaxedFields: string[] = [];
     const hasSoftFilters =
       softFieldsUsed.length > 0 ||
       Object.keys(mergedFilters).some((k) => def.fields[k]?.soft);
@@ -720,6 +737,7 @@ export function makeSearchService(
       filterSql = retry.filterSql;
       filterParams = retry.filterParams;
       relaxed = true;
+      relaxedFields = relaxedSoftFields(def, mergedFilters, softFieldsUsed);
     }
 
     const table = collectionTableName(project.schema_name, collectionName);
@@ -771,6 +789,15 @@ export function makeSearchService(
 
     const explain: SearchExplainResult = {
       q,
+      constraintTrace: buildConstraintTrace(def, {
+        semanticQuery: semanticText,
+        derivedFilters: nlq.filters,
+        explicitFilters,
+        appliedFilters: mergedFilters,
+        relaxedFields,
+        excludedTerms: nlq.excludeTerms,
+        budgetHints: nlq.budgetHints,
+      }),
       relaxation: relaxed,
       cache_hit: cacheHit,
       weights,

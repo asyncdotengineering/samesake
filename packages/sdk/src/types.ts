@@ -377,6 +377,40 @@ export type SearchWeightsInput<S extends string = string> = {
   spaces?: number | Partial<Record<S, number>>;
 };
 
+export type ConstraintTraceSource = "nlq" | "explicit" | "budget_hint" | "agent";
+
+export type ConstraintTraceKind =
+  | "eq"
+  | "not_eq"
+  | "min"
+  | "max"
+  | "range"
+  | "in"
+  | "not_in"
+  | "contains"
+  | "exclude"
+  | "boolean";
+
+export interface ConstraintTraceItem {
+  field: string;
+  source: ConstraintTraceSource;
+  kind: ConstraintTraceKind;
+  operator?: string;
+  value?: unknown;
+  soft?: boolean;
+}
+
+export interface ConstraintTrace {
+  semanticQuery?: string;
+  items: ConstraintTraceItem[];
+  derivedFilters: Record<string, unknown>;
+  explicitFilters: Record<string, unknown>;
+  appliedFilters: Record<string, unknown>;
+  relaxedFields: string[];
+  excludedTerms: string[];
+  budgetHints: Record<string, "cheap" | "premium">;
+}
+
 export interface FashionSearchImageInput {
   /** Remote image URL. The server fetches it through the same hardened image guard used for indexing. */
   url?: string;
@@ -438,6 +472,7 @@ export interface FashionSearchResponse {
   hits: Array<Record<string, unknown> & { id: string; score: number }>;
   parsed?: Record<string, unknown>;
   appliedFilters: Record<string, unknown>;
+  constraintTrace?: ConstraintTrace;
   explanations?: FashionSearchExplanation[];
   fallback?: {
     reason: "no_results" | "low_confidence";
@@ -508,6 +543,7 @@ export interface GroundedProductCandidate {
 export interface FindProductsResponse {
   products: GroundedProductCandidate[];
   parsed?: Record<string, unknown>;
+  constraintTrace?: ConstraintTrace;
   relaxed?: boolean;
   took_ms: number;
 }

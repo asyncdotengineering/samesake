@@ -227,6 +227,7 @@ export const agentFindProductsResponseSchema: Record<string, unknown> = {
   properties: {
     products: { type: "array", items: { type: "object" } },
     parsed: { type: "object" },
+    constraintTrace: { type: "object" },
     relaxed: { type: "boolean" },
     took_ms: { type: "number" },
   },
@@ -394,6 +395,7 @@ export function makeAgentToolsService(
     return {
       products,
       parsed: search.parsed,
+      constraintTrace: explain?.constraintTrace ?? search.constraintTrace,
       relaxed: search.relaxed,
       took_ms: search.took_ms,
     };

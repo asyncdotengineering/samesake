@@ -145,6 +145,13 @@ describeIf("agent retrieval tools", () => {
     expect(result.products[0]!.verification.status).toBe("satisfied");
     expect(result.products.map((p) => p.id)).not.toContain("sold");
     expect(result.products[0]!.why).toBeTruthy();
+    expect(result.constraintTrace?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "available", source: "explicit", kind: "boolean" }),
+        expect.objectContaining({ field: "price", source: "explicit", kind: "max" }),
+        expect.objectContaining({ field: "sizes", source: "explicit", kind: "contains" }),
+      ])
+    );
   });
 
   test("strict mode excludes unknown verification fields", async () => {
