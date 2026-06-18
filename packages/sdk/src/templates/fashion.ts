@@ -3,12 +3,13 @@
 // search-ready embed doc + fashion-aware NLQ without rewriting ~200 lines per project.
 //
 // Region-neutral and parametrized: pass the data keys your raw catalog uses. The LLM-facing
-// schemas are forwarded as-is to your `generate` function (Gemini structured-output format,
-// which is what the fashion example is validated against).
+// schemas are declared with zod (field-level .describe() carries the instruction); the framework
+// converts them to JSON Schema for your `generate` function via normalizeSchema.
 //
 // Mechanism (the pipeline runner, modes, RRF, etc.) already lives in core/server; this module
 // is the declarative *content*: taxonomy, enums, two-stage schemas, prompts, embed-doc composer,
 // and NLQ defaults.
+import { z } from "zod";
 import type { CollectionFieldDef, PipelineDef, SpaceDef, StageDef } from "../types.ts";
 
 // ── Taxonomy + controlled vocabulary ────────────────────────────────────
@@ -44,95 +45,93 @@ export const fashionEnums = {
   neckline: ["v-neck", "round", "crew", "square", "halter", "off-shoulder", "one-shoulder", "sweetheart", "collared", "boat", "cowl", "high neck", "strapless", "unknown"],
 } as const;
 
-// ── Per-category fine attributes (stage 2 extension) ────────────────────
-const CATEGORY_ATTRS: Record<string, Record<string, unknown>> = {
-  dresses: {
-    neckline: { type: "STRING", enum: fashionEnums.neckline },
-    length: { type: "STRING", enum: fashionEnums.length },
-    sleeve_length: { type: "STRING", enum: fashionEnums.sleeve_length },
-    silhouette: { type: "STRING", enum: ["a-line", "bodycon", "shift", "wrap", "fit-and-flare", "slip", "tiered", "mermaid", "straight", "unknown"] },
-    details: { type: "ARRAY", items: { type: "STRING" }, description: "construction details: ruffled, smocked, tiered, cutout, lace, slit, belted, puff sleeve…" },
-  },
-  tops: {
-    neckline: { type: "STRING", enum: fashionEnums.neckline },
-    sleeve_length: { type: "STRING", enum: fashionEnums.sleeve_length },
-    top_length: { type: "STRING", enum: ["cropped", "regular", "longline", "tunic", "unknown"] },
-    strap_type: { type: "STRING", enum: ["spaghetti", "halter", "wide", "none", "unknown"] },
-    details: { type: "ARRAY", items: { type: "STRING" } },
-  },
-  bottoms: {
-    leg_cut: { type: "STRING", enum: ["skinny", "straight", "wide-leg", "flared", "bootcut", "cargo", "palazzo", "culotte", "pencil", "pleated", "a-line", "wrap", "unknown"] },
-    rise: { type: "STRING", enum: ["high", "mid", "low", "elasticated", "drawstring", "unknown"] },
-    length: { type: "STRING", enum: fashionEnums.length },
-    details: { type: "ARRAY", items: { type: "STRING" }, description: "wash, distressing, pleats, pockets, slit…" },
-  },
-  outerwear: {
-    length: { type: "STRING", enum: fashionEnums.length },
-    closure: { type: "STRING", enum: ["zip", "buttons", "open", "belt", "snap", "unknown"] },
-    lapel: { type: "STRING", enum: ["notch", "peak", "shawl", "collarless", "hooded", "unknown"] },
-    details: { type: "ARRAY", items: { type: "STRING" } },
-  },
-  ethnic: {
-    work: { type: "STRING", enum: ["zari", "embroidery", "sequin", "beadwork", "printed", "handloom", "plain", "unknown"], description: "embellishment/work" },
-    border_type: { type: "STRING", description: "saree border description, or unknown" },
-    set_composition: { type: "STRING", description: "e.g. saree+blouse, kurta+pant+dupatta, single piece" },
-    drape_style: { type: "STRING", enum: ["kandyan", "indian", "ready-to-wear", "n/a", "unknown"] },
-    details: { type: "ARRAY", items: { type: "STRING" } },
-  },
-  footwear: {
-    heel_height: { type: "STRING", enum: ["flat", "low", "mid", "high", "platform", "unknown"] },
-    toe_shape: { type: "STRING", enum: ["round", "pointed", "square", "open", "peep", "unknown"] },
-    closure: { type: "STRING", enum: ["lace-up", "slip-on", "strap", "buckle", "zip", "unknown"] },
-    details: { type: "ARRAY", items: { type: "STRING" } },
-  },
-};
-const GENERIC_ATTRS = {
-  neckline: { type: "STRING", enum: fashionEnums.neckline },
-  sleeve_length: { type: "STRING", enum: fashionEnums.sleeve_length },
-  length: { type: "STRING", enum: fashionEnums.length },
-  details: { type: "ARRAY", items: { type: "STRING" } },
-};
-const NO_ATTRS = { details: { type: "ARRAY", items: { type: "STRING" } } };
+// ── Per-category fine attributes (stage 2 extension), as zod field maps ──
+// Field-level .describe() IS the instruction to the model (Mastra pattern). Optional fields
+// become not-required in the converted JSON Schema.
+const zEnum = (vals: readonly string[]) => z.enum(vals as unknown as [string, ...string[]]);
+type ZShape = Record<string, z.ZodTypeAny>;
 
-export function fashionCategoryAttrBlock(categoryId: string): Record<string, unknown> {
-  if (CATEGORY_ATTRS[categoryId]) return CATEGORY_ATTRS[categoryId]!;
-  if (["bags", "jewelry", "accessories", "other"].includes(categoryId)) return NO_ATTRS;
-  return GENERIC_ATTRS;
+const CATEGORY_ATTRS: Record<string, () => ZShape> = {
+  dresses: () => ({
+    neckline: zEnum(fashionEnums.neckline).optional(),
+    length: zEnum(fashionEnums.length).optional(),
+    sleeve_length: zEnum(fashionEnums.sleeve_length).optional(),
+    silhouette: zEnum(["a-line", "bodycon", "shift", "wrap", "fit-and-flare", "slip", "tiered", "mermaid", "straight", "unknown"]).optional(),
+    details: z.array(z.string()).optional().describe("construction details: ruffled, smocked, tiered, cutout, lace, slit, belted, puff sleeve…"),
+  }),
+  tops: () => ({
+    neckline: zEnum(fashionEnums.neckline).optional(),
+    sleeve_length: zEnum(fashionEnums.sleeve_length).optional(),
+    top_length: zEnum(["cropped", "regular", "longline", "tunic", "unknown"]).optional(),
+    strap_type: zEnum(["spaghetti", "halter", "wide", "none", "unknown"]).optional(),
+    details: z.array(z.string()).optional(),
+  }),
+  bottoms: () => ({
+    leg_cut: zEnum(["skinny", "straight", "wide-leg", "flared", "bootcut", "cargo", "palazzo", "culotte", "pencil", "pleated", "a-line", "wrap", "unknown"]).optional(),
+    rise: zEnum(["high", "mid", "low", "elasticated", "drawstring", "unknown"]).optional(),
+    length: zEnum(fashionEnums.length).optional(),
+    details: z.array(z.string()).optional().describe("wash, distressing, pleats, pockets, slit…"),
+  }),
+  outerwear: () => ({
+    length: zEnum(fashionEnums.length).optional(),
+    closure: zEnum(["zip", "buttons", "open", "belt", "snap", "unknown"]).optional(),
+    lapel: zEnum(["notch", "peak", "shawl", "collarless", "hooded", "unknown"]).optional(),
+    details: z.array(z.string()).optional(),
+  }),
+  ethnic: () => ({
+    work: zEnum(["zari", "embroidery", "sequin", "beadwork", "printed", "handloom", "plain", "unknown"]).optional().describe("embellishment/work"),
+    border_type: z.string().optional().describe("saree border description, or unknown"),
+    set_composition: z.string().optional().describe("e.g. saree+blouse, kurta+pant+dupatta, single piece"),
+    drape_style: zEnum(["kandyan", "indian", "ready-to-wear", "n/a", "unknown"]).optional(),
+    details: z.array(z.string()).optional(),
+  }),
+  footwear: () => ({
+    heel_height: zEnum(["flat", "low", "mid", "high", "platform", "unknown"]).optional(),
+    toe_shape: zEnum(["round", "pointed", "square", "open", "peep", "unknown"]).optional(),
+    closure: zEnum(["lace-up", "slip-on", "strap", "buckle", "zip", "unknown"]).optional(),
+    details: z.array(z.string()).optional(),
+  }),
+};
+const GENERIC_ATTRS = (): ZShape => ({
+  neckline: zEnum(fashionEnums.neckline).optional(),
+  sleeve_length: zEnum(fashionEnums.sleeve_length).optional(),
+  length: zEnum(fashionEnums.length).optional(),
+  details: z.array(z.string()).optional(),
+});
+const NO_ATTRS = (): ZShape => ({ details: z.array(z.string()).optional() });
+
+export function fashionCategoryAttrBlock(categoryId: string): ZShape {
+  const build = CATEGORY_ATTRS[categoryId];
+  if (build) return build();
+  if (["bags", "jewelry", "accessories", "other"].includes(categoryId)) return NO_ATTRS();
+  return GENERIC_ATTRS();
 }
 
-// ── Stage schemas (Gemini structured-output format; forwarded as-is to generate) ──
-export function fashionClassifySchema(): Record<string, unknown> {
-  return {
-    type: "OBJECT",
-    properties: {
-      category: { type: "STRING", enum: fashionTaxonomy.map((c) => c.id), description: "the single best taxonomy id for this garment" },
-      product_type: { type: "STRING", description: `specific type, prefer a known type for the category (e.g. ${fashionTaxonomy.slice(0, 5).map((c) => c.types[0]).join(", ")}); free text allowed` },
-      gender: { type: "STRING", enum: fashionEnums.gender, description: "intended wearer; 'unisex' when not gendered" },
-      is_apparel_product: { type: "BOOLEAN", description: "false for non-wearables (gift cards, homeware, fabric yardage) — these skip attribute extraction" },
-    },
-    required: ["category", "product_type", "gender", "is_apparel_product"],
-  };
+// ── Stage schemas (zod; the framework converts to JSON Schema for your generate fn) ──
+export function fashionClassifySchema(): z.ZodType {
+  return z.object({
+    category: zEnum(fashionTaxonomy.map((c) => c.id)).describe("the single best taxonomy id for this garment"),
+    product_type: z.string().describe(`specific type, prefer a known type for the category (e.g. ${fashionTaxonomy.slice(0, 5).map((c) => c.types[0]).join(", ")}); free text allowed`),
+    gender: zEnum(fashionEnums.gender).describe("intended wearer; 'unisex' when not gendered"),
+    is_apparel_product: z.boolean().describe("false for non-wearables (gift cards, homeware, fabric yardage) — these skip attribute extraction"),
+  });
 }
 
-export function fashionExtractSchema(categoryId: string): Record<string, unknown> {
-  return {
-    type: "OBJECT",
-    properties: {
-      colors: { type: "ARRAY", items: { type: "STRING", enum: fashionEnums.colors }, description: "rule[color_base]: BASE colours only (red, navy, beige), primary colour first; marketing names go in raw_color" },
-      raw_color: { type: "STRING", description: "the seller's marketing colour name verbatim if stated (e.g. crimson, midnight, blush), else empty" },
-      pattern: { type: "STRING", enum: fashionEnums.pattern, description: "dominant visible pattern; 'solid' if plain" },
-      material: { type: "STRING", enum: fashionEnums.materials, description: "from text when stated; from the image only as a low-confidence guess; else 'unknown'" },
-      fit: { type: "STRING", enum: fashionEnums.fit, description: "how it sits on the body; 'unknown' if not visible" },
-      occasions: { type: "ARRAY", items: { type: "STRING", enum: fashionEnums.occasions }, description: "1-3 best occasions to wear it" },
-      styles: { type: "ARRAY", items: { type: "STRING", enum: fashionEnums.styles }, description: "rule[style_derive]: 1-3 styles derived from VISIBLE attributes (floral+flowy→bohemian), never from brand copy" },
-      modesty: { type: "STRING", enum: fashionEnums.modesty, description: "coverage level" },
-      ...fashionCategoryAttrBlock(categoryId),
-      search_document: { type: "STRING", description: "rule[search_document]: 2-3 plain shopper-facing sentences — what it is, how it looks, what to wear it for. No marketing fluff." },
-      confidence: { type: "NUMBER", description: "0.9+ = clear photo & obvious attributes; 0.5-0.7 = partial/ambiguous; <0.4 = mostly inferred" },
-      uncertain_fields: { type: "ARRAY", items: { type: "STRING" }, description: "names of attributes you are unsure about (rule[unknown_over_guess])" },
-    },
-    required: ["colors", "pattern", "occasions", "styles", "search_document", "confidence"],
-  };
+export function fashionExtractSchema(categoryId: string): z.ZodType {
+  return z.object({
+    colors: z.array(zEnum(fashionEnums.colors)).describe("rule[color_base]: BASE colours only (red, navy, beige), primary colour first; marketing names go in raw_color"),
+    raw_color: z.string().optional().describe("the seller's marketing colour name verbatim if stated (e.g. crimson, midnight, blush), else empty"),
+    pattern: zEnum(fashionEnums.pattern).describe("dominant visible pattern; 'solid' if plain"),
+    material: zEnum(fashionEnums.materials).optional().describe("from text when stated; from the image only as a low-confidence guess; else 'unknown'"),
+    fit: zEnum(fashionEnums.fit).optional().describe("how it sits on the body; 'unknown' if not visible"),
+    occasions: z.array(zEnum(fashionEnums.occasions)).describe("1-3 best occasions to wear it"),
+    styles: z.array(zEnum(fashionEnums.styles)).describe("rule[style_derive]: 1-3 styles derived from VISIBLE attributes (floral+flowy→bohemian), never from brand copy"),
+    modesty: zEnum(fashionEnums.modesty).optional().describe("coverage level"),
+    ...fashionCategoryAttrBlock(categoryId),
+    search_document: z.string().describe("rule[search_document]: 2-3 plain shopper-facing sentences — what it is, how it looks, what to wear it for. No marketing fluff."),
+    confidence: z.number().describe("0.9+ = clear photo & obvious attributes; 0.5-0.7 = partial/ambiguous; <0.4 = mostly inferred"),
+    uncertain_fields: z.array(z.string()).optional().describe("names of attributes you are unsure about (rule[unknown_over_guess])"),
+  });
 }
 
 export const FASHION_EXTRACT_INSTRUCTIONS = `<role>
@@ -256,23 +255,19 @@ export function composeFashionEmbedDoc(p: { title: string }, a: Record<string, u
 export const FASHION_EMBED_DOC_SOURCE = "$enriched.embed_doc";
 
 // ── Fashion-aware NLQ defaults (region-neutral) ─────────────────────────
-export function fashionNlqSchema(): Record<string, unknown> {
-  return {
-    type: "OBJECT",
-    properties: {
-      category: { type: "STRING", enum: [...fashionTaxonomy.map((c) => c.id), "any"] },
-      gender: { type: "STRING", enum: [...fashionEnums.gender, "any"] },
-      colors: { type: "ARRAY", items: { type: "STRING", enum: fashionEnums.colors } },
-      exclude_colors: { type: "ARRAY", items: { type: "STRING", enum: fashionEnums.colors } },
-      occasions: { type: "ARRAY", items: { type: "STRING", enum: fashionEnums.occasions } },
-      exclude_patterns: { type: "ARRAY", items: { type: "STRING", enum: fashionEnums.pattern } },
-      exclude_terms: { type: "ARRAY", items: { type: "STRING" }, description: "negated attributes/styles, e.g. bodycon, skinny" },
-      max_price: { type: "NUMBER", description: "0 if none stated" },
-      min_price: { type: "NUMBER", description: "0 if none stated" },
-      semantic_query: { type: "STRING", description: "descriptive intent to match semantically, stripped of price/negation; never empty" },
-    },
-    required: ["semantic_query"],
-  };
+export function fashionNlqSchema(): z.ZodType {
+  return z.object({
+    category: zEnum([...fashionTaxonomy.map((c) => c.id), "any"]).optional().describe("set only when unambiguous"),
+    gender: zEnum([...fashionEnums.gender, "any"]).optional(),
+    colors: z.array(zEnum(fashionEnums.colors)).optional(),
+    exclude_colors: z.array(zEnum(fashionEnums.colors)).optional(),
+    occasions: z.array(zEnum(fashionEnums.occasions)).optional(),
+    exclude_patterns: z.array(zEnum(fashionEnums.pattern)).optional(),
+    exclude_terms: z.array(z.string()).optional().describe("negated attributes/styles, e.g. bodycon, skinny"),
+    max_price: z.number().optional().describe("0 if none stated"),
+    min_price: z.number().optional().describe("0 if none stated"),
+    semantic_query: z.string().describe("descriptive intent to match semantically, stripped of price/negation; never empty"),
+  });
 }
 
 export const FASHION_NLQ_INSTRUCTIONS = `Parse a fashion shopper's search query.
