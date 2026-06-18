@@ -17,15 +17,16 @@
     "@porulle/core": "^0.1.0",
     "@porulle/adapter-postgres": "^0.1.0",
     "@porulle/adapter-local-storage": "^0.1.0",
-    "@samesake/core": "^1.2.0",
-    "@samesake/server": "^1.2.0",
+    "@samesake/core": "^1.3.0",
+    "@samesake/server": "^1.3.0",
     "better-auth": "1.6.18",
     "@better-auth/api-key": "1.6.18",
     "hono": "^4.12.0",
     "@hono/zod-validator": "^0.8.0",
     "drizzle-orm": "^0.45.1",
     "postgres": "^3.4.0",
-    "zod": "^4.0.0"
+    "zod": "^4.0.0",
+    "@vercel/blob": "^2.0.0"
   },
   "devDependencies": {
     "@types/node": "^20",
@@ -34,11 +35,21 @@
     "drizzle-kit": "^0.31.10",
     "typescript": "^5"
   },
-  "ignoreScripts": ["sharp", "unrs-resolver"],
-  "trustedDependencies": ["sharp", "unrs-resolver"],
+  "ignoreScripts": [
+    "sharp",
+    "unrs-resolver"
+  ],
+  "trustedDependencies": [
+    "sharp",
+    "unrs-resolver"
+  ],
   "//overrides": "Self-contained so a standalone build (e.g. Vercel/npm) resolves the Porulle adapters' transitive workspace:* core dep. Nested form avoids npm EOVERRIDE with the direct @porulle/core dep. Remove once porulle#24 is fixed.",
   "overrides": {
-    "@porulle/adapter-postgres": { "@porulle/core": "0.1.0" },
-    "@porulle/adapter-local-storage": { "@porulle/core": "0.1.0" }
+    "@porulle/adapter-postgres": {
+      "@porulle/core": "0.1.0"
+    },
+    "@porulle/adapter-local-storage": {
+      "@porulle/core": "0.1.0"
+    }
   }
 }
