@@ -14,6 +14,7 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { EntityDef, ProjectConfig } from "@samesake/core";
 import type { MatchService } from "./core/match.ts";
 import type { SearchService } from "./core/search.ts";
+import type { CalibrateSearchService } from "./core/calibrate-search.ts";
 import type { AgentToolsService } from "./core/agent-tools.ts";
 import type { FashionSearchService } from "./core/fashion-search.ts";
 import type { IngestService } from "./core/ingest.ts";
@@ -36,6 +37,7 @@ export interface AppDeps {
   services: {
     match: MatchService;
     search: SearchService;
+    calibrateSearch: CalibrateSearchService;
     agentTools: AgentToolsService;
     fashionSearch: FashionSearchService;
     ingest: IngestService;
@@ -199,7 +201,14 @@ export function buildApp(deps: AppDeps): Hono {
   });
 
   const SearchBody = z.object({
-    q: z.string().min(1),
+    q: z.string().optional(),
+    image: z
+      .object({
+        url: z.string().optional(),
+        bytesBase64: z.string().optional(),
+        mimeType: z.string().optional(),
+      })
+      .optional(),
     filters: z.record(z.string(), z.unknown()).optional(),
     weights: z
       .record(
@@ -207,6 +216,9 @@ export function buildApp(deps: AppDeps): Hono {
         z.union([z.number(), z.record(z.string(), z.number())])
       )
       .optional(),
+    mode: z.enum(["intent", "similar"]).optional(),
+    rerank: z.boolean().optional(),
+    diversify: z.boolean().optional(),
     limit: z.number().optional(),
     offset: z.number().optional(),
     facets: z.array(z.string()).optional(),
@@ -364,9 +376,13 @@ export function buildApp(deps: AppDeps): Hono {
       const body = c.req.valid("json");
       return c.json(
         await services.search.search(project, collection, {
-          q: body.q,
+          q: body.q ?? "",
+          image: body.image,
           filters: body.filters as Record<string, import("./core/search.ts").FilterClause> | undefined,
           weights: body.weights as import("./core/search.ts").SearchOpts["weights"],
+          mode: body.mode,
+          rerank: body.rerank,
+          diversify: body.diversify,
           limit: body.limit,
           offset: body.offset,
           facets: body.facets,
@@ -384,11 +400,58 @@ export function buildApp(deps: AppDeps): Hono {
       const body = c.req.valid("json");
       return c.json(
         await services.search.searchExplain(project, collection, {
-          q: body.q,
+          q: body.q ?? "",
+          image: body.image,
           filters: body.filters as Record<string, import("./core/search.ts").FilterClause> | undefined,
           weights: body.weights as import("./core/search.ts").SearchOpts["weights"],
+          mode: body.mode,
           limit: body.limit,
           offset: body.offset,
+        })
+      );
+    }
+  );
+
+  // Unbiased self-evaluation + calibration — judge ranking on relevance, not word-overlap.
+  const SearchEvalBody = z.object({
+    queries: z.array(
+      z.object({
+        q: z.string().optional(),
+        filters: z.record(z.string(), z.unknown()).optional(),
+        relevant: z.record(z.string(), z.number()).optional(),
+      })
+    ),
+    limit: z.number().optional(),
+  });
+
+  app.post(
+    "/v1/projects/:project/collections/:collection/search/evaluate",
+    zValidator("json", SearchEvalBody.extend({ config: z.object({ name: z.string(), mode: z.enum(["intent", "similar"]).optional(), weights: z.record(z.string(), z.union([z.number(), z.record(z.string(), z.number())])).optional() }).optional() })),
+    async (c) => {
+      const { project, collection } = c.req.param();
+      await requireProjectKey(c, project);
+      const body = c.req.valid("json");
+      return c.json(
+        await services.calibrateSearch.evaluateSearch(project, collection, {
+          queries: body.queries as Parameters<CalibrateSearchService["evaluateSearch"]>[2]["queries"],
+          config: body.config as Parameters<CalibrateSearchService["evaluateSearch"]>[2]["config"],
+          limit: body.limit,
+        })
+      );
+    }
+  );
+
+  app.post(
+    "/v1/projects/:project/collections/:collection/search/calibrate",
+    zValidator("json", SearchEvalBody),
+    async (c) => {
+      const { project, collection } = c.req.param();
+      await requireProjectKey(c, project);
+      const body = c.req.valid("json");
+      return c.json(
+        await services.calibrateSearch.calibrateSearch(project, collection, {
+          queries: body.queries as Parameters<CalibrateSearchService["calibrateSearch"]>[2]["queries"],
+          limit: body.limit,
         })
       );
     }

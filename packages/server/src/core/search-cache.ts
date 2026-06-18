@@ -6,6 +6,8 @@ export interface SearchCacheKey {
   image?: string | null;
   filters: unknown;
   weights: unknown;
+  /** Resolved retrieval objective; intent and similar return different rankings. */
+  mode?: string;
   limit: number;
   offset: number;
   facets: unknown;
@@ -19,6 +21,7 @@ function stableKey(key: SearchCacheKey): string {
     key.image ?? "",
     JSON.stringify(key.filters ?? {}),
     JSON.stringify(key.weights ?? {}),
+    key.mode ?? "",
     key.limit,
     key.offset,
     JSON.stringify(key.facets ?? []),

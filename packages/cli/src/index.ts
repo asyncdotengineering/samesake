@@ -230,6 +230,9 @@ SEARCH PIPELINE
   index          --project=NAME --collection=COL          Embed + populate filter columns
   search-explain --project=NAME --collection=COL --q=QUERY [--json]
                                                           Per-channel search ranking breakdown
+  calibrate-search --project=NAME --collection=COL --queries=FILE.json [--limit=N] [--json]
+                                                          Sweep mode/weight configs on graded relevance
+                                                          (labels in FILE, else the LLM judges) → recommend
   rotate-key     --project=NAME                             Issue a new per-project API key (master only)
   review-list    --project=NAME --collection=COL [--limit=20] [--max-confidence=0.7]
                                                           List low-confidence enrichments for review
@@ -532,6 +535,28 @@ async function cmdSearchExplain(flags: Record<string, string>): Promise<void> {
     console.log(
       `  id=${d.id} rrf=${Number(d.rrf_score).toFixed(4)} fts=${d.fts_rank ?? "·"} cos=${d.cosine_rank ?? "·"} spc=${d.spaces_rank ?? "·"}`
     );
+  }
+}
+
+async function cmdCalibrateSearch(flags: Record<string, string>): Promise<void> {
+  const project = flags.project ?? PROJECT ?? fail("--project is required");
+  const collection = flags.collection ?? fail("--collection is required");
+  const file = flags.queries ?? fail('--queries <file.json> is required: [{"q":"...","relevant":{"id":3}}, ...] (relevant optional → LLM judges)');
+  const queries = JSON.parse(await Bun.file(file).text()) as unknown[];
+  const body = await post<{
+    recommended: { name: string };
+    results: Array<{ config: string; ndcg: number; gradeAt: number; judged: number }>;
+  }>(`/v1/projects/${project}/collections/${collection}/search/calibrate`, {
+    queries,
+    limit: flags.limit ? Number(flags.limit) : undefined,
+  });
+  if (flags.json === "true") {
+    console.log(JSON.stringify(body, null, 2));
+    return;
+  }
+  console.log(`recommended config: ${body.recommended.name}`);
+  for (const r of body.results) {
+    console.log(`  ${r.config.padEnd(10)} nDCG@5=${r.ndcg.toFixed(3)} grade@5=${r.gradeAt.toFixed(2)} judged=${r.judged}`);
   }
 }
 
@@ -900,6 +925,7 @@ async function main(): Promise<void> {
     case "enrich": await cmdEnrich(flags); break;
     case "index": await cmdIndex(flags); break;
     case "search-explain": await cmdSearchExplain(flags); break;
+    case "calibrate-search": await cmdCalibrateSearch(flags); break;
     case "rotate-key": await cmdRotateKey(flags); break;
     case "review-list": await cmdReviewList(flags); break;
     case "review-correct": await cmdReviewCorrect(flags); break;

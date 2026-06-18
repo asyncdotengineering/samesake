@@ -2,7 +2,24 @@
 
 Honest, reproducible quality numbers for the samesake search framework. No marketing inflation — the numbers are the story.
 
+## Unbiased multi-domain benchmark — the standing gate for ranking changes
+
+**Lesson learned (post-mortem):** the LK parity eval below (and `examples/fashion-search/eval-configs-lk.ts`) uses *keyword-snapshot relevance labels* — the items a keyword search already returned. Those labels **reward keyword behavior**, so they misjudge ranking changes: when soft-OR FTS was added, this biased metric showed a fake intent "regression" (0.67→0.63) that did not exist on real relevance. Judge ranking changes on **unbiased** relevance, not word-overlap.
+
+The fix is institutional: `examples/fashion-search/bench-retrieval.ts` (`bun run bench`) — **hand-assigned graded relevance** across **fashion + electronics (out-of-domain)**, real `gemini-embedding-2`, with an acceptance gate that fails the run on regression. nDCG@5, soft-OR (default) vs strict-AND:
+
+| config (nDCG@5) | electronics strict-AND | electronics soft-OR | fashion strict-AND | fashion soft-OR |
+|---|---|---|---|---|
+| keyword | 0.362 | **0.938** | 0.477 | **0.977** |
+| flat    | 0.893 | 0.934 | 0.997 | 0.997 |
+| intent  | 0.893 | 0.934 | 0.997 | 0.997 |
+| similar | 0.893 | 0.893 | 0.997 | 0.997 |
+
+On unbiased labels soft-OR is **neutral-to-better** for intent/flat and **+0.50–0.58** for the keyword leg (strict-AND goes inert — scores 0.00 — on vocab-mismatch/use-case queries). The improvements **generalize out-of-domain** (electronics mirrors fashion). For programmatic self-tuning use `matcher.calibrateSearch(...)` or the CLI `samesake calibrate-search` (LLM-as-judge when no labels are supplied) — both judge on relevance, not keyword overlap.
+
 ## PARITY RUN (same harness, same 4,555-doc corpus)
+
+> Caveat: the labels in this parity run are keyword-snapshot results and therefore keyword-biased — see the unbiased benchmark above for the relevance-judged numbers used to gate ranking changes.
 
 Same 50 golden queries, same ESCI LLM judge (`gemini-3-flash-preview`, cached), same LK fashion product corpus (**4,555 products / 20 stores**). Harness: aggregator repo `scripts/eval-search.js`. Result files in aggregator `evals/results/`.
 

@@ -271,6 +271,8 @@ type CollectionInput<
     >;
     combiner?: "rrf";
     defaultSpaceWeights?: Partial<Record<NoInfer<keyof TSpaces & string>, number>>;
+    /** Declared field whose value groups product variants; results collapse to one per group. */
+    variantGroup?: NoInfer<keyof TFields & string>;
     nlq?: {
       instructions?: string;
       semanticRewrite?: boolean;
@@ -295,6 +297,10 @@ export function collection<
   if (def.embeddings) assertNoIdentCollisions(Object.keys(def.embeddings), "embedding");
   if (def.spaces && Object.keys(def.spaces).length > 0) {
     validateSpaceDims(def.spaces);
+  }
+  const vg = (def as unknown as CollectionDef).search?.variantGroup;
+  if (vg && !(def.fields && vg in def.fields)) {
+    throw new Error(`collection "${name}": search.variantGroup "${vg}" must be a declared field`);
   }
   return brandDef({ ...(def as unknown as CollectionDef), name }, "collection");
 }

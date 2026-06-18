@@ -22,6 +22,12 @@ export type {
   ParseRequest,
   GenerateFn,
   GenerateRequest,
+  RerankFn,
+  RerankRequest,
+  RerankCandidate,
+  GroundImageFn,
+  GroundImageRequest,
+  GroundImageResult,
   JobRunner,
   MigrationPlan,
   ApplyOptions,
@@ -31,7 +37,13 @@ export type {
   PolicyConfig,
   PolicySlot,
 } from "./types.ts";
-export type { SearchExplainResult, ExplainDocBreakdown } from "./core/search.ts";
+export type { SearchExplainResult, ExplainDocBreakdown, SearchOpts } from "./core/search.ts";
+export type {
+  SearchEvalQuery,
+  SearchEvalConfig,
+  SearchEvalResult,
+  CalibrateResult,
+} from "./core/calibrate-search.ts";
 export {
   agentToolDescriptors,
   agentToolsOpenApi,

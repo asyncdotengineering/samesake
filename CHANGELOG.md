@@ -2,6 +2,64 @@
 
 All notable changes to samesake. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased] — fashion/e-commerce retrieval primitives (research-backed defaults)
+
+Bakes six retrieval primitives into the core packages so samesake works well off-the-shelf
+with the right defaults and no required config. Backed by 2025–26 fashion/e-commerce IR work
+(SIGIR/WWW/RecSys, incl. Walmart Global Tech).
+
+### Added
+
+- **FTS soft-OR** — the lexical leg now uses `websearch_to_tsquery` rewritten to OR-of-terms, so
+  multi-term queries match docs sharing *any* term (ranked by `ts_rank_cd`) instead of going inert
+  on the AND of all terms. **Default: on, no config.**
+- **Composed query (image + text modifier)** — `mode:"similar"` with both `image` and `q` keeps the
+  visual leg (anchor) and the text-cosine leg (modifier) active and fused via RRF — "like this, but
+  black / longer / cheaper". The plain `/search` HTTP route now accepts `image` too.
+- **Adaptive cross-encoder rerank seam** — new BYO `rerank` on `createMatcher`; when present, search
+  reranks the top-N first-stage pool (`RERANK_POOL=50`) and slices to `limit`; pure RRF otherwise.
+  Per-query `rerank:false` to force first-stage. `RerankFn` exported.
+- **Visual grounding seam** — new BYO `groundImage` on `createMatcher`, applied to images before
+  embedding on both the index and query paths (pass-through when absent). `GroundImageFn` exported.
+- **Self-calibration + LLM-judge eval** — `matcher.evaluateSearch` (graded relevance@k + nDCG@k via
+  caller labels or the configured `generate` LLM as judge) and `matcher.calibrateSearch` (sweeps a
+  small mode/weight grid, returns the recommended config). Lets defaults tune themselves.
+- **Variant/result diversification** — `collection({ search: { variantGroup: "<field>" } })` collapses
+  near-duplicate variants to the best-scoring item per group; per-query `diversify:false` to disable.
+  Off unless `variantGroup` is declared.
+
+## [Unreleased] — search modes (intent vs similar)
+
+Makes search robust to intent-based filtering and not biased toward keywords, and makes
+"similar" mean genuine visual + semantic similarity rather than keyword matching.
+
+### Added
+
+- **`mode: "intent" | "similar"`** on `search` / `searchExplain` (in-process + HTTP `POST .../search`,
+  `.../search/explain`). Resolved automatically when omitted: `"similar"` if a query image is
+  present, else `"intent"`. Exported `SearchMode` from `@samesake/core`.
+- **Mode-aware weighting** in `parseSearchWeights`: `intent` caps the keyword (FTS) leg to a
+  tiebreaker (`0.3 × cosine`) and turns the spaces/visual leg off for text queries;
+  `similar` turns keyword off so semantic + visual decide. Image-kind spaces are zeroed for
+  text queries (cross-modal text re-embedding is noise). Explicit `weights` still override.
+- Pure-image similarity (`mode: "similar"` + image + no text) now drops the cosine text leg so
+  the visual space carries ranking, without needing the agent/fashion wrapper.
+- `find_similar_products` runs in `similar` mode.
+- Evidence harnesses: `examples/fashion-search/repro-similar.ts` (keyword-decoy pollution +
+  fix), `repro-visual.ts` (genuine visual similarity defeats text contamination),
+  `eval-configs-lk.ts` (intent guardrail: `mode=intent` == old default, no regression).
+
+### Changed
+
+- **Default text search is now `mode: "intent"`** — keyword is a tiebreaker, not co-equal with
+  semantics. On the LK intent eval this is identical to the old flat default (relevance@3 0.67)
+  while removing keyword dominance.
+- `examples/fashion-search` enables spaces + the `visual` image space **by default** (opt out
+  with `SPACES=0` / `SPACES_VISUAL=0`). Safe now because intent mode does not weight them.
+- Dropped the redundant `style` text-space from the fashion example: it duplicated
+  `Channels.cosine({embedding:"doc"})` and pushed the segmented vector past pgvector's 2000-d
+  HNSW limit. The cosine channel carries text semantics; spaces carry visual/price/category/freshness.
+
 ## [1.0.0] — 2026-06-11
 
 V1.0 launch prep. Closes the 0.2→1.0 arc.

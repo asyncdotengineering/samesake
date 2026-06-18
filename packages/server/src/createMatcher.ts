@@ -42,6 +42,7 @@ import { makeReviewService } from "./core/review.ts";
 import { makeEmbedIndexService } from "./core/embed-index.ts";
 import { makeFashionSearchService } from "./core/fashion-search.ts";
 import { makeCalibrateService } from "./core/calibrate.ts";
+import { makeCalibrateSearchService } from "./core/calibrate-search.ts";
 import { makeExplainService } from "./core/explain.ts";
 import { makeVariantsService } from "./core/variants.ts";
 import { makeUpsertService } from "./core/upsert.ts";
@@ -72,6 +73,8 @@ export interface Matcher {
   getEntityDef: ReturnType<typeof makeProjectsService>["getEntityDef"];
   getCollectionDef: ReturnType<typeof makeProjectsService>["getCollectionDef"];
   search: ReturnType<typeof makeSearchService>["search"];
+  evaluateSearch: ReturnType<typeof makeCalibrateSearchService>["evaluateSearch"];
+  calibrateSearch: ReturnType<typeof makeCalibrateSearchService>["calibrateSearch"];
   findProducts: ReturnType<typeof makeAgentToolsService>["findProducts"];
   findSimilarProducts: ReturnType<typeof makeAgentToolsService>["findSimilarProducts"];
   agentToolDescriptors: ReturnType<typeof makeAgentToolsService>["toolDescriptors"];
@@ -203,6 +206,8 @@ export function createMatcher(config: MatcherConfig): Matcher {
     parse: config.parse ?? defaultParse,
     generate: config.generate ?? defaultGenerate,
     generateConfigured: typeof config.generate === "function",
+    rerank: config.rerank,
+    groundImage: config.groundImage,
     jobs: config.jobs ?? inProcessRunner,
     observability,
     policy: resolvePolicy(config.policy),
@@ -226,6 +231,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
   const parseService = makeParseService(ctx);
   const matchService = makeMatchService(ctx, embedService, parseService, projectsService, schemaGen);
   const searchService = makeSearchService(ctx, embedService, projectsService);
+  const calibrateSearchService = makeCalibrateSearchService(ctx, searchService);
   const agentToolsService = makeAgentToolsService(ctx, projectsService, searchService);
   const ingestService = makeIngestService(ctx, projectsService);
   const fashionSearchService = makeFashionSearchService(ctx, projectsService, searchService, ingestService);
@@ -246,6 +252,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
     services: {
       match: matchService,
       search: searchService,
+      calibrateSearch: calibrateSearchService,
       agentTools: agentToolsService,
       fashionSearch: fashionSearchService,
       ingest: ingestService,
@@ -288,6 +295,8 @@ export function createMatcher(config: MatcherConfig): Matcher {
     getEntityDef: projectsService.getEntityDef,
     getCollectionDef: projectsService.getCollectionDef,
     search: searchService.search,
+    evaluateSearch: calibrateSearchService.evaluateSearch,
+    calibrateSearch: calibrateSearchService.calibrateSearch,
     findProducts: agentToolsService.findProducts,
     findSimilarProducts: agentToolsService.findSimilarProducts,
     agentToolDescriptors: agentToolsService.toolDescriptors,

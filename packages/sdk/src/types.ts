@@ -329,6 +329,13 @@ export interface CollectionSearchDef {
   channels: SearchChannelDef[];
   combiner?: "rrf";
   defaultSpaceWeights?: Record<string, number>;
+  /**
+   * Declared field whose value groups variants of the same product (e.g. a
+   * parent/style id). When set, search collapses results to the best-scoring item
+   * per group by default (override per-query with `diversify: false`). Items with a
+   * null/empty value are never collapsed.
+   */
+  variantGroup?: string;
   nlq?: {
     instructions?: string;
     semanticRewrite?: boolean;
@@ -383,6 +390,16 @@ export type SearchWeightsInput<S extends string = string> = {
   recency?: number;
   spaces?: number | Partial<Record<S, number>>;
 };
+
+/**
+ * Retrieval objective. The two are different problems and need different channel weighting:
+ * - "intent": find items matching a need/constraints. Keyword is a tiebreaker (capped below
+ *   semantic), visual is off for text queries. NLQ hard filters apply.
+ * - "similar": find items that look/feel like the query. Keyword is off (it pulls in
+ *   word-decoys); semantic + visual lead.
+ * Resolved automatically when omitted: "similar" if a query image is present, else "intent".
+ */
+export type SearchMode = "intent" | "similar";
 
 export type ConstraintTraceSource = "nlq" | "explicit" | "budget_hint" | "agent";
 

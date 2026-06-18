@@ -1,5 +1,5 @@
 import type { CollectionDef, CollectionFieldDef, PipelineDef } from "@samesake/core";
-import type { MatcherCtx } from "../types.ts";
+import type { MatcherCtx, GroundImageFn } from "../types.ts";
 import type { Observability } from "./observability.ts";
 import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
@@ -106,7 +106,8 @@ async function buildDocSpaceSegments(
   embedService: EmbedService,
   textEmbedCache: Map<string, number[]>,
   imageEmbedCache: Map<string, number[]>,
-  observability: Observability
+  observability: Observability,
+  groundImage?: GroundImageFn
 ): Promise<{ segments: Array<number[] | null>; dims: number[] }> {
   const keys = spaceKeys(def);
   const segments: Array<number[] | null> = [];
@@ -169,11 +170,23 @@ async function buildDocSpaceSegments(
           continue;
         }
         try {
+          // Visual grounding: crop the salient product region before embedding (VL-CLIP-style).
+          let imgBytes = fetched.bytes;
+          let imgMime = fetched.contentType;
+          let imgUrl: string | undefined = imageUrl;
+          if (groundImage) {
+            const grounded = await groundImage({ url: imageUrl, bytes: fetched.bytes, mimeType: fetched.contentType });
+            if (grounded) {
+              imgBytes = grounded.bytes;
+              imgMime = grounded.mimeType;
+              imgUrl = undefined;
+            }
+          }
           vec = await embedService.embedQuery({
             image: {
-              url: imageUrl,
-              bytes: fetched.bytes,
-              mimeType: fetched.contentType,
+              url: imgUrl,
+              bytes: imgBytes,
+              mimeType: imgMime,
             },
             model: sdef.model,
             dim: sdef.dim,
@@ -394,7 +407,8 @@ export function makeEmbedIndexService(
             embedService,
             textEmbedCache,
             imageEmbedCache,
-            ctx.observability
+            ctx.observability,
+            ctx.groundImage
           );
           const spaceVec = assembleDocVector(segments, dims);
           colNames.push("space_vec");
