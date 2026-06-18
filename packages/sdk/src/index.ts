@@ -52,6 +52,24 @@ import type {
 import { assertIdent, assertNoIdentCollisions } from "./ident.ts";
 
 export * from "./types.ts";
+// Best-default enrichment templates (fashion commerce).
+export {
+  fashion,
+  fashionTaxonomy,
+  fashionEnums,
+  fashionEnrichPipeline,
+  fashionSearchFields,
+  fashionSpaces,
+  composeFashionEmbedDoc,
+  fashionClassifySchema,
+  fashionExtractSchema,
+  fashionCategoryAttrBlock,
+  fashionNlqSchema,
+  FASHION_EXTRACT_INSTRUCTIONS,
+  FASHION_NLQ_INSTRUCTIONS,
+  FASHION_EMBED_DOC_SOURCE,
+  type FashionEnrichOptions,
+} from "./templates/fashion.ts";
 export { IdentError, assertIdent, assertNoIdentCollisions } from "./ident.ts";
 
 const DEF_KIND = Symbol.for("@samesake/core.defKind");
