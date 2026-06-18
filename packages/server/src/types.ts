@@ -86,6 +86,45 @@ export interface GenerateRequest {
 
 export type GenerateFn = (req: GenerateRequest) => Promise<unknown>;
 
+// ── Optional retrieval seams (BYO; default off) ─────────────────────────
+/**
+ * Second-stage reranker. Given the query and the top-N first-stage candidates,
+ * return a re-scored ordering. Candidates the function omits keep their original
+ * relative order beneath the reranked ones. Wire a cross-encoder here; samesake
+ * runs pure RRF when this is absent.
+ */
+export interface RerankCandidate {
+  id: string;
+  /** Best available text for the candidate (doc/title), for the cross-encoder. */
+  text: string;
+  data: Record<string, unknown>;
+  /** First-stage (RRF) score. */
+  score: number;
+}
+export interface RerankRequest {
+  query: string;
+  image?: EmbedImageInput;
+  candidates: RerankCandidate[];
+  topK: number;
+}
+export type RerankFn = (req: RerankRequest) => Promise<Array<{ id: string; score: number }>>;
+
+/**
+ * Visual grounding: crop/segment the salient product region from a catalog/query
+ * image before it is embedded (VL-CLIP-style). Return null to pass the image
+ * through unchanged. Applied to both index-time and query-time images.
+ */
+export interface GroundImageRequest {
+  url?: string;
+  bytes?: Uint8Array;
+  mimeType?: string;
+}
+export interface GroundImageResult {
+  bytes: Uint8Array;
+  mimeType: string;
+}
+export type GroundImageFn = (req: GroundImageRequest) => Promise<GroundImageResult | null>;
+
 export interface JobRunner {
   run<T>(name: string, payload: unknown, fn: () => Promise<T>): Promise<T>;
 }
@@ -199,6 +238,18 @@ export interface MatcherConfig {
    */
   generate?: GenerateFn;
 
+  /**
+   * OPTIONAL. Second-stage cross-encoder reranker. When present, search reranks
+   * the top first-stage candidates (adaptively); when absent, pure RRF is used.
+   */
+  rerank?: RerankFn;
+
+  /**
+   * OPTIONAL. Visual grounding applied to images before embedding (index + query).
+   * When absent, images are embedded as-is.
+   */
+  groundImage?: GroundImageFn;
+
   jobs?: JobRunner;
 
   logger?: LoggerFn;
@@ -224,6 +275,8 @@ export interface MatcherCtx {
   parse: ParseFn;
   generate: GenerateFn;
   generateConfigured: boolean;
+  rerank?: RerankFn;
+  groundImage?: GroundImageFn;
   jobs: JobRunner;
   observability: Observability;
   policy: Required<PolicyConfig>;

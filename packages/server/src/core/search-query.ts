@@ -1,4 +1,5 @@
-import type { CollectionDef, SearchWeightsInput, SpaceDef } from "@samesake/core";
+import type { CollectionDef, SearchMode, SearchWeightsInput, SpaceDef } from "@samesake/core";
+import type { GroundImageFn } from "../types.ts";
 import type { EmbedService } from "./embed.ts";
 import { fetchRemoteImageSafe } from "./fetch-image.ts";
 import type { SearchFilters } from "./search-filter.ts";
@@ -46,9 +47,26 @@ function defaultSpaceWeights(def: CollectionDef): Record<string, number> {
   return out;
 }
 
+// Intent mode: keyword is a tiebreaker, never a primary signal. Capped at this fraction of
+// the semantic (cosine) weight so a keyword-only match can break ties among semantically
+// retrieved items but cannot outrank one. Eval-backed (examples/fashion-search/eval-configs-lk):
+// at this cap, intent relevance@3 holds vs flat weights and exactness queries are preserved,
+// while keyword-decoy pollution drops out.
+const KEYWORD_TIEBREAK = 0.3;
+
+/** Names of image-kind spaces — cross-modal noise when the query has no image. */
+function imageSpaceNames(def: CollectionDef): string[] {
+  if (!def.spaces) return [];
+  return Object.entries(def.spaces)
+    .filter(([, s]) => (s as SpaceDef).kind === "image")
+    .map(([name]) => name);
+}
+
 export function parseSearchWeights(
   def: CollectionDef,
-  override?: SearchWeightsInput
+  override?: SearchWeightsInput,
+  mode: SearchMode = "intent",
+  hasImage = false
 ): ChannelWeights {
   const channels = def.search?.channels ?? [];
   let fts = 0;
@@ -70,6 +88,24 @@ export function parseSearchWeights(
   }
 
   const spaceSegmentWeights = defaultSpaceWeights(def);
+
+  // ── Mode-aware defaults (applied to the base; explicit `override` below still wins) ──
+  // A text query carries no pixels, so an image space can only be filled by cross-modal
+  // re-embedding of the query text — noise. Zero it unless an image is actually provided.
+  if (!hasImage) {
+    for (const name of imageSpaceNames(def)) spaceSegmentWeights[name] = 0;
+  }
+  if (mode === "similar") {
+    // Keyword matching is the opposite of similarity: it surfaces word-decoys (a "black
+    // cocktail dress" graphic tee for "black dress"). Semantic + visual carry similarity.
+    fts = 0;
+  } else {
+    // intent: keep keyword only as a tiebreaker beneath semantic.
+    if (cosine > 0) fts = Math.min(fts, KEYWORD_TIEBREAK * cosine);
+    // Spaces (style/visual/price/category) are similarity signals; for a text intent query
+    // they don't drive ranking — NLQ hard filters + semantic do. (Image intent keeps them.)
+    if (!hasImage) spaces = 0;
+  }
 
   if (override?.fts !== undefined) fts = override.fts;
   if (override?.cosine !== undefined) cosine = override.cosine;
@@ -223,12 +259,14 @@ function decodeImageBytes(bytesBase64?: string): Uint8Array | undefined {
 export async function buildQueryImageVectors(
   def: CollectionDef,
   image: QueryImageInput | undefined,
-  embedService: EmbedService
+  embedService: EmbedService,
+  groundImage?: GroundImageFn
 ): Promise<Record<string, number[]>> {
   if (!image) return {};
   const out: Record<string, number[]> = {};
   let bytes = image.bytes ?? decodeImageBytes(image.bytesBase64);
   let mimeType = image.mimeType;
+  let url = image.url;
 
   if (image.url) {
     const fetched = await fetchRemoteImageSafe(image.url);
@@ -243,11 +281,22 @@ export async function buildQueryImageVectors(
     throw new Error("image query requires url, bytes, or bytesBase64");
   }
 
+  // Visual grounding: crop the salient product region before embedding. On success the
+  // grounded bytes replace the input and the url is dropped so the embed fn can't refetch.
+  if (groundImage && bytes?.length) {
+    const grounded = await groundImage({ url, bytes, mimeType });
+    if (grounded) {
+      bytes = grounded.bytes;
+      mimeType = grounded.mimeType;
+      url = undefined;
+    }
+  }
+
   for (const [name, sdef] of Object.entries(def.spaces ?? {})) {
     if (sdef.kind !== "image") continue;
     const vec = await embedService.embedQuery({
       image: {
-        url: image.url,
+        url,
         bytes,
         mimeType,
       },

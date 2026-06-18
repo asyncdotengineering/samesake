@@ -86,14 +86,47 @@ Samesake is not a hosted vector DB, a generic RAG framework, or only keyword sea
 - image similarity, text intent, structured attributes, price, freshness, and availability are separate signals
 - hard filters stay hard, so "under 20000" and "available now" are not soft semantic vibes
 - query-time weights let you tune visual, intent, price, and freshness influence without reindexing
+- **search has a `mode`**: `"intent"` (default for text) keeps keyword as a *tiebreaker* under semantics + NLQ filters; `"similar"` (default when a query image is present) turns keyword off so genuine visual + semantic similarity decides. "Similar" means look/feel, not shared words.
 - `/search/explain` shows per-leg ranks and space cosines for debugging
 - the same factory also supports entity resolution and deduplication for catalog/customer records
 
 Built on Bun + Hono + Postgres + pgvector. Two containers in production: Postgres and your app process. BYO embedding and generation models; no Redis or Elasticsearch.
 
+## Search modes: intent vs similar
+
+Intent retrieval and similarity retrieval are different problems and need different channel weighting — a single flat weighting serves neither well. Samesake picks the right one per query.
+
+```ts
+// Intent (default for text): "find items that match this need".
+// Keyword is a tiebreaker beneath semantic; NLQ turns "under 20000" into a hard filter.
+await matcher.search("shop", "products", { q: "linen shirt for the office under 20000" });
+
+// Similar (default when an image is present): "find items that look/feel like this".
+// Keyword is OFF — a "black cocktail dress" graphic tee will NOT rank for a black-dress look.
+await matcher.search("shop", "products", { q: "flowy black cocktail dress", mode: "similar" });
+await matcher.search("shop", "products", { image: { url: screenshotUrl } }); // mode auto = "similar"
+```
+
+Why a mode and not one global weighting: with flat `fts = cosine`, a keyword-only match gets a guaranteed top seat in RRF, so word-decoys outrank genuinely similar items ("similar" collapses into keyword matching). Dropping keyword entirely instead regresses intent exactness ("linen shirt **men**"). `mode` resolves the tension — keyword is a tiebreaker for intent and off for similarity. Explicit `weights` still override the mode. See [`examples/fashion-search/repro-similar.ts`](./examples/fashion-search/repro-similar.ts), [`repro-visual.ts`](./examples/fashion-search/repro-visual.ts), and [`eval-configs-lk.ts`](./examples/fashion-search/eval-configs-lk.ts) for the live evidence.
+
+### Retrieval defaults & seams (zero-config by default)
+
+Six fashion/e-commerce primitives are baked into the core, on the principle of great defaults with no required config:
+
+| Primitive | Behavior | Config |
+|---|---|---|
+| **FTS soft-OR** | Lexical leg ranks AND-coverage first, falls back to OR so multi-term queries aren't inert | on, none |
+| **Mode (intent/similar)** | Objective-aware weighting; keyword tiebreaker vs off | auto from query/image |
+| **Composed query** | `mode:"similar"` + `image` + `q` = visual anchor + text modifier ("like this, but black") | pass both |
+| **Cross-encoder rerank** | Reranks top-N RRF pool when a `rerank` fn is wired; pure RRF otherwise | BYO `rerank`; `rerank:false` to disable |
+| **Visual grounding** | Crops the product region before embedding (index + query) when `groundImage` is wired | BYO `groundImage` |
+| **Variant diversification** | Collapses variants to the best per `search.variantGroup` | declare `variantGroup`; `diversify:false` to disable |
+
+Self-tuning: `matcher.evaluateSearch(...)` scores graded relevance@k / nDCG@k (caller labels or the configured LLM as judge), and `matcher.calibrateSearch(...)` sweeps a mode/weight grid and returns the recommended default — so "no config" can mean samesake calibrates itself.
+
 ## Spaces (60 seconds)
 
-Typed embedding spaces concatenate into one `space_vec` column; query-time `weights` rescale segments without reindexing. **Off by default** — the fashion parity gate did not pass with flat weights ([`docs/spaces-gate.md`](./docs/spaces-gate.md)).
+Typed embedding spaces concatenate into one `space_vec` column; query-time `weights` rescale segments without reindexing. The fashion example enables them (incl. the `visual` image space) **by default** — this is now intent-safe because `mode: "intent"` (the default for text queries) does not weight the spaces/visual leg, so the intent parity gate is unaffected, while `mode: "similar"` and image queries get genuine visual + semantic similarity. Historically spaces were off because flat weights failed the parity gate ([`docs/spaces-gate.md`](./docs/spaces-gate.md)); `mode` is what makes them safe to ship on.
 
 ```ts
 import { collection, f, Channels, s } from "@samesake/core";

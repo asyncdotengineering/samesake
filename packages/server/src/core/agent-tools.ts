@@ -6,6 +6,7 @@ import type {
   GroundedProductCandidate,
   ProductVariantAvailability,
   ConstraintVerification,
+  SearchMode,
 } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
@@ -366,7 +367,8 @@ export function makeAgentToolsService(
   async function findProducts(
     projectSlug: string,
     collectionName: string,
-    req: FindProductsRequest
+    req: FindProductsRequest,
+    searchMode?: SearchMode
   ): Promise<FindProductsResponse> {
     const intent = req.intent?.trim() ?? "";
     const image = await resolveProductImage(projectSlug, collectionName, req);
@@ -384,6 +386,7 @@ export function makeAgentToolsService(
       q: intent,
       image,
       filters,
+      mode: searchMode,
       limit: Math.min(Math.max(req.limit ?? 10, 1), 50),
       weights,
     };
@@ -428,7 +431,7 @@ export function makeAgentToolsService(
     req: FindProductsRequest & { productId?: string }
   ): Promise<FindProductsResponse> {
     const image = req.image ?? (req.productId ? { kind: "product_image" as const, productId: req.productId } : undefined);
-    return findProducts(projectSlug, collectionName, { ...req, image });
+    return findProducts(projectSlug, collectionName, { ...req, image }, "similar");
   }
 
   return { findProducts, findSimilarProducts, toolDescriptors: agentToolDescriptors, openApi: agentToolsOpenApi };

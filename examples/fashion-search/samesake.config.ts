@@ -14,16 +14,18 @@ import { NLQ_MODEL, STAGE1_MODEL, STAGE2_MODEL, geminiEmbed, geminiGenerate } fr
 export const PROJECT = "fashionparity";
 export const COLLECTION = "products";
 
-const spacesEnabled = process.env.SPACES === "1";
-const visualSpaceEnabled = process.env.SPACES_VISUAL === "1";
+// Visual commerce is the point: spaces + the image space are ON by default. This is now
+// intent-safe because search mode="intent" (the default for text queries) does not weight the
+// spaces/visual leg — so the intent parity gate is unaffected — while mode="similar" and image
+// queries get genuine visual + semantic similarity. Opt out with SPACES=0 / SPACES_VISUAL=0.
+const spacesEnabled = process.env.SPACES !== "0";
+const visualSpaceEnabled = process.env.SPACES_VISUAL !== "0";
 
 const fashionSpaces = {
-  style: s.text({
-    source: "$enriched.embed_doc",
-    model: "gemini-embedding-2",
-    dim: 1536,
-    taskType: "RETRIEVAL_DOCUMENT",
-  }),
+  // No `style` text-space here: it would duplicate Channels.cosine({embedding:"doc"}) (same
+  // $enriched.embed_doc source/model/dim) and push the segmented vector past pgvector's 2000-d
+  // HNSW limit. The cosine channel carries text semantics; the spaces leg carries the
+  // *complementary* signals — visual look, price, category, freshness.
   price: s.number({
     field: "price",
     mode: "closer" as const,
@@ -141,11 +143,13 @@ export const productsCollection = collection("products", {
     ...(spacesEnabled
       ? {
           defaultSpaceWeights: {
-            style: 1,
             freshness: 0.3,
             price: 0.5,
             category: 0.8,
-            ...(visualSpaceEnabled ? { visual: 0.5 } : {}),
+            // Visual leads the spaces leg so an image / similar-look query ranks by genuine
+            // look. (For text "intent" queries the spaces leg is off; for text "similar" the
+            // image segment is zeroed since there is no query image.)
+            ...(visualSpaceEnabled ? { visual: 2 } : {}),
           },
         }
       : {}),

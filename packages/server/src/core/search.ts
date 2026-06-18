@@ -1,4 +1,4 @@
-import type { CollectionDef, ConstraintTrace, SearchWeightsInput } from "@samesake/core";
+import type { CollectionDef, ConstraintTrace, SearchMode, SearchWeightsInput } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
@@ -95,12 +95,32 @@ export interface SearchOpts {
   };
   filters?: SearchFilters;
   weights?: SearchWeightsInput;
+  /**
+   * Retrieval objective. Omit to auto-resolve: "similar" when an image is present, else
+   * "intent". "intent" keeps keyword as a tiebreaker; "similar" turns keyword off so
+   * semantic + visual decide. Explicit `weights` still override the mode's defaults.
+   */
+  mode?: SearchMode;
   limit?: number;
   offset?: number;
   facets?: string[];
   /** Set true to opt into the short-TTL in-process result cache. */
   cache?: boolean;
+  /**
+   * Second-stage reranking. Defaults to on when a `rerank` fn is configured on the
+   * matcher. Set false to force pure first-stage (RRF) order.
+   */
+  rerank?: boolean;
+  /**
+   * Collapse near-duplicate variants (same `search.variantGroup` value) to the
+   * best-scoring item per group. Defaults to on when the collection declares
+   * `variantGroup`. Set false to return every variant.
+   */
+  diversify?: boolean;
 }
+
+// Second-stage rerank: how many first-stage candidates to hand the reranker.
+const RERANK_POOL = 50;
 
 /** Everything expensive and shared between a search and its explain breakdown, computed once. */
 interface Retrieval {
@@ -141,6 +161,7 @@ function resultCacheKey(project: string, collection: string, opts: SearchOpts): 
     image: imageFingerprint(opts.image),
     filters: opts.filters ?? {},
     weights: opts.weights ?? {},
+    mode: opts.mode ?? (opts.image ? "similar" : "intent"),
     limit: opts.limit ?? 20,
     offset: opts.offset ?? 0,
     facets: opts.facets ?? [],
@@ -283,12 +304,20 @@ async function runHybridQuery(
     const rankLegs: Array<{ cte: string; alias: string; weight: number }> = [];
 
     if (hasFts && qRef) {
+      // AND-coverage-first, OR-fallback lexical match. websearch_to_tsquery ANDs bare terms, so a
+      // multi-term query ("flowy black cocktail dress") matches nothing unless one doc carries
+      // every term — the leg goes inert. We gate candidates with the OR rewrite (recall) but rank
+      // by the strict AND query first, then the OR query: docs matching ALL terms stay on top
+      // (precision preserved for exact queries like "linen shirt men"), and partial matches only
+      // fill in when nothing matches everything (fixes the inert-on-long-queries failure).
+      const andTsq = `websearch_to_tsquery('english', ${qRef})`;
+      const orTsq = `nullif(replace(${andTsq}::text, '&', '|'), '')::tsquery`;
       ctes.push(`lex AS (
         SELECT id, row_number() OVER (
-          ORDER BY ts_rank_cd(fts, plainto_tsquery('english', ${qRef})) DESC
+          ORDER BY ts_rank_cd(fts, ${andTsq}) DESC, ts_rank_cd(fts, ${orTsq}) DESC
         ) AS rn
         FROM ${table}
-        WHERE fts @@ plainto_tsquery('english', ${qRef}) AND ${where}
+        WHERE fts @@ ${orTsq} AND ${where}
         LIMIT ${CANDIDATES}
       )`);
       rankLegs.push({ cte: "lex", alias: "l", weight: weights.fts });
@@ -482,7 +511,15 @@ export function makeSearchService(
     if (!q && !opts.image) throw new Error("search requires a non-empty q or image");
 
     const offset = Math.min(Math.max(opts.offset ?? 0, 0), MAX_OFFSET);
-    const weights = parseSearchWeights(def, opts.weights);
+    const hasImage = !!opts.image;
+    const mode: SearchMode = opts.mode ?? (hasImage ? "similar" : "intent");
+    const weights = parseSearchWeights(def, opts.weights, mode, hasImage);
+    // Pure image similarity: an image query with no text has no meaningful text vector
+    // (the cosine leg would embed the "image query" placeholder). Let the visual space carry
+    // it. Explicit cosine override still wins.
+    if (mode === "similar" && hasImage && !q && opts.weights?.cosine === undefined) {
+      weights.cosine = 0;
+    }
 
     const nlq = await parseNlq(ctx, def, q);
     const explicitFilters = opts.filters ?? {};
@@ -494,7 +531,7 @@ export function makeSearchService(
     };
 
     const semanticText = nlq.parsed.semantic_query || q || "image query";
-    const imageVectors = await buildQueryImageVectors(def, opts.image, embedService);
+    const imageVectors = await buildQueryImageVectors(def, opts.image, embedService, ctx.groundImage);
 
     let vector: number[] | null = null;
     const embKey = def.embeddings ? Object.keys(def.embeddings)[0] : null;
@@ -760,6 +797,64 @@ export function makeSearchService(
     return explain;
   }
 
+  // Collapse near-duplicate variants (same variantGroup value) to the first — i.e.
+  // best-scoring, since hits arrive score-sorted — per group. Missing/empty group
+  // values are never collapsed.
+  function diversifyHits(hits: SearchHit[], groupField: string): SearchHit[] {
+    const seen = new Set<string>();
+    const out: SearchHit[] = [];
+    for (const h of hits) {
+      const raw = h[groupField] ?? h[sanitiseIdent(groupField)];
+      const key = raw == null ? "" : String(raw);
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      out.push(h);
+    }
+    return out;
+  }
+
+  // Second-stage rerank of the candidate pool via the BYO cross-encoder. Reranked
+  // ids sort by the new score; ids the reranker omits keep their first-stage order
+  // beneath them. Failures fall back to first-stage order (never throws the search).
+  async function rerankHits(
+    q: string,
+    image: SearchOpts["image"],
+    hits: SearchHit[],
+    topK: number
+  ): Promise<SearchHit[]> {
+    if (!ctx.rerank) return hits;
+    const candidates = hits.map((h) => ({
+      id: h.id,
+      text: String(
+        h.title ?? h.name ?? (h.data as Record<string, unknown>)?.title ??
+          (h.data as Record<string, unknown>)?.name ?? (h.data as Record<string, unknown>)?.description ?? ""
+      ),
+      data: h.data,
+      score: h.score,
+    }));
+    let ordered: Array<{ id: string; score: number }>;
+    try {
+      ordered = await ctx.rerank({
+        query: q,
+        image: image ? { url: image.url, bytes: image.bytes, mimeType: image.mimeType } : undefined,
+        candidates,
+        topK,
+      });
+    } catch (e) {
+      ctx.observability.log("warn", "rerank", "reranker failed — first-stage order", {
+        error: e instanceof Error ? e.message.slice(0, 200) : String(e),
+      });
+      return hits;
+    }
+    const scoreById = new Map(ordered.map((o) => [o.id, o.score]));
+    const reranked = hits
+      .filter((h) => scoreById.has(h.id))
+      .sort((a, b) => scoreById.get(b.id)! - scoreById.get(a.id)!)
+      .map((h) => ({ ...h, score: scoreById.get(h.id)! }));
+    const rest = hits.filter((h) => !scoreById.has(h.id));
+    return [...reranked, ...rest];
+  }
+
   async function search(
     projectSlug: string,
     collectionName: string,
@@ -776,7 +871,23 @@ export function makeSearchService(
       }
     }
     const retrieval = await retrieve(projectSlug, collectionName, opts);
-    const result = await finishSearch(retrieval, opts, t0);
+    const limit = opts.limit ?? 20;
+    const variantGroup = retrieval.def.search?.variantGroup;
+    const wantDiversify = !!variantGroup && opts.diversify !== false;
+    const wantRerank = !!ctx.rerank && opts.rerank !== false;
+
+    // Pull a deeper pool when a second stage will reorder/collapse it, so the final
+    // top-`limit` is chosen from real candidates rather than a pre-truncated set.
+    const poolLimit = wantDiversify || wantRerank ? Math.max(limit, RERANK_POOL) : limit;
+    const result = await finishSearch(retrieval, { ...opts, limit: poolLimit }, t0);
+
+    if (wantDiversify && variantGroup) result.hits = diversifyHits(result.hits, variantGroup);
+    if (wantRerank && result.hits.length > 1) {
+      result.hits = await rerankHits(retrieval.q, opts.image, result.hits, limit);
+    }
+    if (result.hits.length > limit) result.hits = result.hits.slice(0, limit);
+    result.took_ms = Date.now() - t0;
+
     if (cacheKey && !retrieval.nlq.degraded) {
       searchResultCache.set(cacheKey, result);
     }
