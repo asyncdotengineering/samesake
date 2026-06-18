@@ -4,13 +4,12 @@ Samesake is a TypeScript-first search engine compiler for visual commerce, start
 
 It is built for shoppers who do not know the product name: screenshots, similar-look search, vague intent, budget constraints, occasion, size, availability, and merchant ranking policy. You declare the catalog and retrieval spaces in TypeScript; Samesake compiles them into a Postgres-backed search layer you can run inside your app.
 
-Proof and positioning:
+Docs (full site under [`apps/docs`](./apps/docs)):
 
-- [Positioning contract](./docs/positioning.md)
-- [Fashion search proof](./docs/fashion-search-proof.md)
-- [Build fashion search from a messy catalog](./docs/how-to/build-fashion-search.md)
-- [Agentic commerce retrieval direction](./docs/agentic-commerce-direction.md)
-- [Visual-commerce demo script](./docs/demo-visual-commerce.md)
+- [What is Samesake](./apps/docs/src/content/docs/start/what-is-samesake.mdx)
+- [Build a search experience](./apps/docs/src/content/docs/start/build-a-search-experience.mdx)
+- [Search-tuning playbook](./apps/docs/src/content/docs/guides/tuning-search.mdx)
+- [Eval from snapshots](./apps/docs/src/content/docs/guides/eval-from-snapshots.mdx)
 
 ## 60-second fashion search
 
@@ -77,7 +76,7 @@ const hits = await matcher.search("shop", "products", {
 });
 ```
 
-For a no-LLM smoke test, run [`bun examples/hello-search/run.ts`](./examples/hello-search/run.ts). For the external fashion corpus and eval path, see [`examples/fashion-search/`](./examples/fashion-search/) and [Fashion Search Proof](./docs/fashion-search-proof.md).
+For a no-LLM smoke test, run [`bun examples/hello-search/run.ts`](./examples/hello-search/run.ts). For the external fashion corpus and eval path, see [`examples/fashion-search/`](./examples/fashion-search/) and the [eval-from-snapshots guide](./apps/docs/src/content/docs/guides/eval-from-snapshots.mdx).
 
 ## What Makes It Different
 
@@ -126,7 +125,7 @@ Self-tuning: `matcher.evaluateSearch(...)` scores graded relevance@k / nDCG@k (c
 
 ### Fashion enrichment template (best defaults)
 
-Attribute-aware search needs structured attributes (a "Crimson" title should be findable under "red dress"). `@samesake/core` ships a fashion enrichment template so you get that without hand-writing a taxonomy + schemas:
+Attribute-aware search needs structured attributes (a "Crimson" title should be retrievable under "red dress"). `@samesake/core` ships a fashion enrichment template so you get that without hand-writing a taxonomy + schemas:
 
 ```ts
 import { collection, Channels, fashion } from "@samesake/core";
@@ -149,7 +148,7 @@ Region-neutral and parametrized (`fashion.enrichPipeline({ titleKey, imageKey, c
 
 ## Spaces (60 seconds)
 
-Typed embedding spaces concatenate into one `space_vec` column; query-time `weights` rescale segments without reindexing. The fashion example enables them (incl. the `visual` image space) **by default** — this is now intent-safe because `mode: "intent"` (the default for text queries) does not weight the spaces/visual leg, so the intent parity gate is unaffected, while `mode: "similar"` and image queries get genuine visual + semantic similarity. Historically spaces were off because flat weights failed the parity gate ([`docs/spaces-gate.md`](./docs/spaces-gate.md)); `mode` is what makes them safe to ship on.
+Typed embedding spaces concatenate into one `space_vec` column; query-time `weights` rescale segments without reindexing. The fashion example enables them (incl. the `visual` image space) **by default** — this is now intent-safe because `mode: "intent"` (the default for text queries) does not weight the spaces/visual leg, so the intent parity gate is unaffected, while `mode: "similar"` and image queries get genuine visual + semantic similarity. Historically spaces were off because flat weights failed the parity gate; `mode` is what makes them safe to ship on.
 
 ```ts
 import { collection, f, Channels, s } from "@samesake/core";
@@ -179,7 +178,7 @@ const hits = await matcher.search("shop", "products", {
 });
 ```
 
-Runnable demo (stub embed, weight flip): [`bun examples/hello-spaces/run.ts`](./examples/hello-spaces/run.ts). Docs: [`docs/spaces.md`](./docs/spaces.md) · [`docs/migrating-from-superlinked.md`](./docs/migrating-from-superlinked.md) · [`docs/production.md`](./docs/production.md) · [`docs/release.md`](./docs/release.md).
+Runnable demo (stub embed, weight flip): [`bun examples/hello-spaces/run.ts`](./examples/hello-spaces/run.ts).
 
 ## Three consumption surfaces
 
@@ -210,8 +209,8 @@ Search and match share embeddings, Postgres caches, and per-project runtime DDL.
 
 | Path | Time | LLM required |
 |------|------|--------------|
-| [Search quickstart](./docs/quickstart-search.md) — collection → push → index → search | ~15 min | No (stub embed) |
-| [Match tutorial](./docs/tutorial.md) — entity → seed → match | ~15 min | Yes (Gemini embed) |
+| [Search quickstart](./apps/docs/src/content/docs/start/quickstart.mdx) — collection → push → index → search | ~15 min | No (stub embed) |
+| [Match tutorial](./examples/hello/) — entity → seed → match | ~15 min | Yes (Gemini embed) |
 | [`examples/hello-search/`](./examples/hello-search/) — minimal search smoke | 30 sec | No |
 | [`examples/hello-spaces/`](./examples/hello-spaces/) — spaces weight-flip demo | 30 sec | No |
 | [`examples/hello/`](./examples/hello/) — match smoke (19 assertions) | 30 sec | Yes |
@@ -251,7 +250,7 @@ createMatcher({ embed, generate?, ... })
 Postgres (pgvector + pg_trgm + unaccent + fuzzystrmatch)
 ```
 
-One factory, two capabilities. Fashion is the first public proof path — see [Fashion Search Proof](./docs/fashion-search-proof.md) and [`examples/fashion-search/PARITY.md`](./examples/fashion-search/PARITY.md).
+One factory, two capabilities. Fashion is the first public proof path — see [`examples/fashion-search/PARITY.md`](./examples/fashion-search/PARITY.md).
 
 ## Match in brief
 

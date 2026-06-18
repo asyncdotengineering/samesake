@@ -2,7 +2,7 @@
 
 All notable changes to samesake. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased] — fashion/e-commerce retrieval primitives (research-backed defaults)
+## [1.3.0] — 2026-06-18 — modes, retrieval primitives & fashion template
 
 Bakes six retrieval primitives into the core packages so samesake works well off-the-shelf
 with the right defaults and no required config. Backed by 2025–26 fashion/e-commerce IR work
@@ -38,7 +38,7 @@ with the right defaults and no required config. Backed by 2025–26 fashion/e-co
   near-duplicate variants to the best-scoring item per group; per-query `diversify:false` to disable.
   Off unless `variantGroup` is declared.
 
-## [Unreleased] — search modes (intent vs similar)
+### Search modes (intent vs similar) — part of 1.3.0
 
 Makes search robust to intent-based filtering and not biased toward keywords, and makes
 "similar" mean genuine visual + semantic similarity rather than keyword matching.

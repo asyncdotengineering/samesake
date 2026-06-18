@@ -29,7 +29,14 @@ function read(rel: string): string {
 }
 
 function isArchived(rel: string): boolean {
-  return rel.startsWith("docs/archive/") || rel.startsWith("docs/prior-art/");
+  // archive / prior-art / research are NOT current docs — they intentionally discuss
+  // surveyed options (ParadeDB, alternative licenses, etc.), so the current-doc staleness,
+  // link, and naming checks do not apply to them.
+  return (
+    rel.startsWith("docs/archive/") ||
+    rel.startsWith("docs/prior-art/") ||
+    rel.startsWith("docs/research/")
+  );
 }
 
 function existsFileOrDir(abs: string): boolean {
