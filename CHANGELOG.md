@@ -13,6 +13,9 @@ with the right defaults and no required config. Backed by 2025–26 fashion/e-co
 - **Fashion enrichment template** (`@samesake/core`) — `fashion.*` / `fashionEnrichPipeline`,
   `fashionSearchFields`, `fashionSpaces`, `composeFashionEmbedDoc`, `fashionClassifySchema` /
   `fashionExtractSchema`, `fashionNlqSchema` / instructions, `fashionTaxonomy` / `fashionEnums`.
+  Schemas are declared with **zod** (field-level `.describe()` carries the instruction — Mastra
+  pattern); the framework converts them to JSON Schema via `normalizeSchema`. The fashion
+  example's `generate` sends them via Gemini `responseJsonSchema`.
   Best-default catalog enrichment (category, colors, occasion, style, material, fit + a
   search-ready embed doc + fashion-aware NLQ) so consumers get attribute-aware search without
   rewriting ~200 lines. Region-neutral and parametrized (data keys, models). The fashion example

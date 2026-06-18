@@ -34,7 +34,9 @@ async function callGeminiGenerate(
             generationConfig: {
               temperature,
               responseMimeType: "application/json",
-              responseSchema: schema,
+              // schemas now arrive as standard JSON Schema (the framework converts zod via
+              // normalizeSchema), so use responseJsonSchema rather than the OpenAPI responseSchema.
+              responseJsonSchema: schema,
             },
           }),
           signal: AbortSignal.timeout(120000),

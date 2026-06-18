@@ -22,20 +22,24 @@ describe("fashion enrichment template", () => {
     expect(fashionEnums.occasions).toContain("wedding guest");
   });
 
-  test("classify schema requires category/gender/apparel flag", () => {
-    const s = fashionClassifySchema() as { required: string[]; properties: Record<string, unknown> };
-    expect(s.required).toEqual(expect.arrayContaining(["category", "gender", "is_apparel_product"]));
-    expect((s.properties.category as { enum: string[] }).enum).toContain("dresses");
+  test("classify schema (zod) validates category/gender/apparel flag", () => {
+    const s = fashionClassifySchema();
+    const shape = (s as unknown as { shape: Record<string, unknown> }).shape;
+    expect(shape.category).toBeDefined();
+    expect(shape.gender).toBeDefined();
+    expect(shape.is_apparel_product).toBeDefined();
+    expect(s.safeParse({ category: "dresses", product_type: "midi dress", gender: "women", is_apparel_product: true }).success).toBe(true);
+    expect(s.safeParse({ category: "not-a-category", product_type: "x", gender: "women", is_apparel_product: true }).success).toBe(false);
   });
 
-  test("extract schema is category-aware (dresses get neckline; bags don't)", () => {
-    const dress = fashionExtractSchema("dresses") as { properties: Record<string, unknown> };
-    expect(dress.properties.neckline).toBeDefined();
-    expect(dress.properties.colors).toBeDefined();
-    expect(dress.properties.search_document).toBeDefined();
-    const bag = fashionExtractSchema("bags") as { properties: Record<string, unknown> };
-    expect(bag.properties.neckline).toBeUndefined();
-    expect(bag.properties.details).toBeDefined();
+  test("extract schema (zod) is category-aware (dresses get neckline; bags don't)", () => {
+    const dress = (fashionExtractSchema("dresses") as unknown as { shape: Record<string, unknown> }).shape;
+    expect(dress.neckline).toBeDefined();
+    expect(dress.colors).toBeDefined();
+    expect(dress.search_document).toBeDefined();
+    const bag = (fashionExtractSchema("bags") as unknown as { shape: Record<string, unknown> }).shape;
+    expect(bag.neckline).toBeUndefined();
+    expect(bag.details).toBeDefined();
   });
 
   test("embed-doc composer weaves attributes into one string", () => {
@@ -92,9 +96,10 @@ describe("fashion enrichment template", () => {
     expect(classify).toContain("is_apparel_product");
   });
 
-  test("nlq schema requires semantic_query", () => {
-    const s = fashionNlqSchema() as { required: string[] };
-    expect(s.required).toContain("semantic_query");
+  test("nlq schema (zod) requires semantic_query", () => {
+    const s = fashionNlqSchema();
+    expect(s.safeParse({}).success).toBe(false);
+    expect(s.safeParse({ semantic_query: "red dress" }).success).toBe(true);
   });
 
   test("template assembles a valid collection end-to-end", () => {
