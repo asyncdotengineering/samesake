@@ -59,7 +59,10 @@ async function main() {
 
   const matcher = getMatcher();
   await matcher.migrate(); // create samesake system tables (samesake_projects, ...) if absent
-  const applied = await matcher.apply(PROJECT, { entities: [], collections: [products] });
+  // allowDestructive: the fashion-template rework changes the spaces (space_vec 768 → 816), a
+  // destructive column resize. This re-sync is the deliberate migration; the request-time routes
+  // apply() non-destructively once the schema matches.
+  const applied = await matcher.apply(PROJECT, { entities: [], collections: [products] }, { allowDestructive: true });
   await matcher.pushDocuments(PROJECT, COLLECTION, docs);
 
   // Fashion enrichment — classify + extract attributes off each product image (samesake pipeline).
