@@ -13,6 +13,7 @@
  */
 import postgres from "postgres";
 import { getMatcher, products, PROJECT, COLLECTION } from "../lib/samesake";
+import { composeEmbedDocs } from "../lib/embed-doc";
 
 async function main() {
   const sql = postgres(process.env.DATABASE_URL!, { max: 4 });
@@ -44,9 +45,8 @@ async function main() {
       data: {
         title: r.title ?? "",
         brand: String(r.metadata?.brand ?? "unknown"),
-        category: fields.category || "other",
-        color: fields.color || "",
-        material: fields.material || "",
+        // category/color/material are now DERIVED by the fashion enrich pipeline (enriched.*),
+        // not carried on the raw doc — only title/brand/price/image_url are needed as inputs.
         price: r.price ?? 0,
         available: true,
         image_url: fields.imageUrl || "",
@@ -59,16 +59,21 @@ async function main() {
 
   const matcher = getMatcher();
   await matcher.migrate(); // create samesake system tables (samesake_projects, ...) if absent
-  await matcher.apply(PROJECT, { entities: [], collections: [products] });
+  const applied = await matcher.apply(PROJECT, { entities: [], collections: [products] });
   await matcher.pushDocuments(PROJECT, COLLECTION, docs);
 
-  // Vision enrichment — read colours/pattern off each product image (samesake enrich pipeline).
-  console.log("enriching (vision)...");
+  // Fashion enrichment — classify + extract attributes off each product image (samesake pipeline).
+  console.log("enriching (classify + extract)...");
   for (let pass = 0; pass < 5; pass++) {
     const e = await matcher.enrich(PROJECT, COLLECTION, { concurrency: 6, limit: docs.length });
     console.log(`  enrich pass ${pass}: enriched=${e.enriched} failed=${e.failed}`);
     if (e.enriched === 0) break;
   }
+
+  // Compose the search doc from the extracted attributes → enriched.embed_doc (what the doc
+  // embedding reads), then index.
+  const composed = await composeEmbedDocs(applied.schema);
+  console.log(`composed embed_doc for ${composed} products`);
 
   const indexed = await matcher.index(PROJECT, COLLECTION);
   console.log(`indexed into samesake:`, indexed);

@@ -1,5 +1,4 @@
-import { z } from "zod";
-import { collection, f, Channels, s, pipeline, stage } from "@samesake/core";
+import { collection, Channels, fashion, type CollectionDef } from "@samesake/core";
 import { createMatcher } from "@samesake/server";
 import { geminiEmbed } from "./embed";
 import { geminiGenerate } from "./generate";
@@ -7,62 +6,37 @@ import { geminiGenerate } from "./generate";
 export const PROJECT = "playground";
 export const COLLECTION = "products";
 
-// Vision enrichment: read the actual colours/pattern off each product image instead of
-// the junk heuristic (most products had no colour at all). Declared as a zod schema —
-// samesake converts it to JSON Schema before calling generate. The stage's JSON output
-// is merged into the row's `enriched` jsonb and fed into the doc embedding below.
-const VISION_SCHEMA = z.object({
-  color_text: z.string().describe("dominant colours as a short phrase, e.g. 'black with white trim'"),
-  colors: z.array(z.string()).describe("individual colour words").optional(),
-  pattern: z
-    .string()
-    .describe("solid | striped | floral | printed | checked | embroidered | colour-block | other")
-    .optional(),
-});
-
-export const products = collection("products", {
-  fields: {
-    title: f.text({ searchable: true }),
-    brand: f.text({ filterable: true }),
-    category: f.text({ filterable: true }),
-    price: f.number({ filterable: true, budget: true }),
-    available: f.boolean({ filterable: true }),
-    image_url: f.text(),
-  },
-  enrich: pipeline(
-    stage("vision", {
-      model: "gemini-3.1-flash-lite",
-      images: (ctx) => (ctx.data.image_url ? [String(ctx.data.image_url)] : []),
-      prompt: (ctx) =>
-        `Look at this fashion product image${ctx.data.title ? ` ("${String(ctx.data.title)}")` : ""}. ` +
-        `Return its colours and pattern as JSON. color_text is a short human phrase of the dominant colours.`,
-      schema: () => VISION_SCHEMA,
-    })
-  ),
+// The playground now dogfoods @samesake/core's fashion enrichment TEMPLATE (1.3.0):
+//   - fashion.enrichPipeline(): classify (category/type/gender/is-apparel) → extract
+//     (colors/pattern/material/fit/occasions/styles + per-category attrs + search_document),
+//     image-aware via the BYO generate fn.
+//   - fashion.fields(): declared attributes resolve from enriched.* (filled by the pipeline).
+//   - fashion.spaces(): visual (image) + price + category + freshness segments.
+//   - fashion.nlq: fashion-aware intent/budget parsing.
+// The doc embedding reads $enriched.embed_doc, composed by composeEmbedDocs() after enrich.
+export const products = collection(COLLECTION, {
+  // brand lives on the raw doc as `brand` (not the template's default `vendor`).
+  fields: fashion.fields({ brandPath: "brand" }),
   embeddings: {
-    // colour_text + pattern (from the image, via enrich) join the doc text, so "black dress
-    // with white" cosine-matches genuinely black-and-white products.
-    doc: { source: "$title $brand $category $enriched.color_text $enriched.pattern", model: "gemini-embedding-2", dim: 1536 },
+    doc: { source: fashion.embedDocSource, model: "gemini-embedding-2", dim: 1536, taskType: "RETRIEVAL_DOCUMENT" },
   },
-  // Visual space: image embedding (same multimodal model) for image / find-similar / cross-modal.
-  spaces: { visual: s.image({ source: "$image_url", model: "gemini-embedding-2", dim: 768 }) },
+  spaces: fashion.spaces(),
+  enrich: fashion.enrichPipeline(),
   search: {
     channels: [
-      Channels.fts({ fields: ["title", "brand", "category"], weight: 1 }),
+      Channels.fts({ fields: ["title"], weight: 1 }),
       Channels.cosine({ embedding: "doc", weight: 1 }),
       Channels.spaces({ weight: 1 }),
     ],
     combiner: "rrf",
-    defaultSpaceWeights: { visual: 1 },
-    // Constrained NLQ: only extract intent + budget — never a hard colour filter (colour is
-    // handled by the embedding + visual signals, so sparse tags can't dead-end a query).
     nlq: {
       enable: true,
       semanticRewrite: true,
-      schema: z.object({ semantic_query: z.string(), max_price: z.number().optional() }),
+      instructions: fashion.nlq.instructions,
+      schema: fashion.nlq.schema(),
     },
   },
-});
+}) as CollectionDef & { name: string };
 
 let _matcher: ReturnType<typeof createMatcher> | null = null;
 export function getMatcher() {

@@ -98,9 +98,12 @@ export default function Storefront() {
     <div style={{ minHeight: "100dvh" }}>
       <main style={st.shell}>
         <header style={st.masthead}>
-          <div style={st.brandRow}>
-            <span style={st.mark} aria-hidden />
-            <span style={st.brand}>Samesake Fashion</span>
+          <div style={{ ...st.brandRow, justifyContent: "space-between" }}>
+            <span>
+              <span style={st.mark} aria-hidden />
+              <span style={st.brand}>Samesake Fashion</span>
+            </span>
+            <a href="/upload" style={{ fontSize: 14, color: "var(--text-strong)" }}>+ Upload products</a>
           </div>
           <h1 style={st.h1}>
             Find it by what you mean,
