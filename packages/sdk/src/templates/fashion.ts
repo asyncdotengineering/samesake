@@ -1,0 +1,336 @@
+// Fashion commerce enrichment template — best-default catalog enrichment so consumers get
+// genuine attribute extraction (category, colors, occasion, style, material, fit…) + a
+// search-ready embed doc + fashion-aware NLQ without rewriting ~200 lines per project.
+//
+// Region-neutral and parametrized: pass the data keys your raw catalog uses. The LLM-facing
+// schemas are forwarded as-is to your `generate` function (Gemini structured-output format,
+// which is what the fashion example is validated against).
+//
+// Mechanism (the pipeline runner, modes, RRF, etc.) already lives in core/server; this module
+// is the declarative *content*: taxonomy, enums, two-stage schemas, prompts, embed-doc composer,
+// and NLQ defaults.
+import type { CollectionFieldDef, PipelineDef, SpaceDef, StageDef } from "../types.ts";
+
+// ── Taxonomy + controlled vocabulary ────────────────────────────────────
+export const fashionTaxonomy = [
+  { id: "dresses", label: "Dresses & one-pieces", types: ["mini dress", "midi dress", "maxi dress", "shift dress", "wrap dress", "bodycon dress", "shirt dress", "gown", "jumpsuit", "romper", "frock", "abaya"] },
+  { id: "tops", label: "Tops", types: ["t-shirt", "shirt", "blouse", "crop top", "tank top", "tube top", "tunic", "bodysuit", "polo", "sweatshirt", "hoodie"] },
+  { id: "bottoms", label: "Bottoms", types: ["jeans", "trousers", "pants", "palazzo pants", "leggings", "shorts", "skirt", "culottes", "cargo pants", "sweatpants"] },
+  { id: "outerwear", label: "Outerwear", types: ["blazer", "jacket", "denim jacket", "bomber", "coat", "trench coat", "cardigan", "kimono", "shrug", "vest"] },
+  { id: "ethnic", label: "Ethnic & traditional", types: ["saree", "kandyan saree", "saree blouse", "kurta", "kurti", "lehenga", "salwar set", "shalwar", "sarong", "batik shirt", "dupatta"] },
+  { id: "activewear", label: "Activewear", types: ["sports bra", "gym leggings", "training shorts", "track pants", "tracksuit", "jersey", "rash guard"] },
+  { id: "swimwear", label: "Swimwear", types: ["bikini", "swimsuit", "swim shorts", "cover-up"] },
+  { id: "sleep-lounge", label: "Sleep & lounge", types: ["pajama set", "nightdress", "robe", "lounge set", "lounge pants"] },
+  { id: "underwear", label: "Underwear & shapewear", types: ["bra", "panties", "boxers", "briefs", "shapewear", "camisole"] },
+  { id: "footwear", label: "Footwear", types: ["sneakers", "sandals", "heels", "flats", "boots", "slippers", "loafers"] },
+  { id: "bags", label: "Bags", types: ["handbag", "tote", "crossbody bag", "clutch", "backpack", "wallet"] },
+  { id: "jewelry", label: "Jewelry", types: ["necklace", "earrings", "bracelet", "ring", "anklet", "brooch"] },
+  { id: "accessories", label: "Accessories", types: ["belt", "scarf", "hat", "cap", "sunglasses", "watch", "hair accessory", "tie"] },
+  { id: "kids", label: "Kids & baby", types: ["kids dress", "kids t-shirt", "baby romper", "kids shorts", "school uniform"] },
+  { id: "other", label: "Other / non-apparel", types: ["gift card", "fabric", "homeware", "unknown"] },
+] as const;
+
+export const fashionEnums = {
+  gender: ["women", "men", "unisex", "kids"],
+  colors: ["black", "white", "ivory", "beige", "brown", "tan", "grey", "silver", "gold", "red", "maroon", "pink", "purple", "lavender", "blue", "navy", "teal", "green", "olive", "mint", "yellow", "mustard", "orange", "peach", "multicolor"],
+  pattern: ["solid", "floral", "striped", "checked", "polka dot", "animal", "abstract", "batik", "embroidered", "graphic", "tie-dye", "colorblock", "other"],
+  fit: ["slim", "regular", "relaxed", "oversized", "bodycon", "a-line", "tailored", "unknown"],
+  occasions: ["everyday", "office", "party", "wedding guest", "festive", "beach", "vacation", "gym", "lounge", "evening"],
+  styles: ["casual", "formal", "bohemian", "minimalist", "streetwear", "vintage", "romantic", "edgy", "preppy", "y2k", "modest", "classic", "sporty"],
+  materials: ["cotton", "linen", "denim", "silk", "satin", "chiffon", "georgette", "knit", "jersey", "polyester", "viscose", "rayon", "lace", "leather", "velvet", "crepe", "wool", "blend", "unknown"],
+  modesty: ["modest", "moderate", "revealing"],
+  length: ["cropped", "mini", "knee", "midi", "maxi", "ankle", "full", "regular", "longline", "unknown"],
+  sleeve_length: ["sleeveless", "cap", "short", "elbow", "three-quarter", "long", "unknown"],
+  neckline: ["v-neck", "round", "crew", "square", "halter", "off-shoulder", "one-shoulder", "sweetheart", "collared", "boat", "cowl", "high neck", "strapless", "unknown"],
+} as const;
+
+// ── Per-category fine attributes (stage 2 extension) ────────────────────
+const CATEGORY_ATTRS: Record<string, Record<string, unknown>> = {
+  dresses: {
+    neckline: { type: "STRING", enum: fashionEnums.neckline },
+    length: { type: "STRING", enum: fashionEnums.length },
+    sleeve_length: { type: "STRING", enum: fashionEnums.sleeve_length },
+    silhouette: { type: "STRING", enum: ["a-line", "bodycon", "shift", "wrap", "fit-and-flare", "slip", "tiered", "mermaid", "straight", "unknown"] },
+    details: { type: "ARRAY", items: { type: "STRING" }, description: "construction details: ruffled, smocked, tiered, cutout, lace, slit, belted, puff sleeve…" },
+  },
+  tops: {
+    neckline: { type: "STRING", enum: fashionEnums.neckline },
+    sleeve_length: { type: "STRING", enum: fashionEnums.sleeve_length },
+    top_length: { type: "STRING", enum: ["cropped", "regular", "longline", "tunic", "unknown"] },
+    strap_type: { type: "STRING", enum: ["spaghetti", "halter", "wide", "none", "unknown"] },
+    details: { type: "ARRAY", items: { type: "STRING" } },
+  },
+  bottoms: {
+    leg_cut: { type: "STRING", enum: ["skinny", "straight", "wide-leg", "flared", "bootcut", "cargo", "palazzo", "culotte", "pencil", "pleated", "a-line", "wrap", "unknown"] },
+    rise: { type: "STRING", enum: ["high", "mid", "low", "elasticated", "drawstring", "unknown"] },
+    length: { type: "STRING", enum: fashionEnums.length },
+    details: { type: "ARRAY", items: { type: "STRING" }, description: "wash, distressing, pleats, pockets, slit…" },
+  },
+  outerwear: {
+    length: { type: "STRING", enum: fashionEnums.length },
+    closure: { type: "STRING", enum: ["zip", "buttons", "open", "belt", "snap", "unknown"] },
+    lapel: { type: "STRING", enum: ["notch", "peak", "shawl", "collarless", "hooded", "unknown"] },
+    details: { type: "ARRAY", items: { type: "STRING" } },
+  },
+  ethnic: {
+    work: { type: "STRING", enum: ["zari", "embroidery", "sequin", "beadwork", "printed", "handloom", "plain", "unknown"], description: "embellishment/work" },
+    border_type: { type: "STRING", description: "saree border description, or unknown" },
+    set_composition: { type: "STRING", description: "e.g. saree+blouse, kurta+pant+dupatta, single piece" },
+    drape_style: { type: "STRING", enum: ["kandyan", "indian", "ready-to-wear", "n/a", "unknown"] },
+    details: { type: "ARRAY", items: { type: "STRING" } },
+  },
+  footwear: {
+    heel_height: { type: "STRING", enum: ["flat", "low", "mid", "high", "platform", "unknown"] },
+    toe_shape: { type: "STRING", enum: ["round", "pointed", "square", "open", "peep", "unknown"] },
+    closure: { type: "STRING", enum: ["lace-up", "slip-on", "strap", "buckle", "zip", "unknown"] },
+    details: { type: "ARRAY", items: { type: "STRING" } },
+  },
+};
+const GENERIC_ATTRS = {
+  neckline: { type: "STRING", enum: fashionEnums.neckline },
+  sleeve_length: { type: "STRING", enum: fashionEnums.sleeve_length },
+  length: { type: "STRING", enum: fashionEnums.length },
+  details: { type: "ARRAY", items: { type: "STRING" } },
+};
+const NO_ATTRS = { details: { type: "ARRAY", items: { type: "STRING" } } };
+
+export function fashionCategoryAttrBlock(categoryId: string): Record<string, unknown> {
+  if (CATEGORY_ATTRS[categoryId]) return CATEGORY_ATTRS[categoryId]!;
+  if (["bags", "jewelry", "accessories", "other"].includes(categoryId)) return NO_ATTRS;
+  return GENERIC_ATTRS;
+}
+
+// ── Stage schemas (Gemini structured-output format; forwarded as-is to generate) ──
+export function fashionClassifySchema(): Record<string, unknown> {
+  return {
+    type: "OBJECT",
+    properties: {
+      category: { type: "STRING", enum: fashionTaxonomy.map((c) => c.id), description: "the single best taxonomy id for this garment" },
+      product_type: { type: "STRING", description: `specific type, prefer a known type for the category (e.g. ${fashionTaxonomy.slice(0, 5).map((c) => c.types[0]).join(", ")}); free text allowed` },
+      gender: { type: "STRING", enum: fashionEnums.gender, description: "intended wearer; 'unisex' when not gendered" },
+      is_apparel_product: { type: "BOOLEAN", description: "false for non-wearables (gift cards, homeware, fabric yardage) — these skip attribute extraction" },
+    },
+    required: ["category", "product_type", "gender", "is_apparel_product"],
+  };
+}
+
+export function fashionExtractSchema(categoryId: string): Record<string, unknown> {
+  return {
+    type: "OBJECT",
+    properties: {
+      colors: { type: "ARRAY", items: { type: "STRING", enum: fashionEnums.colors }, description: "rule[color_base]: BASE colours only (red, navy, beige), primary colour first; marketing names go in raw_color" },
+      raw_color: { type: "STRING", description: "the seller's marketing colour name verbatim if stated (e.g. crimson, midnight, blush), else empty" },
+      pattern: { type: "STRING", enum: fashionEnums.pattern, description: "dominant visible pattern; 'solid' if plain" },
+      material: { type: "STRING", enum: fashionEnums.materials, description: "from text when stated; from the image only as a low-confidence guess; else 'unknown'" },
+      fit: { type: "STRING", enum: fashionEnums.fit, description: "how it sits on the body; 'unknown' if not visible" },
+      occasions: { type: "ARRAY", items: { type: "STRING", enum: fashionEnums.occasions }, description: "1-3 best occasions to wear it" },
+      styles: { type: "ARRAY", items: { type: "STRING", enum: fashionEnums.styles }, description: "rule[style_derive]: 1-3 styles derived from VISIBLE attributes (floral+flowy→bohemian), never from brand copy" },
+      modesty: { type: "STRING", enum: fashionEnums.modesty, description: "coverage level" },
+      ...fashionCategoryAttrBlock(categoryId),
+      search_document: { type: "STRING", description: "rule[search_document]: 2-3 plain shopper-facing sentences — what it is, how it looks, what to wear it for. No marketing fluff." },
+      confidence: { type: "NUMBER", description: "0.9+ = clear photo & obvious attributes; 0.5-0.7 = partial/ambiguous; <0.4 = mostly inferred" },
+      uncertain_fields: { type: "ARRAY", items: { type: "STRING" }, description: "names of attributes you are unsure about (rule[unknown_over_guess])" },
+    },
+    required: ["colors", "pattern", "occasions", "styles", "search_document", "confidence"],
+  };
+}
+
+export const FASHION_EXTRACT_INSTRUCTIONS = `<role>
+You are a fashion merchandiser cataloging ONE product for a visual search engine.
+Extract the structured attributes a shopper would filter or search by.
+</role>
+
+<inputs>
+You receive the product title + seller tags/description (noisy marketing copy) and, when available, the product IMAGE. Prefer the IMAGE for anything visible (colour, pattern, silhouette, neckline, sleeve, fit, length); use text only for facts a photo cannot show (material, set composition).
+</inputs>
+
+<priority>
+category, colors, gender and occasions drive hard filtering and ranking — these are the highest-stakes fields, get them right. If you cannot tell, list the field in uncertain_fields instead of guessing.
+</priority>
+
+<rules>
+- rule[enums_only]: use ONLY the allowed enum values for each field; never invent a value.
+- rule[unknown_over_guess]: if an attribute is not visible or stated, use "unknown" (or omit) — do not guess.
+- rule[color_base]: colors are BASE colours only (red, navy, beige, olive…), primary colour first. Put the seller's marketing colour name verbatim in raw_color (e.g. title "Crimson" → colors:["red"], raw_color:"crimson"; "midnight" → colors:["navy"], raw_color:"midnight").
+- rule[style_derive]: styles must follow from what you SEE, never from brand copy — floral+flowy+relaxed → bohemian; tailored+structured → formal; cropped+logo+boxy → streetwear.
+- rule[details]: capture fine construction details even if minor (puff sleeve, ruffled, tiered, cutout, slit, belted, smocked).
+- rule[search_document]: 2-3 plain sentences a shopper understands — what it is, how it looks, what to wear it for. No marketing fluff.
+- confidence: 0.9+ = clear photo, attributes obvious; 0.5-0.7 = partial/ambiguous; <0.4 = mostly inferred. List every shaky attribute in uncertain_fields.
+</rules>
+
+<examples>
+<example>
+<input>Title "Crimson Wrap Maxi Dress" · tags: occasion wear · image: deep-red floor-length wrap dress, V-neck, long flutter sleeves, flowy</input>
+<output>{"colors":["red"],"raw_color":"crimson","pattern":"solid","material":"unknown","fit":"a-line","occasions":["evening","party"],"styles":["romantic","formal"],"neckline":"v-neck","length":"maxi","sleeve_length":"long","silhouette":"wrap","details":["wrap","flutter sleeve"],"search_document":"A deep-red floor-length wrap dress with a V-neck and flowing sleeves, made for evening parties and formal occasions.","confidence":0.9,"uncertain_fields":["material"]}</output>
+<rationale>rule[color_base]: "Crimson" → red + raw_color. material not visible → "unknown" + flagged.</rationale>
+</example>
+<example>
+<input>Title "Heritage Linen Stripe Short Sleeve Shirt - Slate" · desc: men's breathable linen · image: grey-and-white vertically striped short-sleeve button shirt</input>
+<output>{"colors":["grey","white"],"raw_color":"slate","pattern":"striped","material":"linen","fit":"regular","occasions":["everyday","vacation"],"styles":["casual","classic"],"neckline":"collared","sleeve_length":"short","search_document":"A grey-and-white striped short-sleeve linen shirt, light and breathable for everyday and warm-weather wear.","confidence":0.85,"uncertain_fields":[]}</output>
+<rationale>material stated in text → "linen". rule[style_derive]: striped+linen+relaxed → casual/classic, not brand copy.</rationale>
+</example>
+</examples>`;
+
+// ── Two-stage enrich pipeline (classify → extract) ──────────────────────
+export interface FashionEnrichOptions {
+  /** Raw-catalog data keys. Defaults match common Shopify-style fields. */
+  titleKey?: string;
+  descriptionKey?: string;
+  tagsKey?: string;
+  typeKey?: string;
+  imageKey?: string;
+  /** Model identifiers passed to your `generate` fn. Default to semantic tokens you can map. */
+  classifyModel?: string;
+  extractModel?: string;
+}
+
+function strOf(v: unknown): string {
+  return v == null ? "" : Array.isArray(v) ? v.slice(0, 12).map(String).join(", ") : String(v);
+}
+
+export function fashionEnrichPipeline(opts: FashionEnrichOptions = {}): PipelineDef {
+  const titleKey = opts.titleKey ?? "title";
+  const descKey = opts.descriptionKey ?? "description";
+  const tagsKey = opts.tagsKey ?? "tags";
+  const typeKey = opts.typeKey ?? "product_type";
+  const imageKey = opts.imageKey ?? "image_url";
+  const classifyModel = opts.classifyModel ?? "classify";
+  const extractModel = opts.extractModel ?? "extract";
+
+  const images = (ctx: { data: Record<string, unknown> }) => {
+    const u = ctx.data[imageKey];
+    return u ? [String(u)] : [];
+  };
+
+  const classify: StageDef = {
+    name: "classify",
+    model: classifyModel,
+    images,
+    prompt: (ctx) =>
+      `<role>Classify ONE product into the fashion catalog taxonomy. Use the IMAGE when present.</role>
+<rules>
+- category: the single best taxonomy id for the garment.
+- product_type: the specific type (e.g. "midi dress", "denim jacket", "saree"); free text allowed.
+- gender: women / men / unisex / kids.
+- is_apparel_product: false for non-wearables (gift cards, fabric yardage, homeware) → these skip attribute extraction.
+</rules>
+Title: ${strOf(ctx.data[titleKey])}
+Store type/categories: ${strOf(ctx.data[typeKey]) || "n/a"}
+Tags: ${strOf(ctx.data[tagsKey]) || "n/a"}`,
+    schema: () => fashionClassifySchema(),
+  };
+
+  const extract: StageDef = {
+    name: "extract",
+    model: extractModel,
+    condition: (ctx) => ctx.enriched.is_apparel_product === true && ctx.enriched.category !== "other",
+    images,
+    prompt: (ctx) => {
+      const hasImage = !!ctx.data[imageKey];
+      return `${FASHION_EXTRACT_INSTRUCTIONS}\n\nProduct (category: ${strOf(ctx.enriched.category)}, type: ${strOf(ctx.enriched.product_type)}):\nTitle: ${strOf(ctx.data[titleKey])}\nStore type/categories: ${strOf(ctx.data[typeKey]) || "n/a"}\nTags: ${strOf(ctx.data[tagsKey])}\nDescription: ${strOf(ctx.data[descKey]).slice(0, 800) || "n/a"}${hasImage ? "" : "\n(NO IMAGE AVAILABLE - extract from text only, mark uncertain fields)"}`;
+    },
+    schema: (ctx) => fashionExtractSchema(String(ctx.enriched.category ?? "other")),
+  };
+
+  return { stages: [classify, extract] };
+}
+
+// ── Embed-doc composer (run after enrichment; index embeds $enriched.embed_doc) ──
+export function composeFashionEmbedDoc(p: { title: string }, a: Record<string, unknown>): string {
+  const parts = [
+    `${p.title}.`,
+    (a.search_document as string) || "",
+    `Category: ${a.category}, type: ${a.product_type}, for ${a.gender}.`,
+    Array.isArray(a.colors) && a.colors.length ? `Colors: ${(a.colors as string[]).join(", ")}.` : "",
+    a.pattern && a.pattern !== "solid" ? `Pattern: ${a.pattern}.` : "",
+    a.material && a.material !== "unknown" ? `Material: ${a.material}.` : "",
+    a.fit && a.fit !== "unknown" ? `Fit: ${a.fit}.` : "",
+    Array.isArray(a.occasions) && a.occasions.length ? `Occasions: ${(a.occasions as string[]).join(", ")}.` : "",
+    Array.isArray(a.styles) && a.styles.length ? `Style: ${(a.styles as string[]).join(", ")}.` : "",
+    Array.isArray(a.details) && a.details.length ? `Details: ${(a.details as string[]).slice(0, 6).join(", ")}.` : "",
+    a.modesty === "modest" ? "Modest coverage." : "",
+  ];
+  return parts.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+}
+
+export const FASHION_EMBED_DOC_SOURCE = "$enriched.embed_doc";
+
+// ── Fashion-aware NLQ defaults (region-neutral) ─────────────────────────
+export function fashionNlqSchema(): Record<string, unknown> {
+  return {
+    type: "OBJECT",
+    properties: {
+      category: { type: "STRING", enum: [...fashionTaxonomy.map((c) => c.id), "any"] },
+      gender: { type: "STRING", enum: [...fashionEnums.gender, "any"] },
+      colors: { type: "ARRAY", items: { type: "STRING", enum: fashionEnums.colors } },
+      exclude_colors: { type: "ARRAY", items: { type: "STRING", enum: fashionEnums.colors } },
+      occasions: { type: "ARRAY", items: { type: "STRING", enum: fashionEnums.occasions } },
+      exclude_patterns: { type: "ARRAY", items: { type: "STRING", enum: fashionEnums.pattern } },
+      exclude_terms: { type: "ARRAY", items: { type: "STRING" }, description: "negated attributes/styles, e.g. bodycon, skinny" },
+      max_price: { type: "NUMBER", description: "0 if none stated" },
+      min_price: { type: "NUMBER", description: "0 if none stated" },
+      semantic_query: { type: "STRING", description: "descriptive intent to match semantically, stripped of price/negation; never empty" },
+    },
+    required: ["semantic_query"],
+  };
+}
+
+export const FASHION_NLQ_INSTRUCTIONS = `Parse a fashion shopper's search query.
+Map EXPLICIT constraints to filters only when clearly stated: price limits, negations ("not bodycon", "no prints"), colors, gender, occasion.
+Do NOT invent filters the shopper didn't state. Set category only when unambiguous.
+Budget words without a number ("cheap", "affordable", "budget") -> price_budget_hint=cheap; ("luxury", "high-end", "premium") -> premium. An explicit number always wins.
+semantic_query: rewrite the remaining descriptive intent as a rich product-description fragment (e.g. "office wear for women" -> "professional tailored office workwear for women").`;
+
+// Standard fashion search fields. Declared attributes resolve from enriched.* (filled by the
+// enrich pipeline). Override paths/keys as your raw catalog requires.
+export function fashionSearchFields(opts: { brandPath?: string } = {}): Record<string, CollectionFieldDef> {
+  const enumF = (values: readonly string[], extra: Partial<CollectionFieldDef> = {}): CollectionFieldDef =>
+    ({ type: "enum", values: [...values], ...extra } as CollectionFieldDef);
+  const arrEnumF = (values: readonly string[], extra: Partial<CollectionFieldDef> = {}): CollectionFieldDef =>
+    ({ type: "array", itemType: "enum", values: [...values], ...extra } as CollectionFieldDef);
+  return {
+    title: { type: "text", searchable: true, path: "title" },
+    brand: { type: "text", filterable: true, facet: true, path: opts.brandPath ?? "vendor" },
+    price: { type: "number", filterable: true, budget: true },
+    available: { type: "boolean", filterable: true },
+    category: enumF(fashionTaxonomy.map((c) => c.id), { filterable: true, facet: true, path: "enriched.category" }),
+    product_type: { type: "text", filterable: true, path: "enriched.product_type" },
+    gender: enumF(fashionEnums.gender, { filterable: true, alsoMatch: ["unisex"], path: "enriched.gender" } as Partial<CollectionFieldDef>),
+    colors: arrEnumF(fashionEnums.colors, { filterable: true, soft: true, facet: true, path: "enriched.colors" }),
+    occasions: arrEnumF(fashionEnums.occasions, { filterable: true, soft: true, path: "enriched.occasions" }),
+    styles: arrEnumF(fashionEnums.styles, { filterable: true, path: "enriched.styles" }),
+    pattern: enumF(fashionEnums.pattern, { filterable: true, path: "enriched.pattern" }),
+    material: enumF(fashionEnums.materials, { filterable: true, path: "enriched.material" }),
+    fit: enumF(fashionEnums.fit, { filterable: true, path: "enriched.fit" }),
+    image_url: { type: "text" },
+  };
+}
+
+// Visual + price + category + freshness spaces (no `style` text-space — that duplicates the
+// cosine doc channel and would blow pgvector's 2000-d HNSW limit; see CHANGELOG).
+export function fashionSpaces(opts: { visual?: boolean; priceMax?: number } = {}): Record<string, SpaceDef> {
+  const spaces: Record<string, SpaceDef> = {
+    price: { kind: "number", field: "price", mode: "closer", dims: 8, min: 0, max: opts.priceMax ?? 50000, scale: "log" } as SpaceDef,
+    freshness: { kind: "recency", field: "ingested_at", halfLifeDays: 60, dims: 8 } as SpaceDef,
+    category: { kind: "categorical", field: "category", values: fashionTaxonomy.map((c) => c.id), dims: 32 } as SpaceDef,
+  };
+  if (opts.visual !== false) {
+    spaces.visual = { kind: "image", source: "$image_url", model: "gemini-embedding-2", dim: 768, taskType: "RETRIEVAL_DOCUMENT" } as SpaceDef;
+  }
+  return spaces;
+}
+
+/** Grouped namespace — `import { fashion } from "@samesake/core"`. */
+export const fashion = {
+  taxonomy: fashionTaxonomy,
+  enums: fashionEnums,
+  fields: fashionSearchFields,
+  spaces: fashionSpaces,
+  enrichPipeline: fashionEnrichPipeline,
+  composeEmbedDoc: composeFashionEmbedDoc,
+  embedDocSource: FASHION_EMBED_DOC_SOURCE,
+  classifySchema: fashionClassifySchema,
+  extractSchema: fashionExtractSchema,
+  extractInstructions: FASHION_EXTRACT_INSTRUCTIONS,
+  nlq: { instructions: FASHION_NLQ_INSTRUCTIONS, schema: fashionNlqSchema },
+};

@@ -124,6 +124,29 @@ Six fashion/e-commerce primitives are baked into the core, on the principle of g
 
 Self-tuning: `matcher.evaluateSearch(...)` scores graded relevance@k / nDCG@k (caller labels or the configured LLM as judge), and `matcher.calibrateSearch(...)` sweeps a mode/weight grid and returns the recommended default — so "no config" can mean samesake calibrates itself.
 
+### Fashion enrichment template (best defaults)
+
+Attribute-aware search needs structured attributes (a "Crimson" title should be findable under "red dress"). `@samesake/core` ships a fashion enrichment template so you get that without hand-writing a taxonomy + schemas:
+
+```ts
+import { collection, Channels, fashion } from "@samesake/core";
+
+const products = collection("products", {
+  fields: fashion.fields(),                     // category, colors, occasions, gender, material, fit… (resolve from enriched.*)
+  embeddings: { doc: { source: fashion.embedDocSource, model: "gemini-embedding-2", dim: 1536 } },
+  spaces: fashion.spaces(),                      // visual + price + category + freshness
+  enrich: fashion.enrichPipeline(),             // classify → extract (BYO generate; image-aware)
+  search: {
+    channels: [Channels.fts({ fields: ["title"] }), Channels.cosine({ embedding: "doc" }), Channels.spaces({})],
+    combiner: "rrf",
+    nlq: { instructions: fashion.nlq.instructions, schema: fashion.nlq.schema() },
+  },
+});
+// after enrich, compose the embed doc: fashion.composeEmbedDoc(data, enriched) → enriched.embed_doc
+```
+
+Region-neutral and parametrized (`fashion.enrichPipeline({ titleKey, imageKey, classifyModel, … })`); `examples/fashion-search` consumes it and appends Sri-Lanka-specific NLQ vocab on top.
+
 ## Spaces (60 seconds)
 
 Typed embedding spaces concatenate into one `space_vec` column; query-time `weights` rescale segments without reindexing. The fashion example enables them (incl. the `visual` image space) **by default** — this is now intent-safe because `mode: "intent"` (the default for text queries) does not weight the spaces/visual leg, so the intent parity gate is unaffected, while `mode: "similar"` and image queries get genuine visual + semantic similarity. Historically spaces were off because flat weights failed the parity gate ([`docs/spaces-gate.md`](./docs/spaces-gate.md)); `mode` is what makes them safe to ship on.

@@ -10,6 +10,13 @@ with the right defaults and no required config. Backed by 2025–26 fashion/e-co
 
 ### Added
 
+- **Fashion enrichment template** (`@samesake/core`) — `fashion.*` / `fashionEnrichPipeline`,
+  `fashionSearchFields`, `fashionSpaces`, `composeFashionEmbedDoc`, `fashionClassifySchema` /
+  `fashionExtractSchema`, `fashionNlqSchema` / instructions, `fashionTaxonomy` / `fashionEnums`.
+  Best-default catalog enrichment (category, colors, occasion, style, material, fit + a
+  search-ready embed doc + fashion-aware NLQ) so consumers get attribute-aware search without
+  rewriting ~200 lines. Region-neutral and parametrized (data keys, models). The fashion example
+  now consumes it; live smoke confirms e.g. a "Crimson" title normalizes to `colors:["red"]`.
 - **FTS soft-OR** — the lexical leg now uses `websearch_to_tsquery` rewritten to OR-of-terms, so
   multi-term queries match docs sharing *any* term (ranked by `ts_rank_cd`) instead of going inert
   on the AND of all terms. **Default: on, no config.**
