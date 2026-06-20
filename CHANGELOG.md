@@ -2,6 +2,15 @@
 
 All notable changes to samesake. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased] — indexing DSL breaking cutover
+
+### Changed
+
+- **Breaking:** collection configs now declare `indexing` explicitly; `CollectionEmbeddingDef.source` and doc-template fallback behavior are removed.
+- **Breaking:** `fashion.composeEmbedDoc`, `fashion.embedDocSource`, and `FASHION_EMBED_DOC_SOURCE` are removed in favor of `fashion.indexing()`.
+- **Breaking:** generated `fts` now derives only from persisted `fts_src`; legacy fallback expressions are removed.
+- Added apply-time indexing manifest validation: dense surfaces must reference existing embeddings and FTS search requires an FTS indexing surface.
+
 ## [1.3.0] — 2026-06-18 — modes, retrieval primitives & fashion template
 
 Bakes six retrieval primitives into the core packages so samesake works well off-the-shelf

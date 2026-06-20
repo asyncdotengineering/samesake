@@ -44,7 +44,7 @@ Most search tools make you wrangle a separate service with its own dashboard and
 Here's a small one. Read it like a sentence — "products have a title we can search, a brand and price we can filter on, and we search them with keywords plus meaning":
 
 ```ts title="catalog.ts"
-import { collection, f, Channels } from "@samesake/core";
+import { collection, f, Channels, gates } from "@samesake/core";
 
 export const products = collection("products", {
   fields: {
@@ -54,9 +54,23 @@ export const products = collection("products", {
     color: f.text({ filterable: true }),
     available: f.boolean({ filterable: true }),
   },
+  indexing: {
+    surfaces: {
+      embed_doc: {
+        kind: "dense",
+        embedding: "doc",
+        build: ({ data }) => `${data.title} ${data.brand} ${data.color}`.trim(),
+      },
+      fts_doc: {
+        kind: "fts",
+        build: ({ data }) => `${data.title} ${data.brand}`.trim(),
+      },
+    },
+    gate: gates.always,
+  },
   embeddings: {
-    // "meaning" vectors, built from this text, using a model you supply below
-    doc: { source: "$title $brand $color", model: "gemini-embedding-2", dim: 1536 },
+    // "meaning" vectors now read from indexing.surfaces.embed_doc
+    doc: { model: "gemini-embedding-2", dim: 1536 },
   },
   search: {
     channels: [
