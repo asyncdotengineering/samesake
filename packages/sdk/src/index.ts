@@ -71,7 +71,6 @@ export {
   fashionNlqSchema,
   FASHION_EXTRACT_INSTRUCTIONS,
   FASHION_NLQ_INSTRUCTIONS,
-  FASHION_EMBED_DOC_SOURCE,
   type FashionEnrichOptions,
 } from "./templates/fashion.ts";
 export { IdentError, assertIdent, assertNoIdentCollisions } from "./ident.ts";
@@ -280,11 +279,11 @@ type CollectionInput<
   TSpaces extends Record<string, SpaceDef> = Record<string, never>,
 > = {
   fields: TFields;
+  indexing: IndexingDef;
   enrich?: PipelineDef;
   sources?: ConnectorDef[];
   embeddings?: TEmbeddings;
   spaces?: TSpaces;
-  indexing?: IndexingDef;
   search?: {
     channels: ReadonlyArray<
       TypedSearchChannel<

@@ -301,6 +301,12 @@ export function makeEnrichPipelineService(
             `to createMatcher (or re-apply the project in-process) before calling enrich.`
         );
       }
+    } else {
+      throw new Error(
+        `collection "${collectionName}" has no callable indexing surfaces/gate. ` +
+          `Indexing functions cannot be loaded from the database — pass this collection's config ` +
+          `to createMatcher (or re-apply the project in-process) before calling enrich.`
+      );
     }
     requireGenerate(def);
 

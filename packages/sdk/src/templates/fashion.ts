@@ -333,8 +333,6 @@ export function fashionIndexing(opts: { titleKey?: string } = {}): IndexingDef {
   };
 }
 
-export const FASHION_EMBED_DOC_SOURCE = "$enriched.embed_doc";
-
 // ── Fashion-aware NLQ defaults (region-neutral) ─────────────────────────
 export function fashionNlqSchema(): z.ZodType {
   return z.object({
@@ -404,8 +402,6 @@ export const fashion = {
   spaces: fashionSpaces,
   enrichPipeline: fashionEnrichPipeline,
   indexing: fashionIndexing,
-  composeEmbedDoc: composeFashionEmbedDoc,
-  embedDocSource: FASHION_EMBED_DOC_SOURCE,
   classifySchema: fashionClassifySchema,
   extractSchema: fashionExtractSchema,
   extractInstructions: FASHION_EXTRACT_INSTRUCTIONS,

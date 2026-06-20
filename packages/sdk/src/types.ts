@@ -232,7 +232,6 @@ export type CollectionFieldDef =
   | CollectionArrayFieldDef;
 
 export interface CollectionEmbeddingDef {
-  source?: string;
   model: string;
   dim: number;
   taskType?: string;
