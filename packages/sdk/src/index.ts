@@ -522,9 +522,23 @@ export function fashionSearchPreset(opts: {
       styles: f.array(f.enum(fashionAttributes.styles), { filterable: true, soft: true, path: "enriched.style_archetypes" }),
     },
     enrich: fashionEnrichmentPreset({ model: opts.enrichmentModel, imageField: fieldsMap.imageUrl, titleField: fieldsMap.title }),
+    indexing: {
+      surfaces: {
+        embed_doc: {
+          kind: "dense",
+          embedding: "intent",
+          build: ({ data, enriched }) =>
+            `${data[fieldsMap.title] ?? ""} ${enriched.search_document ?? ""}`.replace(/\s+/g, " ").trim(),
+        },
+        fts_doc: {
+          kind: "fts",
+          build: ({ data }) => `${data[fieldsMap.title] ?? ""}`.trim(),
+        },
+      },
+      gate: () => ({ index: true }),
+    },
     embeddings: {
       intent: {
-        source: "$enriched.search_document $title",
         model: opts.textModel,
         dim: opts.textDim,
         taskType: "RETRIEVAL_DOCUMENT",
