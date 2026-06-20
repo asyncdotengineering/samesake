@@ -109,6 +109,20 @@ export function makeEnrichPipelineService(
     }
   }
 
+  async function recordFailure(table: string, rowId: string, error: unknown): Promise<void> {
+    const msg = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+    await getPgClient(ctx.db, "enrich").unsafe(
+      `UPDATE ${table}
+       SET attempt_count = attempt_count + 1,
+           last_error = $1,
+           pipeline_status = 'failed',
+           next_attempt_at = now() + make_interval(secs => LEAST(3600, power(2, attempt_count)::int)),
+           updated_at = now()
+       WHERE id = $2`,
+      [msg, rowId]
+    );
+  }
+
   async function enrichOne(
     def: CollectionDef,
     row: { id: string; data: Record<string, unknown> },
@@ -136,12 +150,17 @@ export function makeEnrichPipelineService(
     }
 
     const table = collectionTableName(schema, collectionName);
-    await getPgClient(ctx.db, "enrich").unsafe(
-      `UPDATE ${table}
-       SET enriched = $1::jsonb, enriched_at = now(), updated_at = now()
-       WHERE id = $2`,
-      [JSON.stringify(enriched), row.id]
-    );
+    try {
+      await getPgClient(ctx.db, "enrich").unsafe(
+        `UPDATE ${table}
+         SET enriched = $1::jsonb, enriched_at = now(), updated_at = now()
+         WHERE id = $2`,
+        [JSON.stringify(enriched), row.id]
+      );
+    } catch (e) {
+      await recordFailure(table, row.id, e);
+      return false;
+    }
     ctx.observability.inc("enrich_docs_total");
     return true;
   }
@@ -238,7 +257,7 @@ export function makeEnrichPipelineService(
     return { enriched, skipped, failed };
   }
 
-  return { enrichCollection, enrichOne, requireGenerate };
+  return { enrichCollection, enrichOne, recordFailure, requireGenerate };
 }
 
 export type EnrichPipelineService = ReturnType<typeof makeEnrichPipelineService>;
