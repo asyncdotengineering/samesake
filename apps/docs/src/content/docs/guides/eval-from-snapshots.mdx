@@ -69,6 +69,12 @@ Against a ~5.5k-product catalog with 50 golden queries (label-free: objective + 
 - **budget enforcement:** 4/5 explicit "under N" queries returned **0% over-budget** results in the top 5 — hard filters held. The one miss was an *implicit* "cheap" query (a percentile heuristic that didn't match the stated cap) — an actionable gap, surfaced honestly.
 - **latency:** ~2s/query, dominated by the per-query model calls (NLQ rewrite + query embed); the Postgres hybrid SQL itself is sub-millisecond at this scale.
 
+For graded relevance (nDCG@K, Hit@K, MRR) over the same golden set, use `matcher.runEval` via
+[`examples/fashion-search/eval-judge.ts`](https://github.com/asyncdotengineering/samesake/blob/main/examples/fashion-search/eval-judge.ts).
+It grades hits with a calibrated LLM judge, writes a JSON artifact, and exits nonzero when metrics
+fall below `thresholds`. See [Eval gate — tune floor and exponents](/guides/eval-gate/) for the
+full tuning procedure (requires `GEMINI_API_KEY` — do not fabricate calibrated floor/exponent values).
+
 <Aside type="note">
 Relevance@k needs labels. Without them you can still benchmark the objective signals — constraint compliance, zero-result rate, price-violation, latency — which is often what actually erodes or earns shopper trust.
 </Aside>
