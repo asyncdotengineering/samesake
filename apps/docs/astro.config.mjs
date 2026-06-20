@@ -46,9 +46,13 @@ export default defineConfig({
         {
           label: "Guides",
           items: [
+            { label: "From an idea to a working agent", slug: "guides/from-idea-to-agent" },
+            { label: "Shopping agent with Mastra + samesake", slug: "guides/mastra-ecommerce-assistant" },
             { label: "Fashion app with Porulle + Next.js", slug: "guides/porulle-fashion-app" },
+            { label: "Pipeline lifecycle", slug: "guides/pipeline-lifecycle" },
             { label: "Tuning search relevance", slug: "guides/tuning-search" },
             { label: "Eval from search snapshots", slug: "guides/eval-from-snapshots" },
+            { label: "Eval gate — tune floor and exponents", slug: "guides/eval-gate" },
           ],
         },
       ],

@@ -1,0 +1,115 @@
+---
+title: Pipeline lifecycle
+description: How each catalog row moves through ingest → enrich → index → search — durable statuses, gates, retries, and image revalidation.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Every product row carries a **`pipeline_status`** that tracks where it is in the enrich → index → search pipeline. Search only returns rows in **`ready`** status (when the collection has an enrich pipeline). The status is explicit, durable, and queryable — not inferred from timestamps alone.
+
+## Statuses
+
+| Status | Meaning | Searchable? |
+|--------|---------|-------------|
+| `pending` | Ingested but not yet enriched/indexed, or awaiting first successful index | No |
+| `ready` | Passed the indexing gate and indexed successfully | Yes |
+| `quarantined` | Enriched but rejected by the indexing gate (low confidence, empty surface, etc.) | No |
+| `failed` | A pipeline stage threw; row has `last_error`, `attempt_count`, and `next_attempt_at` | No |
+| `dead` | Exceeded max retry attempts (`attempt_count >= maxAttempts`) | No |
+
+```text
+pending ──enrich+gate──► ready ──index──► ready (vectors written)
+   │                        │
+   │                        └── gate rejects ──► quarantined (vectors nulled)
+   │
+   └── stage throws ──► failed ──retryFailed──► ready | failed | dead
+                              │
+                              └── attempt_count >= max ──► dead
+```
+
+## Where transitions happen
+
+### Enrich builds surfaces and runs the gate
+
+During `matcher.enrich(...)`, each row runs the enrich stages, then **`indexing.surfaces`** builders persist `doc`, `rerank_doc`, and `fts_src`. The required **`indexing.gate`** decides whether the row is indexable:
+
+- Gate returns `{ index: true }` → `pipeline_status = 'ready'` (vectors not written yet — index does that).
+- Gate returns `{ index: false, reason }` → `pipeline_status = 'quarantined'` with `gate_reason`. Previously indexed vectors are nulled so stale hits cannot leak into search.
+- An empty surface text → `quarantined` with reason `empty:<surface-key>`.
+
+The fashion template's gate (`fashion.indexing().gate`) quarantines non-apparel rows, low-confidence enrichments, uncertain load-bearing fields, and cross-signal disagreements. See [Tuning search relevance](/guides/tuning-search/) for the data-quality loop that feeds the gate.
+
+### Index writes vectors and confirms ready
+
+`matcher.index(...)` embeds persisted `doc` / image bytes, writes `space_vec`, sets `indexed_at`, and sets `pipeline_status = 'ready'`. Rows that are `quarantined` or `failed` are skipped. Collections **without** an enrich pipeline start as `pending` and reach `ready` on first successful index.
+
+### Failures, backoff, and retry
+
+When enrich or index throws, **`recordFailure`** sets `pipeline_status = 'failed'`, increments `attempt_count`, stores `last_error`, and schedules `next_attempt_at` with exponential backoff (capped at one hour).
+
+`matcher.retryFailed(project, collection)` drains retryable rows (`failed`, `next_attempt_at <= now()`, `attempt_count < maxAttempts`):
+
+- Rows that never enriched → re-run enrich.
+- Rows that enriched but did not index → re-run index for that row.
+- Rows at or above `maxAttempts` (default 5) → promoted to **`dead`**.
+
+Enrich runs also abort when the per-run failure rate exceeds a threshold (default 50% after 10 samples) to avoid hammering a broken upstream.
+
+### Image revalidation forces re-embed
+
+`matcher.revalidateImages(project, collection)` probes each row's `image_url` (conditional GET / ETag). When the image validator changes:
+
+- `indexed_at` is cleared (forces re-index / re-embed).
+- If the enrich pipeline consumes images, `enriched_at` is also cleared (forces re-enrich with fresh vision output).
+- `image_etag` and `image_checked_at` are updated.
+
+The enrich stage cache key incorporates the image validator so a changed image does not hit stale cached LLM output.
+
+## Declaring the indexing DSL
+
+Surfaces and gate live on the collection config — there is no separate compose step and no string `embeddings.source` template:
+
+```ts
+import { collection, gates } from "@samesake/core";
+
+export const products = collection("products", {
+  fields: { /* ... */ },
+  indexing: {
+    surfaces: {
+      embed_doc: {
+        kind: "dense",
+        embedding: "doc",
+        build: ({ data, enriched }) => `${data.title} ${enriched.color_text}`.trim(),
+      },
+      rerank_doc: {
+        kind: "rerank",
+        build: ({ data, enriched }) => `${data.title}. Colors: ${enriched.colors?.join(", ")}`,
+      },
+      fts_doc: {
+        kind: "fts",
+        build: ({ data }) => `${data.title} ${data.brand}`,
+      },
+    },
+    gate: gates.always, // or a custom gate like fashion.indexing().gate
+  },
+  embeddings: { doc: { model: "your-model", dim: 1536 } },
+  search: { /* channels, rankingPolicy, rerank */ },
+});
+```
+
+Use `fashion.indexing()` from `@samesake/core` for the fashion vertical — it wires embed, rerank, FTS surfaces and the confidence/cross-signal gate.
+
+## Operational commands
+
+```ts
+await matcher.enrich("shop", "products");
+await matcher.index("shop", "products");
+await matcher.revalidateImages("shop", "products");
+await matcher.retryFailed("shop", "products", { maxAttempts: 5 });
+```
+
+Quarantined rows remain visible through the existing review endpoint (`max_confidence` filter) so operators can inspect low-quality enrichments before fixing data or gate thresholds.
+
+<Aside type="note">
+Tune the fashion confidence floor and ranking exponents empirically with the offline eval gate — see [Eval gate — tune floor and exponents](/guides/eval-gate/). Do not hardcode calibrated numbers without running the harness.
+</Aside>
