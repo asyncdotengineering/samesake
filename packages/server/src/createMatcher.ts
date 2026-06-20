@@ -43,6 +43,7 @@ import { makeEmbedIndexService } from "./core/embed-index.ts";
 import { makeFashionSearchService } from "./core/fashion-search.ts";
 import { makeCalibrateService } from "./core/calibrate.ts";
 import { makeCalibrateSearchService } from "./core/calibrate-search.ts";
+import { makeEvalService } from "./core/eval/run.ts";
 import { makeExplainService } from "./core/explain.ts";
 import { makeVariantsService } from "./core/variants.ts";
 import { makeUpsertService } from "./core/upsert.ts";
@@ -89,6 +90,7 @@ export interface Matcher {
   reviewCorrect: ReturnType<typeof makeReviewService>["reviewCorrect"];
   index: ReturnType<typeof makeEmbedIndexService>["indexCollection"];
   searchExplain: ReturnType<typeof makeSearchService>["searchExplain"];
+  runEval: ReturnType<typeof makeEvalService>["runEval"];
   metrics: () => MetricsSnapshot;
   rotateProjectKey: ReturnType<typeof makeProjectsService>["rotateProjectKey"];
 
@@ -232,6 +234,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
   const matchService = makeMatchService(ctx, embedService, parseService, projectsService, schemaGen);
   const searchService = makeSearchService(ctx, embedService, projectsService);
   const calibrateSearchService = makeCalibrateSearchService(ctx, searchService);
+  const evalService = makeEvalService(ctx, searchService);
   const agentToolsService = makeAgentToolsService(ctx, projectsService, searchService);
   const ingestService = makeIngestService(ctx, projectsService);
   const fashionSearchService = makeFashionSearchService(ctx, projectsService, searchService, ingestService);
@@ -311,6 +314,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
     reviewList: reviewService.reviewList,
     reviewCorrect: reviewService.reviewCorrect,
     searchExplain: searchService.searchExplain,
+    runEval: evalService.runEval,
     metrics: () => observability.metrics(),
     rotateProjectKey: projectsService.rotateProjectKey,
     fetch: app.fetch.bind(app) as (request: Request) => Promise<Response>,

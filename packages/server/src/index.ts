@@ -44,6 +44,27 @@ export type {
   SearchEvalResult,
   CalibrateResult,
 } from "./core/calibrate-search.ts";
+export type {
+  EvalOpts,
+  EvalResult,
+  GoldenQuery,
+  MetricKey,
+  PerQuery,
+} from "./core/eval/run.ts";
+export type {
+  RelevanceJudge,
+  JudgedHit,
+  FacetGrades,
+} from "./core/eval/judge.ts";
+export { makeLlmJudge, candidateSummary, FASHION_JUDGE_SYSTEM } from "./core/eval/judge.ts";
+export { calibrateJudge, isJudgeTrusted } from "./core/eval/calibrate.ts";
+export {
+  ndcgAtK,
+  mrr,
+  hitAtK,
+  nullRate,
+  constraintViolations,
+} from "./core/eval/metrics.ts";
 export {
   agentToolDescriptors,
   agentToolsOpenApi,
