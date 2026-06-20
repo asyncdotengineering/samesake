@@ -264,7 +264,10 @@ async function runHybridQuery(
   const spcRef = hasSpc && spaceVector ? addParam(toVectorLiteral(spaceVector)) : null;
 
   const compiled = buildFilterSql(filters, def, filterOpts, params.length + 1);
-  const where = compiled.where;
+  const where =
+    compiled.where === "true"
+      ? "(pipeline_status = 'ready' OR pipeline_status IS NULL)"
+      : `${compiled.where} AND (pipeline_status = 'ready' OR pipeline_status IS NULL)`;
   params.push(...compiled.params);
 
   const limitRef = addParam(limit);
@@ -486,9 +489,9 @@ export function makeSearchService(
         .join(", ");
 
       await getPgClient(ctx.db, "parameterized search query").unsafe(
-        `INSERT INTO ${table} (${cols.join(", ")}, indexed_at, updated_at)
-         VALUES (${placeholders}, now(), now())
-         ON CONFLICT (id) DO UPDATE SET ${updateSet}, indexed_at = now(), updated_at = now()`,
+        `INSERT INTO ${table} (${cols.join(", ")}, indexed_at, pipeline_status, updated_at)
+         VALUES (${placeholders}, now(), 'ready', now())
+         ON CONFLICT (id) DO UPDATE SET ${updateSet}, indexed_at = now(), pipeline_status = 'ready', updated_at = now()`,
         values
       );
       indexed++;

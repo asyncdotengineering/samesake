@@ -433,7 +433,7 @@ export function makeEmbedIndexService(
 
         await getPgClient(ctx.db, "embed-index").unsafe(
           `UPDATE ${table}
-           SET ${setClause}, indexed_at = now(), updated_at = now()
+           SET ${setClause}, indexed_at = now(), pipeline_status = 'ready', updated_at = now()
            WHERE id = $${params.length}`,
           params
         );

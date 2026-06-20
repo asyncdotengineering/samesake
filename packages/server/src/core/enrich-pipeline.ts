@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { CollectionDef, DerivedDocContext, IndexingDef, PipelineDef, StageContext } from "@samesake/core";
+import type { CollectionDef, DerivedDocContext, DerivedDocDef, IndexingDef, PipelineDef, StageContext } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import { makeStageCacheService } from "../db/stage-cache.ts";
@@ -32,7 +32,7 @@ function persistIndexingSurfaces(
   let rerank_doc: string | null = null;
   let fts_src: string | null = null;
 
-  for (const [key, surface] of Object.entries(indexing.surfaces)) {
+  for (const [key, surface] of Object.entries(indexing.surfaces) as Array<[string, DerivedDocDef]>) {
     const text = surface.build(ctx);
     if (text === "") {
       return {
@@ -202,7 +202,7 @@ export function makeEnrichPipelineService(
     const table = collectionTableName(schema, collectionName);
     try {
       if (hasIndexing(def)) {
-        for (const [key, surface] of Object.entries(def.indexing.surfaces)) {
+        for (const [key, surface] of Object.entries(def.indexing.surfaces) as Array<[string, DerivedDocDef]>) {
           if (typeof surface.build !== "function") {
             throw new Error(`indexing surface "${key}" has no callable build`);
           }
@@ -285,7 +285,7 @@ export function makeEnrichPipelineService(
       }
     }
     if (hasIndexing(def)) {
-      for (const [key, surface] of Object.entries(def.indexing.surfaces)) {
+      for (const [key, surface] of Object.entries(def.indexing.surfaces) as Array<[string, DerivedDocDef]>) {
         if (typeof surface.build !== "function") {
           throw new Error(
             `collection "${collectionName}" indexing surface "${key}" has no callable build. ` +
