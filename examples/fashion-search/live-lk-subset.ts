@@ -8,7 +8,7 @@
  * Steps:
  *   1. apply `lk_subset` with the same productsCollection config
  *   2. push the 30 raw snapshot products (ids match corpus ids: q1-1, ...)
- *   3. enrich (Gemini classify + extract, fetches product images) -> compose embed -> index
+ *   3. enrich (Gemini classify + extract, fetches product images) -> index
  *   4. run each corpus query through the live hybrid engine (matcher.search: NLQ + FTS +
  *      cosine ANN) and score relevance@3 + constraint compliance, same metrics as eval.ts
  *
@@ -19,7 +19,6 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createFashionMatcher } from "./samesake.config.ts";
 import { productsCollection, COLLECTION } from "./samesake.config.ts";
-import { composeEmbedDocs } from "./compose-embed.ts";
 import { readFileSync, readdirSync } from "node:fs";
 
 const SLUG = process.env.LK_SUBSET_PROJECT ?? "lk_subset";
@@ -82,9 +81,6 @@ async function main() {
     console.log(`  pass ${pass}: enriched=${r.enriched} failed=${r.failed}`);
     if (r.enriched === 0) break;
   }
-  const composed = await composeEmbedDocs(applied.schema);
-  console.log(`composed embed_doc for ${composed} products`);
-
   console.log("== index (embeddings) ==");
   let indexed = 0;
   while (true) {

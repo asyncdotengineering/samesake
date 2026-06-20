@@ -356,7 +356,7 @@ export function makeEmbedIndexService(
           if (usesIndexing) {
             docText = String(row.doc ?? "").trim();
           } else {
-            docText = resolveEmbedTemplate(embDef.source, data, enriched).trim();
+            docText = resolveEmbedTemplate(embDef.source ?? "", data, enriched).trim();
             if (!docText) docText = String(data.title ?? "").trim();
           }
           if (!docText) {

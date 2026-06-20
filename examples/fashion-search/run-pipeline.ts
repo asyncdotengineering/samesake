@@ -1,6 +1,5 @@
 import { sql } from "drizzle-orm";
 import { createDbFromUrl } from "@samesake/server";
-import { composeEmbedDocs } from "./compose-embed.ts";
 import { runIngest } from "./ingest.ts";
 import {
   COLLECTION,
@@ -17,7 +16,6 @@ const argN = (name: string, dflt: number) => {
 
 const SKIP_INGEST = args.includes("--skip-ingest");
 const SKIP_ENRICH = args.includes("--skip-enrich");
-const SKIP_COMPOSE = args.includes("--skip-compose");
 const SKIP_INDEX = args.includes("--skip-index");
 const CONCURRENCY = argN("concurrency", 12);
 
@@ -75,12 +73,6 @@ async function main() {
     if (failRate > 0.02) {
       console.warn(`WARN: enrichment failure rate ${(failRate * 100).toFixed(1)}% exceeds 2%`);
     }
-  }
-
-  if (!SKIP_COMPOSE) {
-    console.log("== compose embed docs ==");
-    const n = await composeEmbedDocs(applied.schema);
-    console.log(`composed ${n} embed docs`);
   }
 
   if (!SKIP_INDEX) {
