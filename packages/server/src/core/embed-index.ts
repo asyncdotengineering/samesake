@@ -124,22 +124,11 @@ async function buildDocSpaceSegments(
   const keys = spaceKeys(def);
   const segments: Array<number[] | null> = [];
   const dims: number[] = [];
-  const embKey = def.embeddings ? Object.keys(def.embeddings)[0] : null;
-  const embDef = embKey ? def.embeddings![embKey]! : null;
 
   for (const name of keys) {
     const sdef = def.spaces![name]!;
     dims.push(spaceSegmentDim(sdef));
     if (sdef.kind === "text") {
-      const reuseDoc =
-        embDef &&
-        sdef.source === embDef.source &&
-        docEmbedding &&
-        docEmbedding.length === sdef.dim;
-      if (reuseDoc) {
-        segments.push(encodeText(docEmbedding));
-        continue;
-      }
       let docText = resolveEmbedTemplate(sdef.source, data, enriched).trim();
       if (!docText) docText = String(data.title ?? "").trim();
       if (!docText) {

@@ -38,7 +38,7 @@ function fieldSqlType(def: CollectionFieldDef): string {
 function canonicalEmbeddings(c: CollectionDef): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(c.embeddings ?? {})) {
-    out[k] = { source: v.source, model: v.model, dim: v.dim, taskType: v.taskType ?? null };
+    out[k] = { model: v.model, dim: v.dim, taskType: v.taskType ?? null };
   }
   return out;
 }
