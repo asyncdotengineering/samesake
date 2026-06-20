@@ -49,6 +49,7 @@ import type {
   CategoricalSpaceDef,
   SpaceDef,
   IndexingDef,
+  RankingPolicy,
 } from "./types.ts";
 import { assertIdent, assertNoIdentCollisions } from "./ident.ts";
 
@@ -295,6 +296,7 @@ type CollectionInput<
     defaultSpaceWeights?: Partial<Record<NoInfer<keyof TSpaces & string>, number>>;
     /** Declared field whose value groups product variants; results collapse to one per group. */
     variantGroup?: NoInfer<keyof TFields & string>;
+    rankingPolicy?: RankingPolicy;
     nlq?: {
       instructions?: string;
       semanticRewrite?: boolean;

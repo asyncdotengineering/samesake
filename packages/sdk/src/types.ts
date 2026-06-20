@@ -324,6 +324,34 @@ export type SpaceDef =
   | RecencySpaceDef
   | CategoricalSpaceDef;
 
+export type RankingHardAxis = "availability" | "business";
+export type RankingSoftAxis = "newness" | "personalization" | "visual" | "business";
+
+export interface RankingPolicy {
+  weights?: {
+    relevance?: number;
+    visual?: number;
+    availability?: number;
+    newness?: number;
+    business?: number;
+    personalization?: number;
+  };
+  /** Numeric field used as a merchant/business signal, for example margin or sell-through. */
+  businessField?: string;
+  boostAvailable?: boolean;
+  buryUnavailable?: boolean;
+  /** Multiplicative penalty on unavailable items (0–1). Default 0.2. */
+  buryFactor?: number;
+  /** Drop hits below this normalized relevance before boosting. Default 0. */
+  minRelevanceFloor?: number;
+  /** Exponent on normalized relevance in the multiplicative core. Default 1. */
+  relevanceExponent?: number;
+  /** Hard conjunctive axes — composed multiplicatively with relevance. */
+  hardAxes?: RankingHardAxis[];
+  /** Soft boosts — composed additively after the multiplicative core. */
+  softAxes?: RankingSoftAxis[];
+}
+
 export interface CollectionSearchDef {
   channels: SearchChannelDef[];
   combiner?: "rrf";
@@ -335,6 +363,8 @@ export interface CollectionSearchDef {
    * null/empty value are never collapsed.
    */
   variantGroup?: string;
+  /** Post-fusion ranking boosts applied after rerank (when present). */
+  rankingPolicy?: RankingPolicy;
   nlq?: {
     instructions?: string;
     semanticRewrite?: boolean;
@@ -506,20 +536,7 @@ export interface FashionSearchImageInput {
   productId?: string;
 }
 
-export interface FashionRankingPolicy {
-  weights?: {
-    relevance?: number;
-    visual?: number;
-    availability?: number;
-    newness?: number;
-    business?: number;
-    personalization?: number;
-  };
-  /** Numeric field used as a merchant/business signal, for example margin or sell-through. */
-  businessField?: string;
-  boostAvailable?: boolean;
-  buryUnavailable?: boolean;
-}
+export interface FashionRankingPolicy extends RankingPolicy {}
 
 export interface FashionPersonalizationContext {
   size?: string;
