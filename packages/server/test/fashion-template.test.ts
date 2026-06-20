@@ -42,15 +42,103 @@ describe("fashion enrichment template", () => {
     expect(bag.details).toBeDefined();
   });
 
-  test("embed-doc composer weaves attributes into one string", () => {
+  test("embed-doc composer weaves graded attributes into one string", () => {
     const doc = composeFashionEmbedDoc(
       { title: "Red Mirage Dress" },
-      { search_document: "A flowy red evening dress.", category: "dresses", product_type: "midi dress", gender: "women", colors: ["red"], occasions: ["party", "evening"], styles: ["romantic"], material: "chiffon" }
+      {
+        search_document: "A flowy red evening dress.",
+        product_type: "midi dress",
+        category: "dresses",
+        gender: "women",
+        colors: ["red"],
+        occasions: ["party", "evening"],
+        styles: ["romantic"],
+        material: "chiffon",
+      }
     );
     expect(doc).toContain("Red Mirage Dress");
-    expect(doc).toContain("Colors: red");
+    expect(doc).toContain("A flowy red evening dress");
+    expect(doc).toContain("Type: midi dress");
     expect(doc).toContain("Occasions: party");
-    expect(doc).toContain("Material: chiffon");
+    expect(doc).not.toContain("Colors:");
+    expect(doc).not.toContain("Material:");
+    expect(doc).not.toContain("Category:");
+  });
+
+  test("test:embed-doc-no-hard-attrs — indexing embed_doc is graded-only", () => {
+    const idx = fashion.indexing();
+    const embedDoc = idx.surfaces.embed_doc.build({
+      data: { title: "Crimson Wrap Maxi Dress" },
+      enriched: {
+        search_document: "A deep-red floor-length wrap dress for evening parties.",
+        product_type: "maxi dress",
+        category: "dresses",
+        gender: "women",
+        colors: ["red"],
+        occasions: ["evening", "party"],
+        styles: ["romantic", "formal"],
+        material: "chiffon",
+        fit: "a-line",
+      },
+    });
+    expect(embedDoc).toContain("Crimson Wrap Maxi Dress");
+    expect(embedDoc).toContain("deep-red floor-length wrap dress");
+    expect(embedDoc).toContain("Occasions:");
+    expect(embedDoc).toContain("Style:");
+    expect(embedDoc).not.toMatch(/\bCategory:/);
+    expect(embedDoc).not.toMatch(/\bColors:/);
+    expect(embedDoc).not.toMatch(/\bMaterial:/);
+    expect(embedDoc).not.toMatch(/\bFit:/);
+    expect(embedDoc).not.toMatch(/\bfor women\b/i);
+  });
+
+  test("test:gate-cross-signal — title/tags category disagreeing with enriched category quarantines", () => {
+    const idx = fashion.indexing();
+    const verdict = idx.gate({
+      data: {
+        title: "Men's Leather Running Sneakers",
+        raw_tags: ["footwear", "sneakers", "running"],
+        raw_type: "sneakers",
+      },
+      enriched: {
+        is_apparel_product: true,
+        category: "dresses",
+        product_type: "midi dress",
+        gender: "men",
+        confidence: 0.95,
+        uncertain_fields: [],
+      },
+    });
+    expect(verdict).toEqual({ index: false, reason: "cross-signal-disagree" });
+  });
+
+  test("test:fashion-compose-gate — graded embed_doc non-empty; non-apparel and low-confidence quarantined", () => {
+    const idx = fashion.indexing();
+    const embedDoc = idx.surfaces.embed_doc.build({
+      data: { title: "Floral Sundress" },
+      enriched: {
+        search_document: "A bright floral cotton sundress for warm days.",
+        product_type: "sundress",
+        category: "dresses",
+        gender: "women",
+        confidence: 0.9,
+        occasions: ["everyday"],
+        styles: ["casual"],
+      },
+    });
+    expect(embedDoc.length).toBeGreaterThan(20);
+    expect(embedDoc).toContain("Floral Sundress");
+
+    expect(idx.gate({ data: { title: "Gift Card" }, enriched: { is_apparel_product: false } })).toEqual({
+      index: false,
+      reason: "non-apparel",
+    });
+    expect(
+      idx.gate({
+        data: { title: "Maybe Dress" },
+        enriched: { is_apparel_product: true, category: "dresses", confidence: 0.2 },
+      })
+    ).toEqual({ index: false, reason: "low-confidence" });
   });
 
   test("enrich pipeline is classify -> extract, extract gated to apparel", () => {
