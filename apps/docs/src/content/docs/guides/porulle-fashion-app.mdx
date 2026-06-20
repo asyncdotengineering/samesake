@@ -143,7 +143,21 @@ export const products = collection("products", {
     price: f.number({ filterable: true, budget: true }), available: f.boolean({ filterable: true }),
     image_url: f.text(),
   },
-  embeddings: { doc: { source: "$title $brand $category $color $material", model: "gemini-embedding-2", dim: 1536 } },
+  indexing: {
+    surfaces: {
+      embed_doc: {
+        kind: "dense",
+        embedding: "doc",
+        build: ({ data }) => `${data.title} ${data.brand} ${data.category} ${data.color} ${data.material}`.trim(),
+      },
+      fts_doc: {
+        kind: "fts",
+        build: ({ data }) => `${data.title} ${data.brand} ${data.category} ${data.color} ${data.material}`.trim(),
+      },
+    },
+    gate: ({ data }) => (data.title ? { index: true } : { index: false, reason: "missing-title" }),
+  },
+  embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
   search: { channels: [Channels.fts({ fields: ["title","brand","category","color","material"], weight: 1 }),
     Channels.cosine({ embedding: "doc", weight: 1 })], combiner: "rrf" },
 });

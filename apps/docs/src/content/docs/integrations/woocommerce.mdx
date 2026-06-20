@@ -23,7 +23,21 @@ export const products = collection("products", {
     price: f.number({ filterable: true, budget: true }),
     available: f.boolean({ filterable: true }), // stock_status === "instock"
   },
-  embeddings: { doc: { source: "$title $description $category", model: "your-model", dim: 1536 } },
+  indexing: {
+    surfaces: {
+      embed_doc: {
+        kind: "dense",
+        embedding: "doc",
+        build: ({ data }) => `${data.title} ${data.description} ${data.category}`.trim(),
+      },
+      fts_doc: {
+        kind: "fts",
+        build: ({ data }) => `${data.title} ${data.description} ${data.category}`.trim(),
+      },
+    },
+    gate: ({ data }) => (data.title ? { index: true } : { index: false, reason: "missing-title" }),
+  },
+  embeddings: { doc: { model: "your-model", dim: 1536 } },
   search: {
     channels: [
       Channels.fts({ fields: ["title", "description", "category"], weight: 1 }),
