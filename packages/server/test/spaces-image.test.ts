@@ -244,7 +244,7 @@ describeIf("image space indexing", () => {
     if (matcher) await matcher.close();
   });
 
-  test("zero-vector on image fetch failure without batch death", async () => {
+  test("image fetch failure marks row failed without indexing zero vector", async () => {
     await matcher.pushDocuments(projectSlug, "products", [
       {
         id: "bad-img",
@@ -260,14 +260,17 @@ describeIf("image space indexing", () => {
     ]);
 
     const { indexed } = await matcher.index(projectSlug, "products");
-    expect(indexed).toBe(2);
+    expect(indexed).toBe(0);
 
     const { db, close } = createDbFromUrl(databaseUrl!);
-    const rows = await db.execute<{ space_vec: string | null }>(sql.raw(`
-      SELECT space_vec::text AS space_vec FROM ${schemaName}.c_products WHERE id = 'bad-img'
+    const rows = await db.execute<{ id: string; pipeline_status: string; space_vec: string | null }>(sql.raw(`
+      SELECT id, pipeline_status, space_vec::text AS space_vec FROM ${schemaName}.c_products WHERE id IN ('bad-img', 'good')
+      ORDER BY id
     `));
     await close();
-    expect(rows[0]?.space_vec).toBeTruthy();
+    expect(rows[0]!.pipeline_status).toBe("failed");
+    expect(rows[0]!.space_vec).toBeNull();
+    expect(rows[1]!.pipeline_status).toBe("failed");
   });
 
   test("image segment placed from stubbed embed", async () => {
