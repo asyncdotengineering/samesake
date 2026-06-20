@@ -1,7 +1,7 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels, pipeline, stage } from "../../sdk/src/index.ts";
+import { collection, f, Channels, gates, pipeline, stage } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import {
@@ -59,10 +59,25 @@ describeIf("embed-index integration", () => {
         path: "enriched.colors",
       }),
     },
+  indexing: {
+    surfaces: {
+      embed_doc: {
+        kind: "dense",
+        embedding: "doc",
+        build: ({ data, enriched }) =>
+          `${data.title}. ${enriched.summary ?? ""} Category: ${enriched.category ?? ""}. Colors: ${enriched.colors ?? ""}.`
+            .replace(/\s+/g, " ")
+            .trim(),
+      },
+      fts_doc: {
+        kind: "fts",
+        build: ({ data }) => String(data.title ?? "").trim(),
+      },
+    },
+    gate: gates.always,
+  },
     embeddings: {
       doc: {
-        source:
-          "$title. $enriched.summary Category: $enriched.category. Colors: $enriched.colors.",
         model: "test-embed",
         dim: 8,
         taskType: "RETRIEVAL_DOCUMENT",
@@ -105,6 +120,7 @@ describeIf("embed-index integration", () => {
     await db.execute(sql.raw(`
       UPDATE ${schemaName}.c_products
       SET enriched = '{"summary":"soft silk","category":"top","colors":["red"],"brand":"zara"}'::jsonb,
+          doc = 'Silk Top. soft silk Category: top. Colors: red.',
           enriched_at = now()
       WHERE id = 'a'
     `));
@@ -161,6 +177,7 @@ describeIf("embed-index integration", () => {
     await db.execute(sql.raw(`
       UPDATE ${schemaName}.c_products
       SET enriched = '{"summary":"updated","category":"top","colors":["blue"],"brand":"hm"}'::jsonb,
+          doc = 'Silk Top. updated Category: top. Colors: blue.',
           enriched_at = now() + interval '1 second'
       WHERE id = 'a'
     `));
@@ -206,7 +223,7 @@ describeIf("embed-index indexing path", () => {
           : { index: true },
     },
     embeddings: {
-      doc: { source: "$title should-not-be-used", model: "test-embed", dim: 8 },
+      doc: { model: "test-embed", dim: 8 },
     },
     search: {
       channels: [Channels.cosine({ embedding: "doc", weight: 1 })],

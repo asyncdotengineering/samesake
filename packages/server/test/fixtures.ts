@@ -1,4 +1,4 @@
-import { collection, f, Channels, type CollectionDef } from "../../sdk/src/index.ts";
+import { collection, f, Channels, gates, type CollectionDef } from "../../sdk/src/index.ts";
 
 export const testProductsCollection = collection("products", {
   fields: {
@@ -14,8 +14,15 @@ export const testProductsCollection = collection("products", {
     tag: f.text({ filterable: true, soft: true }),
     available: f.boolean({ filterable: true, facet: true }),
   },
+  indexing: {
+    surfaces: {
+      embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+      fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+    },
+    gate: gates.always,
+  },
   embeddings: {
-    doc: { source: "$title", model: "test-embed", dim: 8, taskType: "RETRIEVAL_QUERY" },
+    doc: { model: "test-embed", dim: 8, taskType: "RETRIEVAL_QUERY" },
   },
   search: {
     channels: [
@@ -40,8 +47,15 @@ export const nlqSchemaFixtureCollection = collection("nlq_fixture", {
     in_stock: f.boolean({ filterable: true, facet: true }),
     brand: f.text({ filterable: true }),
   },
+  indexing: {
+    surfaces: {
+      embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+      fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+    },
+    gate: gates.always,
+  },
   embeddings: {
-    doc: { source: "$title", model: "test-embed", dim: 8 },
+    doc: { model: "test-embed", dim: 8 },
   },
   search: {
     channels: [

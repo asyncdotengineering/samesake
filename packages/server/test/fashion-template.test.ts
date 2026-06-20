@@ -193,7 +193,8 @@ describe("fashion enrichment template", () => {
   test("template assembles a valid collection end-to-end", () => {
     const c = collection("products", {
       fields: fashionSearchFields(),
-      embeddings: { doc: { source: fashion.embedDocSource, model: "gemini-embedding-2", dim: 1536 } },
+      indexing: fashion.indexing(),
+      embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
       spaces: fashionSpaces({ visual: false }),
       enrich: fashionEnrichPipeline(),
       search: {

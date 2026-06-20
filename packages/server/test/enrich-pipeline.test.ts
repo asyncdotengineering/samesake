@@ -36,8 +36,15 @@ describeIf("enrich pipeline", () => {
         model: "default",
       })
     ),
+    indexing: {
+      surfaces: {
+        embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+        fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+      },
+      gate: gates.always,
+    },
     embeddings: {
-      doc: { source: "$title", model: "test-embed", dim: 8 },
+      doc: { model: "test-embed", dim: 8 },
     },
     search: {
       channels: [Channels.fts({ fields: ["title"], weight: 1 })],
@@ -277,7 +284,7 @@ describeIf("test:index-gate enrich pipeline surfaces", () => {
       gate: gates.always,
     },
     embeddings: {
-      doc: { source: "$title", model: "test-embed", dim: 8 },
+      doc: { model: "test-embed", dim: 8 },
     },
     search: {
       channels: [Channels.fts({ fields: ["title"], weight: 1 })],

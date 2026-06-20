@@ -1,7 +1,7 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels, s } from "../../sdk/src/index.ts";
+import { collection, f, Channels, gates, pipeline, stage, s } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed } from "./fixtures.ts";
@@ -16,8 +16,21 @@ const spacesProductsCollection = collection("products", {
     price: f.number({ filterable: true }),
     category: f.text({ filterable: true }),
   },
+  indexing: {
+    surfaces: {
+      embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+      fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+    },
+    gate: gates.always,
+  },
+  enrich: pipeline(
+    stage("classify", {
+      prompt: (ctx) => `classify ${ctx.data.title}`,
+      schema: () => ({ type: "object" }),
+    })
+  ),
   embeddings: {
-    doc: { source: "$title", model: "test-embed", dim: 8, taskType: "RETRIEVAL_QUERY" },
+    doc: { model: "test-embed", dim: 8, taskType: "RETRIEVAL_QUERY" },
   },
   spaces: {
     style: s.text({ source: "$title", model: "test-embed", dim: 8 }),
@@ -51,6 +64,7 @@ describeIf("spaces search integration", () => {
       apiKey: "test-api-key-12345",
       migrate: "eager",
       embed: async ({ text, dim }) => stubEmbed(text, dim),
+      generate: async () => ({}),
     });
     await matcher.migrate();
     const r = await matcher.apply(projectSlug, {
@@ -100,6 +114,7 @@ describeIf("spaces search integration", () => {
     }
     await close();
 
+    await matcher.enrich(projectSlug, "products");
     await matcher.index(projectSlug, "products");
   }, 60_000);
 
@@ -171,8 +186,15 @@ describeIf("legacy collection without spaces", () => {
 
   const legacyCollection = collection("legacy", {
     fields: { title: f.text({ searchable: true }) },
+    indexing: {
+      surfaces: {
+        embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+        fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+      },
+      gate: gates.always,
+    },
     embeddings: {
-      doc: { source: "$title", model: "test-embed", dim: 8 },
+      doc: { model: "test-embed", dim: 8 },
     },
     search: {
       channels: [
