@@ -1,7 +1,7 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels } from "../../sdk/src/index.ts";
+import { collection, f, Channels, pipeline, stage } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import {
@@ -176,5 +176,109 @@ describeIf("embed-index integration", () => {
     await close2();
     expect(rows[0]!.brand).toBe("hm");
     expect(rows[0]!.colors).toEqual(["blue"]);
+  });
+});
+
+describeIf("embed-index indexing path", () => {
+  const projectSlug = `t_${Math.random().toString(36).slice(2, 10)}`;
+  let schemaName = "";
+  let matcher: ReturnType<typeof createMatcher>;
+
+  const indexingCollection = collection("products", {
+    fields: { title: f.text({ searchable: true }) },
+    enrich: pipeline(
+      stage("classify", {
+        prompt: (ctx) => `classify ${ctx.data.title}`,
+        schema: () => ({ type: "object" }),
+      })
+    ),
+    indexing: {
+      surfaces: {
+        embed_doc: {
+          kind: "dense",
+          embedding: "doc",
+          build: ({ data }) => `${data.title} persisted-doc`.trim(),
+        },
+      },
+      gate: ({ data }) =>
+        String(data.title ?? "").includes("Skip")
+          ? { index: false, reason: "skipped" }
+          : { index: true },
+    },
+    embeddings: {
+      doc: { source: "$title should-not-be-used", model: "test-embed", dim: 8 },
+    },
+    search: {
+      channels: [Channels.cosine({ embedding: "doc", weight: 1 })],
+    },
+  });
+
+  beforeAll(async () => {
+    matcher = createMatcher({
+      databaseUrl: databaseUrl!,
+      apiKey: "test-api-key-12345",
+      migrate: "eager",
+      embed: async ({ text, dim }) => stubEmbed(text, dim),
+      generate: async () => ({}),
+    });
+    await matcher.migrate();
+    schemaName = (
+      await matcher.apply(projectSlug, { entities: [], collections: [indexingCollection] })
+    ).schema;
+    await matcher.pushDocuments(projectSlug, "products", [
+      { id: "ready", data: { title: "Ready Item", content_hash: "r1" } },
+      { id: "skip", data: { title: "Skip Item", content_hash: "s1" } },
+    ]);
+    await matcher.enrich(projectSlug, "products");
+  });
+
+  afterAll(async () => {
+    if (schemaName) {
+      const { db, close } = createDbFromUrl(databaseUrl!);
+      await db.execute(sql.raw(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`));
+      await close();
+    }
+    if (matcher) await matcher.close();
+  });
+
+  test("ready rows indexed from persisted doc; quarantined never indexed", async () => {
+    const { db: dbPre, close: closePre } = createDbFromUrl(databaseUrl!);
+    const pre = await dbPre.execute<{ id: string; pipeline_status: string; doc: string | null }>(sql.raw(`
+      SELECT id, pipeline_status, doc FROM ${schemaName}.c_products ORDER BY id
+    `));
+    await closePre();
+    expect(pre.find((r) => r.id === "ready")!.pipeline_status).toBe("ready");
+    expect(pre.find((r) => r.id === "skip")!.pipeline_status).toBe("quarantined");
+
+    const r = await matcher.index(projectSlug, "products");
+    expect(r.indexed).toBe(1);
+
+    const { db, close } = createDbFromUrl(databaseUrl!);
+    const rows = await db.execute<{
+      id: string;
+      doc: string | null;
+      embedding: string | null;
+      indexed_at: string | null;
+      pipeline_status: string;
+    }>(sql.raw(`
+      SELECT id, doc, embedding::text AS embedding, indexed_at, pipeline_status
+      FROM ${schemaName}.c_products
+      WHERE id IN ('ready', 'skip')
+      ORDER BY id
+    `));
+    await close();
+
+    const ready = rows.find((x) => x.id === "ready")!;
+    const skip = rows.find((x) => x.id === "skip")!;
+
+    expect(ready.doc).toBe("Ready Item persisted-doc");
+    expect(ready.embedding).toBeTruthy();
+    expect(ready.indexed_at).toBeTruthy();
+    expect(ready.pipeline_status).toBe("ready");
+
+    expect(skip.doc).toBe("Skip Item persisted-doc");
+    expect(skip.embedding).toBeNull();
+    expect(skip.indexed_at).toBeNull();
+    expect(skip.pipeline_status).toBe("quarantined");
   });
 });

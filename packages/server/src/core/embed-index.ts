@@ -71,6 +71,10 @@ function hasEnrichPipeline(def: CollectionDef): boolean {
   return !!enrich?.stages?.length;
 }
 
+function hasIndexing(def: CollectionDef): boolean {
+  return !!def.indexing?.surfaces && typeof def.indexing.gate === "function";
+}
+
 function hasSpaces(def: CollectionDef): boolean {
   return !!def.spaces && Object.keys(def.spaces).length > 0;
 }
@@ -278,14 +282,17 @@ export function makeEmbedIndexService(
     const table = collectionTableName(project.schema_name, collectionName);
     const limit = opts?.limit ?? 100_000;
     const needsEnrich = hasEnrichPipeline(def);
+    const usesIndexing = hasIndexing(def);
 
-    const staleClause = needsEnrich
-      ? "enriched_at IS NOT NULL AND (indexed_at IS NULL OR indexed_at < enriched_at)"
-      : "indexed_at IS NULL OR (enriched_at IS NOT NULL AND indexed_at < enriched_at)";
+    const staleClause = usesIndexing
+      ? "pipeline_status = 'ready' AND enriched_at IS NOT NULL AND (indexed_at IS NULL OR indexed_at < enriched_at)"
+      : needsEnrich
+        ? "enriched_at IS NOT NULL AND (indexed_at IS NULL OR indexed_at < enriched_at)"
+        : "indexed_at IS NULL OR (enriched_at IS NOT NULL AND indexed_at < enriched_at)";
     const spaceBackfill = hasSpace ? " OR space_vec IS NULL" : "";
 
     const pending = await getPgClient(ctx.db, "embed-index").unsafe(
-      `SELECT id, data, enriched, ingested_at FROM ${table}
+      `SELECT id, data, enriched, ingested_at, doc FROM ${table}
        WHERE (${staleClause}${spaceBackfill})
        ORDER BY id LIMIT $1`,
       [limit]
@@ -336,7 +343,7 @@ export function makeEmbedIndexService(
 
         const rowId = String(row.id);
 
-        if (needsEnrich && enriched) {
+        if (needsEnrich && enriched && !usesIndexing) {
           const isApparel = enriched.is_apparel_product ?? enriched.is_apparel;
           if (isApparel === false || enriched.category === "other") {
             await markIndexSkipped(rowId);
@@ -345,8 +352,13 @@ export function makeEmbedIndexService(
         }
 
         if (embDef) {
-          let docText = resolveEmbedTemplate(embDef.source, data, enriched).trim();
-          if (!docText) docText = String(data.title ?? "").trim();
+          let docText: string;
+          if (usesIndexing) {
+            docText = String(row.doc ?? "").trim();
+          } else {
+            docText = resolveEmbedTemplate(embDef.source, data, enriched).trim();
+            if (!docText) docText = String(data.title ?? "").trim();
+          }
           if (!docText) {
             ctx.observability.log("warn", "embed-index", "skipping doc — empty embedding document", {
               docId: rowId,
