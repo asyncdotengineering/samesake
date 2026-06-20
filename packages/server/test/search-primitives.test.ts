@@ -1,7 +1,7 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels, type CollectionDef } from "../../sdk/src/index.ts";
+import { collection, f, Channels, gates, type CollectionDef } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed } from "./fixtures.ts";
@@ -15,7 +15,14 @@ const prims = collection("products", {
     style_id: f.text({ filterable: true }),
     rank: f.number({ filterable: true }),
   },
-  embeddings: { doc: { source: "$title", model: "test-embed", dim: 8 } },
+  indexing: {
+    surfaces: {
+      embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+      fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+    },
+    gate: gates.always,
+  },
+  embeddings: { doc: { model: "test-embed", dim: 8 } },
   search: {
     channels: [
       Channels.fts({ fields: ["title"], weight: 1 }),
@@ -34,8 +41,12 @@ const DOCS = [
   { id: "5", title: "blue denim jacket", style_id: "S3", rank: 5 },
 ];
 
-function indexInto(matcher: ReturnType<typeof createMatcher>, slug: string) {
-  return matcher.indexDocuments(
+async function indexInto(
+  matcher: ReturnType<typeof createMatcher>,
+  slug: string,
+  schemaName: string
+) {
+  await matcher.indexDocuments(
     slug,
     "products",
     DOCS.map((d) => ({
@@ -46,6 +57,9 @@ function indexInto(matcher: ReturnType<typeof createMatcher>, slug: string) {
       fields: { title: d.title, style_id: d.style_id, rank: d.rank },
     }))
   );
+  const { db, close } = createDbFromUrl(databaseUrl!);
+  await db.execute(sql.raw(`UPDATE ${schemaName}.c_products SET fts_src = doc WHERE doc IS NOT NULL`));
+  await close();
 }
 
 describeIf("search primitives", () => {
@@ -65,7 +79,7 @@ describeIf("search primitives", () => {
     });
     await matcher.migrate();
     schemaName = (await matcher.apply(slug, { entities: [], collections: [prims] })).schema;
-    await indexInto(matcher, slug);
+    await indexInto(matcher, slug, schemaName);
 
     // A second matcher wired with a deterministic reranker: lower `rank` field = better.
     matcherR = createMatcher({
@@ -78,8 +92,8 @@ describeIf("search primitives", () => {
     });
     await matcherR.migrate();
     schemaNameR = (await matcherR.apply(slugR, { entities: [], collections: [prims] })).schema;
-    await indexInto(matcherR, slugR);
-  });
+    await indexInto(matcherR, slugR, schemaNameR);
+  }, 60_000);
 
   afterAll(async () => {
     const { db, close } = createDbFromUrl(databaseUrl!);

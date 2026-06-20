@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import type { EmbedRequest } from "../src/types.ts";
 import { collection, f, Channels, s } from "../../sdk/src/index.ts";
+import { spaceOnlyIndexing } from "./fixtures.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { fetchRemoteImageSafe, __setImageTransport } from "../src/core/fetch-image.ts";
@@ -203,6 +204,7 @@ describe("encodeImage", () => {
 
 const imageSpacesCollection = collection("products", {
   fields: { title: f.text({ searchable: true }) },
+  indexing: spaceOnlyIndexing,
   spaces: {
     style: s.text({ source: "$title", model: "test-text", dim: 8 }),
     visual: s.image({ source: "$image_url", model: "test-img", dim: 8 }),
@@ -356,6 +358,7 @@ describeIf("image space cross-modal search", () => {
 
 const capabilityCollection = collection("products", {
   fields: { title: f.text({ searchable: true }) },
+  indexing: spaceOnlyIndexing,
   spaces: {
     visual: s.image({ source: "$image_url", model: "text-only-embed", dim: 8 }),
   },

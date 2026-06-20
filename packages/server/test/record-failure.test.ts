@@ -1,7 +1,7 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels } from "../../sdk/src/index.ts";
+import { collection, f, Channels, gates } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { makeCollectionsSchemaGen } from "../src/core/collections-schema-gen.ts";
@@ -21,7 +21,14 @@ const describeIf = databaseUrl ? describe : describe.skip;
 
 const baseCollection = collection("products", {
   fields: { title: f.text({ searchable: true }) },
-  embeddings: { doc: { source: "$title", model: "test-embed", dim: 8 } },
+  indexing: {
+    surfaces: {
+      embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+      fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+    },
+    gate: gates.always,
+  },
+  embeddings: { doc: { model: "test-embed", dim: 8 } },
   search: { channels: [Channels.fts({ fields: ["title"], weight: 1 })] },
 });
 

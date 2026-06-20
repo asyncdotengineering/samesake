@@ -66,6 +66,20 @@ export const nlqSchemaFixtureCollection = collection("nlq_fixture", {
   },
 }) as CollectionDef & { name: string };
 
+/** FTS-only indexing for collections without dense embeddings (spaces + FTS search). */
+export const ftsIndexingByTitle = {
+  surfaces: {
+    fts_doc: { kind: "fts" as const, build: ({ data }: { data: Record<string, unknown> }) => String(data.title ?? "").trim() },
+  },
+  gate: gates.always,
+};
+
+/** Minimal indexing for spaces-only collections (no FTS / dense channels). */
+export const spaceOnlyIndexing = {
+  surfaces: {},
+  gate: gates.always,
+};
+
 export function stubEmbed(text: string | undefined, dim: number): number[] {
   const t = text ?? "";
   const out = new Array(dim).fill(0);
