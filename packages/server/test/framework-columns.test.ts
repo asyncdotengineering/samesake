@@ -161,6 +161,9 @@ describeIf("test:framework-columns-idempotent (REQ-15)", () => {
     await db0.execute(sql.raw(`
       UPDATE ${schemaName}.c_products SET title = data->>'title' WHERE id = 'fts1'
     `));
+    await db0.execute(sql.raw(`
+      UPDATE ${schemaName}.c_products SET fts_src = data->>'title' WHERE id = 'fts1'
+    `));
     await close0();
     await matcher.apply(projectSlug, { entities: [], collections: [testProductsCollection] });
 

@@ -1,7 +1,7 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels } from "../../sdk/src/index.ts";
+import { collection, f, Channels, gates, pipeline, stage } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { inProcessRunner } from "../src/jobs/in-process.ts";
@@ -36,6 +36,7 @@ describePgBoss("JobRunner pg-boss smoke", () => {
       migrate: "eager",
       embed: async ({ text, dim }) => stubEmbed(text, dim),
       jobs: runner,
+      generate: async () => ({}),
     });
     await matcher.migrate();
     schemaName = (
@@ -44,7 +45,20 @@ describePgBoss("JobRunner pg-boss smoke", () => {
         collections: [
           collection("products", {
             fields: { title: f.text({ searchable: true }) },
-            embeddings: { doc: { source: "$title", model: "test-embed", dim: 8 } },
+            enrich: pipeline(
+              stage("classify", {
+                prompt: (ctx) => `classify ${ctx.data.title}`,
+                schema: () => ({ type: "object" }),
+              })
+            ),
+            indexing: {
+              surfaces: {
+                embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+                fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+              },
+              gate: gates.always,
+            },
+            embeddings: { doc: { model: "test-embed", dim: 8 } },
             search: { channels: [Channels.fts({ fields: ["title"], weight: 1 })] },
           }),
         ],
@@ -66,6 +80,7 @@ describePgBoss("JobRunner pg-boss smoke", () => {
   });
 
   test("index via pgBossRunner completes with same result shape", async () => {
+    await matcher.enrich(projectSlug, "products");
     expect(await matcher.index(projectSlug, "products")).toEqual({ indexed: 1 });
   });
 });
@@ -106,7 +121,14 @@ describeIf("enrich routes through JobRunner", () => {
                 },
               ],
             },
-            embeddings: { doc: { source: "$title", model: "test-embed", dim: 8 } },
+            indexing: {
+              surfaces: {
+                embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+                fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+              },
+              gate: gates.always,
+            },
+            embeddings: { doc: { model: "test-embed", dim: 8 } },
             search: { channels: [Channels.fts({ fields: ["title"], weight: 1 })] },
           }),
         ],

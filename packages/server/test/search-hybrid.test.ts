@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed, testProductsCollection } from "./fixtures.ts";
-import { collection, f, Channels, s } from "../../sdk/src/index.ts";
+import { collection, f, Channels, gates, s } from "../../sdk/src/index.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
@@ -69,6 +69,11 @@ describeIf("hybrid search", () => {
         },
       }))
     );
+    const { db, close } = createDbFromUrl(databaseUrl!);
+    await db.execute(sql.raw(`
+      UPDATE ${schemaName}.c_products SET fts_src = title
+    `));
+    await close();
   }, 20_000);
 
   afterAll(async () => {
@@ -214,8 +219,15 @@ describeIf("test:search-excludes-quarantined", () => {
       title: f.text({ searchable: true }),
       brand: f.text({ filterable: true }),
     },
+    indexing: {
+      surfaces: {
+        embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+        fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+      },
+      gate: gates.always,
+    },
     embeddings: {
-      doc: { source: "$title", model: "test-embed", dim: 8 },
+      doc: { model: "test-embed", dim: 8 },
     },
     spaces: {
       style: s.text({ source: "$title", model: "test-embed", dim: 8 }),
