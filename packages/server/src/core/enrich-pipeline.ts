@@ -7,6 +7,11 @@ import { makeStageCacheService } from "../db/stage-cache.ts";
 import { fetchRemoteImageSafe } from "./fetch-image.ts";
 import { callWithRetry } from "./policy.ts";
 import { collectionTableName, getPgClient } from "./db-utils.ts";
+import {
+  assertErrorRateWithinLimit,
+  recordPipelineFailure,
+  type ErrorRateOpts,
+} from "./pipeline-failure.ts";
 import { normalizeSchema } from "./schema-input.ts";
 
 function isPipeline(def: CollectionDef["enrich"]): def is PipelineDef {
@@ -182,17 +187,7 @@ export function makeEnrichPipelineService(
   }
 
   async function recordFailure(table: string, rowId: string, error: unknown): Promise<void> {
-    const msg = (error instanceof Error ? error.message : String(error)).slice(0, 500);
-    await getPgClient(ctx.db, "enrich").unsafe(
-      `UPDATE ${table}
-       SET attempt_count = attempt_count + 1,
-           last_error = $1,
-           pipeline_status = 'failed',
-           next_attempt_at = now() + make_interval(secs => LEAST(3600, power(2, attempt_count)::int)),
-           updated_at = now()
-       WHERE id = $2`,
-      [msg, rowId]
-    );
+    await recordPipelineFailure(ctx, table, rowId, error);
   }
 
   async function enrichOne(
@@ -276,7 +271,7 @@ export function makeEnrichPipelineService(
   async function enrichCollection(
     projectSlug: string,
     collectionName: string,
-    opts?: { concurrency?: number; limit?: number }
+    opts?: { concurrency?: number; limit?: number } & ErrorRateOpts
   ): Promise<{ enriched: number; skipped: number; failed: number }> {
     return ctx.jobs.run(
       `enrich:${projectSlug}:${collectionName}`,
@@ -288,7 +283,7 @@ export function makeEnrichPipelineService(
   async function runEnrichCollection(
     projectSlug: string,
     collectionName: string,
-    opts?: { concurrency?: number; limit?: number }
+    opts?: { concurrency?: number; limit?: number } & ErrorRateOpts
   ): Promise<{ enriched: number; skipped: number; failed: number }> {
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
@@ -359,7 +354,12 @@ export function makeEnrichPipelineService(
     let enriched = 0;
     let skipped = 0;
     let failed = 0;
+    let processed = 0;
     let idx = 0;
+    const errorRateOpts: ErrorRateOpts = {
+      maxErrorRate: opts?.maxErrorRate,
+      minSamples: opts?.minSamples,
+    };
 
     await Promise.all(
       Array.from({ length: concurrency }, async () => {
@@ -381,10 +381,16 @@ export function makeEnrichPipelineService(
               collectionName,
               fewShot
             );
+            processed++;
             if (ok) enriched++;
-            else skipped++;
+            else {
+              failed++;
+              assertErrorRateWithinLimit(processed, failed, errorRateOpts);
+            }
           } catch {
+            processed++;
             failed++;
+            assertErrorRateWithinLimit(processed, failed, errorRateOpts);
           }
         }
       })
