@@ -1,6 +1,7 @@
 import type { CollectionDef, ConstraintTrace, SearchMode, SearchWeightsInput } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import { mergeBlendedRerank, rerankCandidateText } from "./rerank.ts";
+import { applyRankingPolicy } from "./ranking.ts";
 import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
 import { computeFacets } from "./facets.ts";
@@ -879,6 +880,10 @@ export function makeSearchService(
     if (wantDiversify && variantGroup) result.hits = diversifyHits(result.hits, variantGroup);
     if (wantRerank && result.hits.length > 1) {
       result.hits = await rerankHits(retrieval.q, opts.image, result.hits, limit);
+    }
+    const rankingPolicy = retrieval.def.search?.rankingPolicy;
+    if (rankingPolicy && result.hits.length > 0) {
+      result.hits = applyRankingPolicy(result.hits, rankingPolicy).hits;
     }
     if (result.hits.length > limit) result.hits = result.hits.slice(0, limit);
     result.took_ms = Date.now() - t0;
