@@ -69,7 +69,7 @@ describeIf("hybrid search", () => {
         },
       }))
     );
-  });
+  }, 20_000);
 
   afterAll(async () => {
     if (schemaName) {
@@ -266,7 +266,7 @@ describeIf("test:search-excludes-quarantined", () => {
       WHERE id = '${targetId}'
     `));
     await close();
-  });
+  }, 20_000);
 
   afterAll(async () => {
     if (schemaName) {

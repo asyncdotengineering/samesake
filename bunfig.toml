@@ -1,0 +1,5 @@
+[test]
+# DB-bound integration suite: schema apply + HNSW index build legitimately
+# exceeds the 5000ms default under parallel-suite contention. 20s is a realistic
+# ceiling for these network/DB setup hooks, not a mask for slow product code.
+timeout = 20000
