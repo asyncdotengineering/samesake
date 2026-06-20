@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import { collection, f, Channels } from "@samesake/core";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
-import { stubEmbed } from "./fixtures.ts";
+import { denseAndFtsIndexingByTitle, stubEmbed } from "./fixtures.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
@@ -14,7 +14,8 @@ const budgetCollection = collection("items", {
     title: f.text({ searchable: true }),
     price: f.number({ filterable: true, budget: true }),
   },
-  embeddings: { doc: { source: "$title", model: "stub", dim: 8 } },
+  indexing: denseAndFtsIndexingByTitle,
+  embeddings: { doc: { model: "stub", dim: 8 } },
   search: {
     channels: [
       Channels.fts({ fields: ["title"], weight: 1 }),

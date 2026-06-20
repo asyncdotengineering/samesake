@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import { collection, entity, fields, f, Channels, IdentError } from "@samesake/core";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
-import { stubEmbed } from "./fixtures.ts";
+import { ftsIndexingByTitle, spaceOnlyIndexing, stubEmbed } from "./fixtures.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
@@ -12,7 +12,7 @@ const describeIf = databaseUrl ? describe : describe.skip;
 describe("identifier validation at SDK factories", () => {
   test("collection rejects invalid name", () => {
     expect(() =>
-      collection("a-b", { fields: { x: f.text() }, search: { channels: [] } })
+      collection("a-b", { fields: { x: f.text() }, indexing: spaceOnlyIndexing, search: { channels: [] } })
     ).toThrow(IdentError);
   });
 
@@ -30,6 +30,7 @@ describe("identifier validation at SDK factories", () => {
     expect(() =>
       collection("products", {
         fields: { Foo: f.text(), foo: f.text() },
+        indexing: spaceOnlyIndexing,
         search: { channels: [] },
       })
     ).toThrow(IdentError);
@@ -92,6 +93,7 @@ describeIf("identifier validation at apply", () => {
       collections: [
         collection("valid_one", {
           fields: { t: f.text({ searchable: true }) },
+          indexing: ftsIndexingByTitle,
           search: { channels: [Channels.fts({ fields: ["t"], weight: 1 })] },
         }),
       ],

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { collection, f, Channels } from "@samesake/core";
 import { buildFilterSql } from "../src/core/search.ts";
 import { normalizeFiltersToConstraintPredicates } from "../src/core/search-filter.ts";
-import { testProductsCollection } from "./fixtures.ts";
+import { ftsIndexingByTitle, testProductsCollection } from "./fixtures.ts";
 
 const def = testProductsCollection;
 
@@ -128,6 +128,7 @@ describe("buildFilterSql alsoMatch (regression: 42P18 duplicate param index)", (
       title: f.text({ searchable: true }),
       gender: f.enum(["women", "men", "kids"], { filterable: true, alsoMatch: ["unisex"] }),
     },
+    indexing: ftsIndexingByTitle,
     search: { channels: [Channels.fts({ fields: ["title"], weight: 1 })] },
   });
 

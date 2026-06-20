@@ -66,6 +66,22 @@ export const nlqSchemaFixtureCollection = collection("nlq_fixture", {
   },
 }) as CollectionDef & { name: string };
 
+/** Dense doc + FTS indexing keyed on title (typical stub-embed test collections). */
+export const denseAndFtsIndexingByTitle = {
+  surfaces: {
+    embed_doc: {
+      kind: "dense" as const,
+      embedding: "doc",
+      build: ({ data }: { data: Record<string, unknown> }) => String(data.title ?? "").trim(),
+    },
+    fts_doc: {
+      kind: "fts" as const,
+      build: ({ data }: { data: Record<string, unknown> }) => String(data.title ?? "").trim(),
+    },
+  },
+  gate: gates.always,
+};
+
 /** FTS-only indexing for collections without dense embeddings (spaces + FTS search). */
 export const ftsIndexingByTitle = {
   surfaces: {
