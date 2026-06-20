@@ -4,7 +4,7 @@
 // Run:  bun --env-file=.env scripts/r2-upload-smoke.ts
 import { uploadPublicImage } from "../lib/blob";
 import { getMatcher, products, COLLECTION } from "../lib/samesake";
-import { composeEmbedDocs, readExtractedAttrs } from "../lib/embed-doc";
+import { readExtractedAttrs } from "../lib/extracted-attrs";
 
 const SAMPLE = "https://cdn.shopify.com/s/files/1/0020/1732/9251/files/CopyofPRO_3097.jpg?v=1774424761"; // red dress
 const PROJECT = "r2smoke"; // fresh project so the smoke doesn't migrate the real playground schema
@@ -19,14 +19,13 @@ async function main() {
   for (let i = 0; i < 8; i++) { pub = (await fetch(url, { method: "HEAD" })).status; if (pub === 200) break; await new Promise((r) => setTimeout(r, 4000)); }
   console.log("public fetch:", pub);
 
-  // 2) push → enrich → compose → index
+  // 2) push → enrich → index
   const matcher = getMatcher();
   await matcher.migrate();
   const applied = await matcher.apply(PROJECT, { entities: [], collections: [products] });
   const id = "r2-smoke-red-dress";
   await matcher.pushDocuments(PROJECT, COLLECTION, [{ id, data: { title: "Uploaded Red Dress", brand: "smoke", price: 0, available: true, image_url: url } }]);
   for (let i = 0; i < 5; i++) { const e = await matcher.enrich(PROJECT, COLLECTION, { concurrency: 2, limit: 3 }); if (e.enriched === 0) break; }
-  await composeEmbedDocs(applied.schema);
   while ((await matcher.index(PROJECT, COLLECTION, { limit: 10 })).indexed > 0) {}
 
   // 3) extracted attrs + search

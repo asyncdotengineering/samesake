@@ -1,10 +1,10 @@
 import { getMatcher, products, PROJECT, COLLECTION } from "@/lib/samesake";
-import { composeEmbedDocs, readExtractedAttrs } from "@/lib/embed-doc";
+import { readExtractedAttrs } from "@/lib/extracted-attrs";
 import { uploadPublicImage } from "@/lib/blob";
 
 // Batch upload → enrich → index → searchable. Runs the samesake fashion pipeline end-to-end:
-// host each image publicly, push as products, enrich (classify+extract), compose the search doc,
-// index, then return the LLM-extracted attributes so the UI can show what the pipeline derived.
+// host each image publicly, push as products, enrich (classify+extract), index, then return
+// the LLM-extracted attributes so the UI can show what the pipeline derived.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     return Response.json({ error: e instanceof Error ? e.message : "image hosting failed" }, { status: 500 });
   }
 
-  // 2) push → enrich (classify + extract, image-aware) → compose embed_doc → index.
+  // 2) push → enrich (classify + extract, image-aware) → index.
   const matcher = getMatcher();
   await matcher.migrate();
   const applied = await matcher.apply(PROJECT, { entities: [], collections: [products] });
@@ -43,7 +43,6 @@ export async function POST(req: Request) {
     const e = await matcher.enrich(PROJECT, COLLECTION, { concurrency: 4, limit: docs.length });
     if (e.enriched === 0) break;
   }
-  await composeEmbedDocs(applied.schema);
   while ((await matcher.index(PROJECT, COLLECTION, { limit: 50 })).indexed > 0) {}
 
   // 3) return the extracted attributes (now also searchable in the storefront).
