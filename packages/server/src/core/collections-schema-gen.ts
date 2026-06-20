@@ -23,7 +23,7 @@ function fieldSqlType(def: CollectionFieldDef): string {
   }
 }
 
-function ftsExpression(fields: Record<string, CollectionFieldDef>): string {
+function ftsTextExpression(fields: Record<string, CollectionFieldDef>): string {
   const parts: string[] = [];
   for (const [name, def] of Object.entries(fields)) {
     if (def.type === "text" && def.searchable) {
@@ -33,6 +33,11 @@ function ftsExpression(fields: Record<string, CollectionFieldDef>): string {
   parts.push(`coalesce(doc, '')`);
   if (parts.length === 1) return parts[0]!;
   return parts.join(" || ' ' || ");
+}
+
+function ftsGeneratedColumnDdl(fields: Record<string, CollectionFieldDef>): string {
+  const fallback = ftsTextExpression(fields);
+  return `fts tsvector GENERATED ALWAYS AS (to_tsvector('english', CASE WHEN fts_src IS NOT NULL THEN coalesce(fts_src, '') ELSE ${fallback} END)) STORED`;
 }
 
 export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
@@ -75,7 +80,6 @@ export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
     const spaceVecCol =
       spaceDimTotal > 0 ? `,\n        space_vec vector(${spaceDimTotal})` : "";
 
-    const ftsExpr = ftsExpression(c.fields);
     const stmts: string[] = [];
 
     stmts.push(`
@@ -85,7 +89,10 @@ export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
         enriched jsonb,
         content_hash text NOT NULL,
 ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
-        fts tsvector GENERATED ALWAYS AS (to_tsvector('english', ${ftsExpr})) STORED,
+        rerank_doc text,
+        fts_src text,
+        gate_reason text,
+        ${ftsGeneratedColumnDdl(c.fields)},
         embedding vector(${embedDim})${spaceVecCol},
         ingested_at timestamptz NOT NULL DEFAULT now(),
         enriched_at timestamptz,
@@ -124,18 +131,55 @@ ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
     return stmts;
   }
 
-  function ensureCollectionSystemColumns(schema: string, collectionName: string): string[] {
+  function ensureCollectionSystemColumns(
+    schema: string,
+    collectionName: string,
+    def?: CollectionDef
+  ): string[] {
     const coll = sanitiseIdent(collectionName);
     const table = `${schema}.c_${coll}`;
-    return [
+    const stmts: string[] = [
       `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS pipeline_status text NOT NULL DEFAULT 'pending';`,
       `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS attempt_count int NOT NULL DEFAULT 0;`,
       `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS last_error text;`,
       `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS next_attempt_at timestamptz;`,
       `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS image_etag text;`,
       `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS image_checked_at timestamptz;`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS rerank_doc text;`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS fts_src text;`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS gate_reason text;`,
       `UPDATE ${table} SET pipeline_status='ready' WHERE pipeline_status='pending' AND (indexed_at IS NOT NULL OR enriched_at IS NOT NULL);`,
     ];
+
+    if (def) {
+      const ftsText = ftsTextExpression(def.fields);
+      const ftsGen = ftsGeneratedColumnDdl(def.fields);
+      stmts.push(`UPDATE ${table} SET fts_src = ${ftsText} WHERE fts_src IS NULL;`);
+      stmts.push(`
+        DO $migrate_fts$
+        BEGIN
+          IF EXISTS (
+            SELECT 1
+            FROM pg_attribute a
+            JOIN pg_class c ON c.oid = a.attrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+            WHERE n.nspname = '${schema}'
+              AND c.relname = 'c_${coll}'
+              AND a.attname = 'fts'
+              AND a.attgenerated = 's'
+              AND COALESCE(pg_get_expr(d.adbin, d.adrelid), '') NOT LIKE '%fts_src%'
+          ) THEN
+            EXECUTE 'DROP INDEX IF EXISTS c_${coll}_fts_idx';
+            EXECUTE 'ALTER TABLE ${table} DROP COLUMN fts';
+            EXECUTE 'ALTER TABLE ${table} ADD COLUMN ${ftsGen.replace(/'/g, "''")}';
+            EXECUTE 'CREATE INDEX IF NOT EXISTS c_${coll}_fts_idx ON ${table} USING gin (fts)';
+          END IF;
+        END $migrate_fts$;
+      `);
+    }
+
+    return stmts;
   }
 
   function generateCollectionsDDL(

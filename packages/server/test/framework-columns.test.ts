@@ -17,6 +17,12 @@ const FRAMEWORK_COLUMNS = [
   { name: "image_checked_at", dataType: "timestamp with time zone", nullable: "YES", default: null },
 ] as const;
 
+const SURFACE_COLUMNS = [
+  { name: "rerank_doc", dataType: "text", nullable: "YES", default: null },
+  { name: "fts_src", dataType: "text", nullable: "YES", default: null },
+  { name: "gate_reason", dataType: "text", nullable: "YES", default: null },
+] as const;
+
 describeIf("test:framework-columns-idempotent (REQ-15)", () => {
   const projectSlug = `t_${Math.random().toString(36).slice(2, 10)}`;
   let schemaName = "";
@@ -120,5 +126,60 @@ describeIf("test:framework-columns-idempotent (REQ-15)", () => {
     expect(byId.indexed).toBe("ready");
     expect(byId.enriched).toBe("ready");
     expect(byId.fresh).toBe("pending");
+  });
+
+  test("fresh apply creates indexing surface columns", async () => {
+    const { db, close } = createDbFromUrl(databaseUrl!);
+    const rows = await db.execute<{
+      column_name: string;
+      data_type: string;
+      is_nullable: string;
+      column_default: string | null;
+    }>(sql`
+      SELECT column_name, data_type, is_nullable, column_default
+      FROM information_schema.columns
+      WHERE table_schema = ${schemaName}
+        AND table_name = 'c_products'
+        AND column_name IN ('rerank_doc', 'fts_src', 'gate_reason')
+      ORDER BY column_name
+    `);
+    await close();
+    expect(rows.length).toBe(3);
+    for (const expected of SURFACE_COLUMNS) {
+      const col = rows.find((r) => r.column_name === expected.name);
+      expect(col).toBeDefined();
+      expect(col!.data_type).toBe(expected.dataType);
+      expect(col!.is_nullable).toBe(expected.nullable);
+    }
+  });
+
+  test("fts column derives from fts_src and backfill preserves searchability", async () => {
+    await matcher.pushDocuments(projectSlug, "products", [
+      { id: "fts1", data: { title: "Linen Blazer", brand: "zara", price: 120, content_hash: "fts1" } },
+    ]);
+    const { db: db0, close: close0 } = createDbFromUrl(databaseUrl!);
+    await db0.execute(sql.raw(`
+      UPDATE ${schemaName}.c_products SET title = data->>'title' WHERE id = 'fts1'
+    `));
+    await close0();
+    await matcher.apply(projectSlug, { entities: [], collections: [testProductsCollection] });
+
+    const { db, close } = createDbFromUrl(databaseUrl!);
+    const gen = await db.execute<{ expr: string | null }>(sql.raw(`
+      SELECT pg_get_expr(d.adbin, d.adrelid) AS expr
+      FROM pg_attrdef d
+      JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+      JOIN pg_class c ON c.oid = a.attrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = '${schemaName}' AND c.relname = 'c_products' AND a.attname = 'fts'
+    `));
+    const row = await db.execute<{ fts_src: string | null; fts: string | null }>(sql.raw(`
+      SELECT fts_src, fts::text AS fts FROM ${schemaName}.c_products WHERE id = 'fts1'
+    `));
+    await close();
+
+    expect(gen[0]?.expr).toContain("fts_src");
+    expect(row[0]?.fts_src).toContain("Linen Blazer");
+    expect(row[0]?.fts).toBeTruthy();
   });
 });

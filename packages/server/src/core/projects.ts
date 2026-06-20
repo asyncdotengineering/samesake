@@ -176,7 +176,7 @@ export function makeProjectsService(
       ...createStmts,
       ...collectionMigrations.flatMap((m) => [...m.alterStatements, ...m.backfillStatements]),
       ...(config.collections ?? []).flatMap((c) =>
-        c.name ? collectionsSchemaGen.ensureCollectionSystemColumns(projectSchema, c.name) : []
+        c.name ? collectionsSchemaGen.ensureCollectionSystemColumns(projectSchema, c.name, c) : []
       ),
     ];
 
