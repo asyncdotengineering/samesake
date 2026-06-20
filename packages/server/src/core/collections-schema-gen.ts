@@ -90,7 +90,13 @@ ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
         ingested_at timestamptz NOT NULL DEFAULT now(),
         enriched_at timestamptz,
         indexed_at timestamptz,
-        updated_at timestamptz NOT NULL DEFAULT now()
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        pipeline_status text NOT NULL DEFAULT 'pending',
+        attempt_count int NOT NULL DEFAULT 0,
+        last_error text,
+        next_attempt_at timestamptz,
+        image_etag text,
+        image_checked_at timestamptz
       );
     `);
 
@@ -118,6 +124,20 @@ ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
     return stmts;
   }
 
+  function ensureCollectionSystemColumns(schema: string, collectionName: string): string[] {
+    const coll = sanitiseIdent(collectionName);
+    const table = `${schema}.c_${coll}`;
+    return [
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS pipeline_status text NOT NULL DEFAULT 'pending';`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS attempt_count int NOT NULL DEFAULT 0;`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS last_error text;`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS next_attempt_at timestamptz;`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS image_etag text;`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS image_checked_at timestamptz;`,
+      `UPDATE ${table} SET pipeline_status='ready' WHERE pipeline_status='pending' AND (indexed_at IS NOT NULL OR enriched_at IS NOT NULL);`,
+    ];
+  }
+
   function generateCollectionsDDL(
     projectSlug: string,
     collections: CollectionDef[]
@@ -130,7 +150,7 @@ ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
     return { projectSchema: schema, statements: stmts };
   }
 
-  return { projectSchemaName, collectionTableDDL, generateCollectionsDDL };
+  return { projectSchemaName, collectionTableDDL, ensureCollectionSystemColumns, generateCollectionsDDL };
 }
 
 export type CollectionsSchemaGen = ReturnType<typeof makeCollectionsSchemaGen>;
