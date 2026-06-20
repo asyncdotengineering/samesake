@@ -22,20 +22,34 @@ export interface NormalizedProduct {
   content_hash: string;
 }
 
-function contentHash(p: Omit<NormalizedProduct, "content_hash">): string {
-  return createHash("sha1")
-    .update(
-      [
-        p.title,
-        p.description,
-        p.price,
-        p.image_url,
-        p.available,
-        p.raw_type,
-        JSON.stringify(p.raw_tags),
-      ].join("|")
-    )
-    .digest("hex");
+export function imageVersionToken(fields: {
+  image_etag?: unknown;
+  image_updated_at?: unknown;
+  image_version?: unknown;
+}): string | null {
+  if (fields.image_etag != null && String(fields.image_etag)) return String(fields.image_etag);
+  if (fields.image_updated_at != null && String(fields.image_updated_at))
+    return String(fields.image_updated_at);
+  if (fields.image_version != null && String(fields.image_version))
+    return String(fields.image_version);
+  return null;
+}
+
+function contentHash(
+  p: Omit<NormalizedProduct, "content_hash">,
+  imageVersion?: string | null
+): string {
+  const parts = [
+    p.title,
+    p.description,
+    p.price,
+    p.image_url,
+    p.available,
+    p.raw_type,
+    JSON.stringify(p.raw_tags),
+  ];
+  if (imageVersion) parts.push(imageVersion);
+  return createHash("sha1").update(parts.join("|")).digest("hex");
 }
 
 export function normalizeShopify(
@@ -69,7 +83,7 @@ export function normalizeShopify(
       ((item.images as { src?: string }[] | undefined)?.[0]?.src as string | undefined) ?? null,
     url: `https://${store.domain}/products/${String(item.handle)}`,
   };
-  return { ...p, content_hash: contentHash(p) };
+  return { ...p, content_hash: contentHash(p, null) };
 }
 
 export function normalizeWoo(
@@ -99,7 +113,7 @@ export function normalizeWoo(
       ((item.images as { src?: string }[] | undefined)?.[0]?.src as string | undefined) ?? null,
     url: String(item.permalink),
   };
-  return { ...p, content_hash: contentHash(p) };
+  return { ...p, content_hash: contentHash(p, null) };
 }
 
 export function computeContentHash(data: Record<string, unknown>): string {
@@ -112,16 +126,24 @@ export function computeContentHash(data: Record<string, unknown>): string {
     raw_type: data.raw_type ?? null,
     raw_tags: Array.isArray(data.raw_tags) ? data.raw_tags : [],
   };
-  return contentHash({
-    title: String(p.title),
-    description: p.description != null ? String(p.description) : null,
-    price: p.price != null ? Number(p.price) : null,
-    currency: String(data.currency ?? ""),
-    image_url: p.image_url != null ? String(p.image_url) : null,
-    url: String(data.url ?? ""),
-    vendor: data.vendor != null ? String(data.vendor) : null,
-    raw_type: p.raw_type != null ? String(p.raw_type) : null,
-    raw_tags: p.raw_tags as string[],
-    available: Boolean(p.available),
+  const imageVersion = imageVersionToken({
+    image_etag: data.image_etag,
+    image_updated_at: data.image_updated_at,
+    image_version: data.image_version,
   });
+  return contentHash(
+    {
+      title: String(p.title),
+      description: p.description != null ? String(p.description) : null,
+      price: p.price != null ? Number(p.price) : null,
+      currency: String(data.currency ?? ""),
+      image_url: p.image_url != null ? String(p.image_url) : null,
+      url: String(data.url ?? ""),
+      vendor: data.vendor != null ? String(data.vendor) : null,
+      raw_type: p.raw_type != null ? String(p.raw_type) : null,
+      raw_tags: p.raw_tags as string[],
+      available: Boolean(p.available),
+    },
+    imageVersion
+  );
 }
