@@ -374,6 +374,23 @@ export interface ConnectorDef {
   options: Record<string, unknown>;
 }
 
+export interface DerivedDocContext {
+  readonly data: Record<string, unknown>;
+  readonly enriched: Record<string, unknown>;
+}
+
+export type DerivedDocDef =
+  | { kind: "dense"; build: (ctx: DerivedDocContext) => string; embedding: string }
+  | { kind: "rerank"; build: (ctx: DerivedDocContext) => string }
+  | { kind: "fts"; build: (ctx: DerivedDocContext) => string };
+
+export type IndexGate = (ctx: DerivedDocContext) => { index: boolean; reason?: string };
+
+export interface IndexingDef {
+  surfaces: Record<string, DerivedDocDef>;
+  gate: IndexGate;
+}
+
 export interface CollectionDef {
   name?: string;
   fields: Record<string, CollectionFieldDef>;
@@ -382,7 +399,19 @@ export interface CollectionDef {
   embeddings?: Record<string, CollectionEmbeddingDef>;
   spaces?: Record<string, SpaceDef>;
   search?: CollectionSearchDef;
+  indexing?: IndexingDef;
+  indexingManifest?: {
+    surfaces: Record<string, { kind: "dense" | "rerank" | "fts"; embedding?: string }>;
+  };
 }
+
+export interface AuthoredCollection extends CollectionDef {
+  indexing: IndexingDef;
+}
+
+export const gates = {
+  always: ((_ctx: DerivedDocContext) => ({ index: true })) satisfies IndexGate,
+};
 
 export type SearchWeightsInput<S extends string = string> = {
   fts?: number;

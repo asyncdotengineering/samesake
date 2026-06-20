@@ -48,6 +48,7 @@ import type {
   RecencySpaceDef,
   CategoricalSpaceDef,
   SpaceDef,
+  IndexingDef,
 } from "./types.ts";
 import { assertIdent, assertNoIdentCollisions } from "./ident.ts";
 
@@ -280,6 +281,7 @@ type CollectionInput<
   sources?: ConnectorDef[];
   embeddings?: TEmbeddings;
   spaces?: TSpaces;
+  indexing?: IndexingDef;
   search?: {
     channels: ReadonlyArray<
       TypedSearchChannel<
