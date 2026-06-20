@@ -1,4 +1,6 @@
+import type { GenerateFn, RerankFn } from "../types.ts";
 import type { SearchHit } from "./search.ts";
+import { makeLlmJudge } from "./eval/judge.ts";
 
 export interface RerankBlendWeights {
   head: number;
@@ -87,4 +89,18 @@ export function mergeBlendedRerank(
     }
   }
   return out;
+}
+
+export function fashionRerank(
+  generate: GenerateFn,
+  opts: { model?: string; version?: string; batchSize?: number; onError?: (msg: string) => void } = {}
+): RerankFn {
+  const judge = makeLlmJudge(generate, opts);
+  return async ({ query, candidates }) => {
+    const judged = await judge.grade(
+      query,
+      candidates.map((c) => ({ id: c.id, text: c.text, data: c.data }))
+    );
+    return judged.map((j) => ({ id: j.id, score: j.grade / 2 }));
+  };
 }
