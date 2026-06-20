@@ -4,12 +4,35 @@ All notable changes to samesake. Format roughly follows [Keep a Changelog](https
 
 ## [Unreleased] — indexing DSL breaking cutover
 
+### Added
+
+- **Pipeline lifecycle columns** — `pipeline_status`, `attempt_count`, `last_error`, `next_attempt_at`, `gate_reason`, `image_etag`, `image_checked_at` on collection rows; backfilled existing indexed rows to `ready` on apply.
+- **`recordFailure` / `retryFailed`** — durable failure tracking with exponential backoff; rows exceeding `maxAttempts` (default 5) move to `dead`; enrich runs abort when per-run error rate exceeds threshold (G6).
+- **Image content invalidation** — `content_hash` incorporates image validator tokens; `matcher.revalidateImages()` probes ETags, resets `indexed_at` (and `enriched_at` when vision stages consume images) on change; stage cache keys include image validator (G1).
+- **`revalidateImages` matcher method** — idempotent HEAD/ETag probe per `image_url`; pHash fallback when CDN strips validators.
+- **Blend-not-replace reranker** — position-aware fusion of first-stage RRF with reranker scores; `fashionRerank(generate)` default LLM judge reranker exported from `@samesake/server` (G4/G5).
+- **Multiplicative `rankingPolicy`** — core `search()` applies normalized relevance fusion (`relevance^α × availability × business × personalization`) with `minRelevanceFloor` and multiplicative `buryUnavailable`; hook on `CollectionSearchDef.rankingPolicy` (G7).
+- **Offline eval harness** — `matcher.runEval()` with graded facet-decomposed LLM judge, Hit@K/nDCG@K/MRR/null-rate/constraint-violation metrics, judge cache, JSON artifacts, and `thresholds → pass` CI gate; runnable via `examples/fashion-search/eval-judge.ts` (G8).
+- **Docs** — `apps/docs` guides: pipeline lifecycle, eval gate (floor/exponent tuning procedure); updated tuning, eval, integration, and build guides for the `indexing` DSL.
+
 ### Changed
 
 - **Breaking:** collection configs now declare `indexing` explicitly; `CollectionEmbeddingDef.source` and doc-template fallback behavior are removed.
 - **Breaking:** `fashion.composeEmbedDoc`, `fashion.embedDocSource`, and `FASHION_EMBED_DOC_SOURCE` are removed in favor of `fashion.indexing()`.
 - **Breaking:** generated `fts` now derives only from persisted `fts_src`; legacy fallback expressions are removed.
 - Added apply-time indexing manifest validation: dense surfaces must reference existing embeddings and FTS search requires an FTS indexing surface.
+- **Enrich persists indexing surfaces** — `doc`, `rerank_doc`, `fts_src` written at enrich; indexer consumes persisted text; `indexing.gate` sets `quarantined` or `ready` (G2/G3/G5).
+- **`search()` excludes non-`ready` rows** when the collection has an enrich pipeline — quarantined/failed/dead rows never surface in FTS, cosine, or spaces legs.
+- **Default rerank** uses blend fusion when `rerank` is wired; `rerank: false` restores pure RRF.
+
+### Fixed
+
+- Image-fetch/embed failures mark rows `failed` instead of silently indexing zero vectors.
+- Quarantine clears stale vectors (`doc`, `embedding`, `space_vec`) so previously indexed rows cannot leak into search after a gate flip.
+
+### Pending empirical calibration
+
+- `FASHION_CONFIDENCE_FLOOR = 0.5` and default `relevanceExponent = 1` remain **placeholders** until tuned via `eval-judge.ts` + `runEval` sweep with `GEMINI_API_KEY`. Procedure documented in `apps/docs/src/content/docs/guides/eval-gate.mdx`.
 
 ## [1.3.0] — 2026-06-18 — modes, retrieval primitives & fashion template
 
