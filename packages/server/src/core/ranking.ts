@@ -66,6 +66,7 @@ function mergeRankingPolicy(policy: RankingPolicy): MergedRankingPolicy {
     buryUnavailable: policy.buryUnavailable ?? true,
     buryFactor: policy.buryFactor ?? 0.2,
     minRelevanceFloor: policy.minRelevanceFloor ?? 0,
+    // PLACEHOLDER default (1) — tune relevanceExponent via runEval sweep; see guides/eval-gate.mdx.
     relevanceExponent: policy.relevanceExponent ?? 1,
     hardAxes: policy.hardAxes ?? ["availability"],
     softAxes: policy.softAxes ?? ["newness", "personalization", "visual", "business"],
