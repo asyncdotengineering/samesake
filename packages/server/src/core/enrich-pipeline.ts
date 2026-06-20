@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { CollectionDef, DerivedDocContext, DerivedDocDef, IndexingDef, PipelineDef, StageContext } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
+import { imageVersionToken } from "../connectors/normalize.ts";
 import { makeStageCacheService } from "../db/stage-cache.ts";
 import { fetchRemoteImageSafe } from "./fetch-image.ts";
 import { callWithRetry } from "./policy.ts";
@@ -62,14 +63,33 @@ function persistIndexingSurfaces(
   return { doc, rerank_doc, fts_src, pipeline_status: "ready", gate_reason: null };
 }
 
+function imageValidatorsForUrls(
+  imageUrls: string[],
+  data: Record<string, unknown>,
+  rowImageEtag?: string | null
+): string[] {
+  const rowToken =
+    rowImageEtag ??
+    imageVersionToken({
+      image_etag: data.image_etag,
+      image_updated_at: data.image_updated_at,
+      image_version: data.image_version,
+    });
+  return imageUrls.map(() => rowToken ?? "");
+}
+
 function stageCacheKey(
   stageName: string,
   model: string,
   prompt: string,
   imageUrls: string[],
+  imageValidators: string[],
   schema: Record<string, unknown>
 ): string {
-  const material = `${prompt}|${imageUrls.join(",")}|${JSON.stringify(schema)}`;
+  const urlMaterial = imageUrls
+    .map((url, i) => `${url}@${imageValidators[i] ?? ""}`)
+    .join(",");
+  const material = `${prompt}|${urlMaterial}|${JSON.stringify(schema)}`;
   const hash = createHash("sha1").update(material).digest("hex");
   return `stage:${stageName}:${model}:${hash}`;
 }
@@ -102,6 +122,7 @@ export function makeEnrichPipelineService(
     stage: PipelineDef["stages"][number],
     stageCtx: StageContext,
     docId: string,
+    rowImageEtag: string | null | undefined,
     fewShot = ""
   ): Promise<Record<string, unknown> | null> {
     if (stage.condition && !stage.condition(stageCtx)) return null;
@@ -110,7 +131,8 @@ export function makeEnrichPipelineService(
     const imageUrls = stage.images?.(stageCtx) ?? [];
     const schema = normalizeSchema(stage.schema(stageCtx));
     const model = stage.model ?? "<default>";
-    const key = stageCacheKey(stage.name, model, prompt, imageUrls, schema);
+    const imageValidators = imageValidatorsForUrls(imageUrls, stageCtx.data, rowImageEtag);
+    const key = stageCacheKey(stage.name, model, prompt, imageUrls, imageValidators, schema);
 
     const cached = await stageCache.getStageCache(key);
     if (cached && typeof cached === "object") {
@@ -175,7 +197,7 @@ export function makeEnrichPipelineService(
 
   async function enrichOne(
     def: CollectionDef,
-    row: { id: string; data: Record<string, unknown> },
+    row: { id: string; data: Record<string, unknown>; image_etag?: string | null },
     schema: string,
     collectionName: string,
     fewShot = ""
@@ -188,7 +210,7 @@ export function makeEnrichPipelineService(
     const stageCtx: StageContext = { data, enriched };
 
     for (const stage of def.enrich.stages) {
-      const result = await runStage(stage, stageCtx, row.id, fewShot);
+      const result = await runStage(stage, stageCtx, row.id, row.image_etag, fewShot);
       if (result) {
         Object.assign(enriched, result);
         enriched._stages = {
@@ -327,7 +349,7 @@ export function makeEnrichPipelineService(
     }
 
     const pending = await getPgClient(ctx.db, "enrich").unsafe(
-      `SELECT id, data FROM ${table}
+      `SELECT id, data, image_etag FROM ${table}
        WHERE enriched_at IS NULL
        ORDER BY id
        LIMIT $1`,
@@ -350,7 +372,11 @@ export function makeEnrichPipelineService(
           try {
             const ok = await enrichOne(
               def,
-              { id: String(row.id), data },
+              {
+                id: String(row.id),
+                data,
+                image_etag: (row.image_etag as string | null | undefined) ?? null,
+              },
               project.schema_name,
               collectionName,
               fewShot

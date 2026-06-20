@@ -38,6 +38,7 @@ import { makeSearchService } from "./core/search.ts";
 import { makeAgentToolsService } from "./core/agent-tools.ts";
 import { makeIngestService } from "./core/ingest.ts";
 import { makeEnrichPipelineService } from "./core/enrich-pipeline.ts";
+import { makeRevalidateImagesService } from "./core/revalidate-images.ts";
 import { makeReviewService } from "./core/review.ts";
 import { makeEmbedIndexService } from "./core/embed-index.ts";
 import { makeFashionSearchService } from "./core/fashion-search.ts";
@@ -91,6 +92,7 @@ export interface Matcher {
   index: ReturnType<typeof makeEmbedIndexService>["indexCollection"];
   searchExplain: ReturnType<typeof makeSearchService>["searchExplain"];
   runEval: ReturnType<typeof makeEvalService>["runEval"];
+  revalidateImages: ReturnType<typeof makeRevalidateImagesService>["revalidateImages"];
   metrics: () => MetricsSnapshot;
   rotateProjectKey: ReturnType<typeof makeProjectsService>["rotateProjectKey"];
 
@@ -239,6 +241,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
   const ingestService = makeIngestService(ctx, projectsService);
   const fashionSearchService = makeFashionSearchService(ctx, projectsService, searchService, ingestService);
   const enrichService = makeEnrichPipelineService(ctx, projectsService);
+  const revalidateImagesService = makeRevalidateImagesService(ctx, projectsService);
   const reviewService = makeReviewService(ctx, projectsService);
   const embedIndexService = makeEmbedIndexService(ctx, embedService, projectsService);
   const calibrateService = makeCalibrateService(ctx, schemaGen);
@@ -315,6 +318,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
     reviewCorrect: reviewService.reviewCorrect,
     searchExplain: searchService.searchExplain,
     runEval: evalService.runEval,
+    revalidateImages: revalidateImagesService.revalidateImages,
     metrics: () => observability.metrics(),
     rotateProjectKey: projectsService.rotateProjectKey,
     fetch: app.fetch.bind(app) as (request: Request) => Promise<Response>,

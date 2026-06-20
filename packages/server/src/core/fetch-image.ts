@@ -1,4 +1,5 @@
 import { lookup } from "node:dns/promises";
+import { createHash } from "node:crypto";
 import { isIP, type LookupFunction } from "node:net";
 import http from "node:http";
 import https from "node:https";
@@ -21,6 +22,7 @@ export interface RawImageRequest {
   pinnedIps: string[];
   timeoutMs: number;
   headers: Record<string, string>;
+  method?: "GET" | "HEAD";
 }
 
 export type ImageTransport = (req: RawImageRequest) => Promise<RawImageResponse>;
@@ -175,7 +177,7 @@ async function resolveAndValidate(
 // IP-pinned transport: the TCP connection is forced to a validated address via a custom
 // DNS lookup, while the URL hostname is preserved so TLS SNI and certificate validation
 // stay bound to the real host. This closes the resolve-then-fetch DNS-rebinding window.
-const nodeTransport: ImageTransport = ({ url, pinnedIps, timeoutMs, headers }) =>
+const nodeTransport: ImageTransport = ({ url, pinnedIps, timeoutMs, headers, method = "GET" }) =>
   new Promise<RawImageResponse>((resolve, reject) => {
     const isHttps = url.protocol === "https:";
     const mod = isHttps ? https : http;
@@ -191,7 +193,7 @@ const nodeTransport: ImageTransport = ({ url, pinnedIps, timeoutMs, headers }) =
         hostname: url.hostname,
         port: url.port ? Number(url.port) : isHttps ? 443 : 80,
         path: `${url.pathname}${url.search}`,
-        method: "GET",
+        method,
         headers: { host: url.host, ...headers },
         lookup: pinnedLookup,
       },
@@ -319,4 +321,162 @@ export async function fetchImageBytes(url: string): Promise<FetchedImage | null>
   const result = await fetchRemoteImageSafe(url);
   if (!result.ok) return null;
   return { mimeType: result.contentType, bytes: result.bytes };
+}
+
+export function byteHashValidator(bytes: Uint8Array): string {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+export type ImageProbeResult =
+  | { ok: true; unchanged: boolean; validator: string }
+  | { ok: false; reason: FetchImageFailureReason; finalUrl?: string; message?: string };
+
+export interface ImageProbeOptions extends FetchImageOptions {
+  priorValidator?: string | null;
+}
+
+function validatorsMatch(a: string | null | undefined, b: string): boolean {
+  if (!a) return false;
+  return a === b;
+}
+
+async function requestImage(
+  rawUrl: string,
+  options: FetchImageOptions & { method: "GET" | "HEAD"; extraHeaders?: Record<string, string> }
+): Promise<
+  | { ok: true; res: RawImageResponse; finalUrl: string }
+  | { ok: false; result: FetchImageResult }
+> {
+  const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const resolveHostname = options.resolveHostname ?? defaultResolveHostname;
+  const transport = options.transport ?? activeTransport;
+
+  let current: URL;
+  try {
+    current = new URL(rawUrl);
+  } catch {
+    return { ok: false, result: { ok: false, reason: "invalid_url" } };
+  }
+
+  for (let redirects = 0; redirects <= maxRedirects; redirects++) {
+    const validated = await resolveAndValidate(current, resolveHostname);
+    if ("ok" in validated) return { ok: false, result: validated };
+
+    let res: RawImageResponse;
+    try {
+      res = await transport({
+        url: current,
+        pinnedIps: validated.addresses,
+        timeoutMs,
+        method: options.method,
+        headers: {
+          "user-agent": "Mozilla/5.0",
+          accept: "image/*",
+          ...options.extraHeaders,
+        },
+      });
+    } catch (e) {
+      const name = e instanceof Error ? e.name : "";
+      return {
+        ok: false,
+        result: {
+          ok: false,
+          reason: name === "TimeoutError" || name === "AbortError" ? "timeout" : "network_error",
+          finalUrl: current.href,
+          message: e instanceof Error ? e.message : String(e),
+        },
+      };
+    }
+
+    if (res.status === 304) {
+      return { ok: true, res, finalUrl: current.href };
+    }
+
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers["location"];
+      res.cancel?.();
+      if (!location || redirects === maxRedirects) {
+        return { ok: false, result: { ok: false, reason: "network_error", finalUrl: current.href } };
+      }
+      current = new URL(location, current);
+      continue;
+    }
+
+    return { ok: true, res, finalUrl: current.href };
+  }
+
+  return { ok: false, result: { ok: false, reason: "network_error", finalUrl: current.href } };
+}
+
+export async function probeRemoteImageSafe(
+  rawUrl: string,
+  options: ImageProbeOptions = {}
+): Promise<ImageProbeResult> {
+  const prior = options.priorValidator ?? null;
+  const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
+  const allowedContentTypes = options.allowedContentTypes ?? DEFAULT_ALLOWED_CONTENT_TYPES;
+
+  const conditional: Record<string, string> = {};
+  if (prior && !prior.startsWith("sha256:")) {
+    conditional["if-none-match"] = prior;
+  }
+
+  const head = await requestImage(rawUrl, {
+    ...options,
+    method: "HEAD",
+    extraHeaders: conditional,
+  });
+  if (!head.ok) {
+    const fail = head.result;
+    if (!fail.ok) {
+      return {
+        ok: false,
+        reason: fail.reason,
+        finalUrl: fail.finalUrl,
+        message: fail.message,
+      };
+    }
+    return { ok: false, reason: "network_error" };
+  }
+
+  const { res } = head;
+  if (res.status === 304) {
+    return { ok: true, unchanged: true, validator: prior ?? "" };
+  }
+
+  if (res.status < 200 || res.status >= 300) {
+    res.cancel?.();
+    return { ok: false, reason: "network_error", finalUrl: head.finalUrl };
+  }
+
+  const etag = res.headers["etag"]?.trim();
+  const lastModified = res.headers["last-modified"]?.trim();
+  res.cancel?.();
+
+  if (etag) {
+    const validator = etag;
+    const unchanged = validatorsMatch(prior, validator);
+    return { ok: true, unchanged, validator };
+  }
+  if (lastModified) {
+    const validator = `lm:${lastModified}`;
+    const unchanged = validatorsMatch(prior, validator);
+    return { ok: true, unchanged, validator };
+  }
+
+  const full = await fetchRemoteImageSafe(rawUrl, options);
+  if (!full.ok) {
+    return { ok: false, reason: full.reason, finalUrl: full.finalUrl, message: full.message };
+  }
+  if (!allowedContentTypes.includes(full.contentType)) {
+    return { ok: false, reason: "unsupported_content_type", finalUrl: full.finalUrl };
+  }
+  if (full.bytes.byteLength > maxBytes) {
+    return { ok: false, reason: "too_large", finalUrl: full.finalUrl };
+  }
+
+  const validator = byteHashValidator(full.bytes);
+  const unchanged = validatorsMatch(prior, validator);
+  return { ok: true, unchanged, validator };
 }
