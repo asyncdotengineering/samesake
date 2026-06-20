@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { CollectionDef, PipelineDef, StageContext } from "@samesake/core";
+import type { CollectionDef, DerivedDocContext, IndexingDef, PipelineDef, StageContext } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import { makeStageCacheService } from "../db/stage-cache.ts";
@@ -10,6 +10,56 @@ import { normalizeSchema } from "./schema-input.ts";
 
 function isPipeline(def: CollectionDef["enrich"]): def is PipelineDef {
   return !!def && typeof def === "object" && Array.isArray((def as PipelineDef).stages);
+}
+
+function hasIndexing(def: CollectionDef): def is CollectionDef & { indexing: IndexingDef } {
+  return !!def.indexing && typeof def.indexing.gate === "function";
+}
+
+interface IndexingPersistResult {
+  doc: string | null;
+  rerank_doc: string | null;
+  fts_src: string | null;
+  pipeline_status: "ready" | "quarantined";
+  gate_reason: string | null;
+}
+
+function persistIndexingSurfaces(
+  indexing: IndexingDef,
+  ctx: DerivedDocContext
+): IndexingPersistResult {
+  let doc: string | null = null;
+  let rerank_doc: string | null = null;
+  let fts_src: string | null = null;
+
+  for (const [key, surface] of Object.entries(indexing.surfaces)) {
+    const text = surface.build(ctx);
+    if (text === "") {
+      return {
+        doc,
+        rerank_doc,
+        fts_src,
+        pipeline_status: "quarantined",
+        gate_reason: `empty:${key}`,
+      };
+    }
+    if (surface.kind === "dense") doc = text;
+    else if (surface.kind === "rerank") rerank_doc = text;
+    else if (surface.kind === "fts") fts_src = text;
+  }
+
+  const gateResult = indexing.gate(ctx);
+  if (!gateResult.index) {
+    return {
+      doc,
+      rerank_doc,
+      fts_src,
+      pipeline_status: "quarantined",
+      gate_reason: gateResult.reason ?? "gate-rejected",
+    };
+  }
+
+  return { doc, rerank_doc, fts_src, pipeline_status: "ready", gate_reason: null };
 }
 
 function stageCacheKey(
@@ -151,12 +201,48 @@ export function makeEnrichPipelineService(
 
     const table = collectionTableName(schema, collectionName);
     try {
-      await getPgClient(ctx.db, "enrich").unsafe(
-        `UPDATE ${table}
-         SET enriched = $1::jsonb, enriched_at = now(), updated_at = now()
-         WHERE id = $2`,
-        [JSON.stringify(enriched), row.id]
-      );
+      if (hasIndexing(def)) {
+        for (const [key, surface] of Object.entries(def.indexing.surfaces)) {
+          if (typeof surface.build !== "function") {
+            throw new Error(`indexing surface "${key}" has no callable build`);
+          }
+        }
+        if (typeof def.indexing.gate !== "function") {
+          throw new Error("indexing gate is not callable");
+        }
+
+        const derivedCtx: DerivedDocContext = { data, enriched };
+        const surfaces = persistIndexingSurfaces(def.indexing, derivedCtx);
+
+        await getPgClient(ctx.db, "enrich").unsafe(
+          `UPDATE ${table}
+           SET enriched = $1::jsonb,
+               enriched_at = now(),
+               doc = $2,
+               rerank_doc = $3,
+               fts_src = $4,
+               pipeline_status = $5,
+               gate_reason = $6,
+               updated_at = now()
+           WHERE id = $7`,
+          [
+            JSON.stringify(enriched),
+            surfaces.doc,
+            surfaces.rerank_doc,
+            surfaces.fts_src,
+            surfaces.pipeline_status,
+            surfaces.gate_reason,
+            row.id,
+          ]
+        );
+      } else {
+        await getPgClient(ctx.db, "enrich").unsafe(
+          `UPDATE ${table}
+           SET enriched = $1::jsonb, enriched_at = now(), updated_at = now()
+           WHERE id = $2`,
+          [JSON.stringify(enriched), row.id]
+        );
+      }
     } catch (e) {
       await recordFailure(table, row.id, e);
       return false;
@@ -194,6 +280,24 @@ export function makeEnrichPipelineService(
         throw new Error(
           `collection "${collectionName}" stage "${stage.name}" has no callable prompt/schema. ` +
             `Pipeline functions cannot be loaded from the database — pass this collection's config ` +
+            `to createMatcher (or re-apply the project in-process) before calling enrich.`
+        );
+      }
+    }
+    if (hasIndexing(def)) {
+      for (const [key, surface] of Object.entries(def.indexing.surfaces)) {
+        if (typeof surface.build !== "function") {
+          throw new Error(
+            `collection "${collectionName}" indexing surface "${key}" has no callable build. ` +
+              `Indexing functions cannot be loaded from the database — pass this collection's config ` +
+              `to createMatcher (or re-apply the project in-process) before calling enrich.`
+          );
+        }
+      }
+      if (typeof def.indexing.gate !== "function") {
+        throw new Error(
+          `collection "${collectionName}" has no callable indexing gate. ` +
+            `Indexing functions cannot be loaded from the database — pass this collection's config ` +
             `to createMatcher (or re-apply the project in-process) before calling enrich.`
         );
       }
