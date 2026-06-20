@@ -88,7 +88,10 @@ describeIf("search primitives", () => {
       migrate: "eager",
       embed: async ({ text, dim }) => stubEmbed(text, dim),
       rerank: async ({ candidates }) =>
-        candidates.map((c) => ({ id: c.id, score: -Number((c.data as { rank?: number }).rank ?? 0) })),
+        candidates.map((c) => ({
+          id: c.id,
+          score: 1 / Number((c.data as { rank?: number }).rank ?? 99),
+        })),
     });
     await matcherR.migrate();
     schemaNameR = (await matcherR.apply(slugR, { entities: [], collections: [prims] })).schema;
@@ -125,13 +128,25 @@ describeIf("search primitives", () => {
     expect(all.hits.filter((h) => h.style_id === "S1").length).toBeGreaterThan(1);
   });
 
-  test("rerank: BYO reranker reorders the candidate pool (rank=1 wins)", async () => {
-    const res = await matcherR.search(slugR, "products", {
+  test("rerank: blend preserves RRF head; rerank:false is pure RRF", async () => {
+    const pure = await matcher.search(slug, "products", {
       q: "red cocktail dress",
       diversify: false,
       limit: 5,
     });
-    expect(res.hits[0]!.id).toBe("2"); // doc 2 has rank=1 → promoted to top
+    const rrfOnly = await matcherR.search(slugR, "products", {
+      q: "red cocktail dress",
+      diversify: false,
+      limit: 5,
+      rerank: false,
+    });
+    const blended = await matcherR.search(slugR, "products", {
+      q: "red cocktail dress",
+      diversify: false,
+      limit: 5,
+    });
+    expect(rrfOnly.hits.map((h) => h.id)).toEqual(pure.hits.map((h) => h.id));
+    expect(blended.hits[0]!.id).toBe(pure.hits[0]!.id);
   });
 
   test("calibrateSearch: sweeps the grid and returns a recommendation (labels, no LLM)", async () => {

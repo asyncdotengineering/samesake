@@ -1,5 +1,6 @@
 import type { CollectionDef, ConstraintTrace, SearchMode, SearchWeightsInput } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
+import { mergeBlendedRerank, rerankCandidateText } from "./rerank.ts";
 import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
 import { computeFacets } from "./facets.ts";
@@ -294,7 +295,7 @@ async function runHybridQuery(
         WITH filtered AS (
           SELECT id FROM ${table} WHERE ${where}
         )
-        SELECT d.id, d.data, ${fieldCols}, 0::float AS score,
+        SELECT d.id, d.data, d.rerank_doc, ${fieldCols}, 0::float AS score,
                (SELECT count(*)::int FROM filtered) AS total_candidates
         FROM ${table} d
         JOIN filtered f ON f.id = d.id
@@ -417,7 +418,7 @@ async function runHybridQuery(
           ORDER BY score DESC
           LIMIT ${limitRef} OFFSET ${offsetRef}
         )
-        SELECT d.id, d.data, ${fieldCols}, r.score::float AS score, r.total_candidates
+        SELECT d.id, d.data, d.rerank_doc, ${fieldCols}, r.score::float AS score, r.total_candidates
         FROM ranked r
         JOIN ${table} d ON d.id = r.id
         ORDER BY r.score DESC
@@ -685,6 +686,7 @@ export function makeSearchService(
       for (const k of fieldKeys) {
         hit[k] = row[sanitiseIdent(k)] ?? row[k];
       }
+      if (row.rerank_doc != null) hit.rerank_doc = row.rerank_doc;
       return hit;
     });
 
@@ -816,9 +818,8 @@ export function makeSearchService(
     return out;
   }
 
-  // Second-stage rerank of the candidate pool via the BYO cross-encoder. Reranked
-  // ids sort by the new score; ids the reranker omits keep their first-stage order
-  // beneath them. Failures fall back to first-stage order (never throws the search).
+  // Second-stage rerank: blend retrieval position with reranker scores (never pure replace).
+  // Unscored candidates keep their RRF slot; failures fall back to first-stage order.
   async function rerankHits(
     q: string,
     image: SearchOpts["image"],
@@ -828,10 +829,7 @@ export function makeSearchService(
     if (!ctx.rerank) return hits;
     const candidates = hits.map((h) => ({
       id: h.id,
-      text: String(
-        h.title ?? h.name ?? (h.data as Record<string, unknown>)?.title ??
-          (h.data as Record<string, unknown>)?.name ?? (h.data as Record<string, unknown>)?.description ?? ""
-      ),
+      text: rerankCandidateText(h),
       data: h.data,
       score: h.score,
     }));
@@ -849,13 +847,7 @@ export function makeSearchService(
       });
       return hits;
     }
-    const scoreById = new Map(ordered.map((o) => [o.id, o.score]));
-    const reranked = hits
-      .filter((h) => scoreById.has(h.id))
-      .sort((a, b) => scoreById.get(b.id)! - scoreById.get(a.id)!)
-      .map((h) => ({ ...h, score: scoreById.get(h.id)! }));
-    const rest = hits.filter((h) => !scoreById.has(h.id));
-    return [...reranked, ...rest];
+    return mergeBlendedRerank(hits, ordered);
   }
 
   async function search(

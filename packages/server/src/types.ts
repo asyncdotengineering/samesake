@@ -107,6 +107,7 @@ export interface RerankRequest {
   candidates: RerankCandidate[];
   topK: number;
 }
+/** Returned scores MUST be in [0, 1]; the search layer clamps at the boundary. */
 export type RerankFn = (req: RerankRequest) => Promise<Array<{ id: string; score: number }>>;
 
 /**
