@@ -238,6 +238,31 @@ describeIf("collection migrations", () => {
     await close();
     expect(col[0]!.coltype).toBe("vector(16)");
   });
+
+  test("apply fails when indexing manifest references missing embedding", async () => {
+    const invalid = collection("products", {
+      fields: {
+        title: f.text({ searchable: true }),
+      },
+      indexing: {
+        surfaces: {
+          embed_doc: { kind: "dense", embedding: "missing", build: ({ data }) => String(data.title ?? "").trim() },
+          fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+        },
+        gate: gates.always,
+      },
+      embeddings: { doc: { model: "test-embed", dim: 8 } },
+      search: {
+        channels: [
+          Channels.fts({ fields: ["title"], weight: 1 }),
+          Channels.cosine({ embedding: "doc", weight: 1 }),
+        ],
+      },
+    });
+    await expect(matcher.apply(projectSlug, { entities: [], collections: [invalid] })).rejects.toThrow(
+      /references missing embedding "missing"/
+    );
+  });
 });
 
 describeIf("field addition without reindex", () => {

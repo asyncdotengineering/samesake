@@ -324,7 +324,20 @@ export function collection<
   if (vg && !(def.fields && vg in def.fields)) {
     throw new Error(`collection "${name}": search.variantGroup "${vg}" must be a declared field`);
   }
-  return brandDef({ ...(def as unknown as CollectionDef), name }, "collection");
+  const indexingManifest = {
+    surfaces: Object.fromEntries(
+      Object.entries(def.indexing.surfaces).map(([key, surface]) => [
+        key,
+        surface.kind === "dense"
+          ? { kind: "dense" as const, embedding: surface.embedding }
+          : { kind: surface.kind as "rerank" | "fts" },
+      ])
+    ),
+  };
+  return brandDef(
+    { ...(def as unknown as CollectionDef), indexingManifest, name },
+    "collection"
+  );
 }
 
 export function stage(
