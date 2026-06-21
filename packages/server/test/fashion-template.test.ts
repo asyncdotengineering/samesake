@@ -184,10 +184,19 @@ describe("fashion enrichment template", () => {
     expect(classify).toContain("is_apparel_product");
   });
 
-  test("nlq schema (zod) requires semantic_query", () => {
+  test("nlq schema (zod) requires every field — value or null — to force model emission", () => {
     const s = fashionNlqSchema();
-    expect(s.safeParse({}).success).toBe(false);
-    expect(s.safeParse({ semantic_query: "red dress" }).success).toBe(true);
+    expect(s.safeParse({}).success).toBe(false); // semantic_query (and the rest) required
+    // partial object fails: constraint fields are nullable-but-required, not optional
+    expect(s.safeParse({ semantic_query: "red dress" }).success).toBe(false);
+    // a fully-emitted object (constraints null when absent) parses
+    expect(
+      s.safeParse({
+        category: null, gender: null, colors: null, exclude_colors: null, occasions: null,
+        exclude_patterns: null, exclude_terms: null, max_price: null, min_price: null,
+        semantic_query: "red dress",
+      }).success
+    ).toBe(true);
   });
 
   test("template assembles a valid collection end-to-end", () => {
