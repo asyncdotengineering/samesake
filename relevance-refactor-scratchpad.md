@@ -15,4 +15,12 @@ Mode: autonomous-stand + zero-tech-debt (reshape, not patch). Actual packages (s
 - E2E on seeded demo (server dist rebuilt): POSITIVE→credible, NEGATIVE→∅ (laptop/ring), NUMERIC→price-filtered, BYPASS "anything under 2000"→5 hits (was 0). Docs build 28 pages. server tsc 0.
 
 ## Verify gate
-- server tsc 0 ✓ · docs build 28 ✓ · e2e demo ✓ · full server suite: (running).
+- server tsc 0 ✓ · sdk tsc 0 ✓ · docs build 28 ✓ · e2e demo ✓ (POSITIVE/NEGATIVE/NUMERIC/BYPASS).
+- Full suite: 231 pass + error-rate-abort (pre-existing 5000ms Neon-latency flake on untouched enrich code) → gave it a 30s budget (commit 466abfe), passes 3/3 isolated. Final suite re-run for the clean 232/0 baseline.
+
+## Commits
+- c88a12f (a) floor + bypass · d0b7e9b (b) NLQ reference pattern · cebb633 (c1) nlq schema test
+- 42fcdcd (c2) reranker recipe + docs + release 2.1.0 · 466abfe test-budget fix
+
+## Decision (c)
+Cosine+FTS floor = framework default (model-free, Cloudflare-safe, 96%). Cross-encoder (mxbai, 100%) = BYO recipe (onnxReranker + workersAiReranker), not bundled — native ONNX can't run on Workers. Documented with benchmark in reference/reranking. 2.1.0 staged, NOT published (not requested).
