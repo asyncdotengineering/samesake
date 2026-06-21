@@ -67,7 +67,7 @@ The enrich stage cache key incorporates the image validator so a changed image d
 
 ## Declaring the indexing DSL
 
-Surfaces and gate live on the collection config — there is no separate compose step and no string `embeddings.source` template:
+Surfaces and gate live on the collection config — there is no separate compose step and no string template on the embeddings block:
 
 ```ts
 import { collection, gates } from "@samesake/core";

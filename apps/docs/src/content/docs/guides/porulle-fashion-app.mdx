@@ -262,6 +262,7 @@ and writes structured attributes into the row's `enriched` jsonb.
 
 ```ts
 import { z } from "zod";
+import { gates } from "@samesake/core";
 
 enrich: pipeline(
   stage("vision", {
@@ -278,17 +279,30 @@ enrich: pipeline(
       }),
   })
 ),
-embeddings: {
-  // pull the enriched attributes into the doc text the embedding is built from
-  doc: { source: "$title $brand $category $enriched.color_text $enriched.pattern", model: "gemini-embedding-2", dim: 1536 },
+indexing: {
+  surfaces: {
+    embed_doc: {
+      kind: "dense",
+      embedding: "doc",
+      build: ({ data, enriched }) =>
+        `${data.title} ${data.brand} ${data.category} ${enriched.color_text ?? ""} ${enriched.pattern ?? ""}`.trim(),
+    },
+    fts_doc: {
+      kind: "fts",
+      build: ({ data, enriched }) =>
+        `${data.title} ${data.brand} ${data.category} ${enriched.color_text ?? ""}`.trim(),
+    },
+  },
+  gate: gates.always,
 },
+embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
 ```
 
 `matcher.enrich(project, collection)` runs the pipeline — it fetches each image through the
 SSRF-hardened fetcher and calls your `generate` with the image bytes + schema, then stores the
 JSON in `enriched`. The order in the sync is **push → enrich → index**. Now the colours are real
 ("RED PUFF SLEEVE MAXI DRESS" → `solid red`, "Princess Line Dress" → `solid black`), and because
-the doc embedding `source` includes `$enriched.color_text`, "black dress with white" cosine-favours
+the `embed_doc` surface builder pulls in `enriched.color_text`, so "black dress with white" cosine-favours
 genuinely black products.
 
 Pair it with a **constrained NLQ schema** so a sparse colour tag can't become a hard filter that
