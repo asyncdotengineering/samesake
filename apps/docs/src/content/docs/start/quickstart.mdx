@@ -55,7 +55,7 @@ API_KEY=dev-key-please-change
 1. **Declare the catalog.** `searchable` fields feed keyword search; `filterable` fields become hard filters.
 
    ```ts title="catalog.ts"
-   import { collection, f, Channels } from "@samesake/core";
+   import { collection, f, Channels, gates } from "@samesake/core";
 
    export const products = collection("products", {
      fields: {
@@ -65,9 +65,14 @@ API_KEY=dev-key-please-change
        color: f.text({ filterable: true }),
        available: f.boolean({ filterable: true }),
      },
-     embeddings: {
-       doc: { source: "$title $brand $color", model: "your-model", dim: 1536 },
+     indexing: {
+       surfaces: {
+         embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => `${data.title} ${data.brand} ${data.color}`.trim() },
+         fts_doc:   { kind: "fts",   build: ({ data }) => `${data.title} ${data.brand} ${data.color}`.trim() },
+       },
+       gate: gates.always,
      },
+     embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
      search: {
        channels: [
          Channels.fts({ fields: ["title", "brand", "color"], weight: 1 }),

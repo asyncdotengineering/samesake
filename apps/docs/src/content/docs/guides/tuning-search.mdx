@@ -69,7 +69,7 @@ Run with `matcher.enrich(project, collection)`. Colours went from mostly-empty t
 
 ## 4. Compose what you embed — the `indexing` DSL
 
-An embedding only knows what's in the text it was built from. Declare **surface builders** on the collection — they run at enrich time, persist to the row, and the indexer reads them (no separate compose step, no string `embeddings.source` template):
+An embedding only knows what's in the text it was built from. Declare **surface builders** on the collection — they run at enrich time, persist to the row, and the indexer reads them (no separate compose step, no string template on the embeddings block):
 
 ```ts
 indexing: {

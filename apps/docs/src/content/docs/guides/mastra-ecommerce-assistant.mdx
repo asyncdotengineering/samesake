@@ -1,0 +1,310 @@
+---
+title: Shopping agent with Mastra + samesake
+description: Build a conversational e-commerce assistant — a Mastra agent that searches a clothing catalog and answers questions about brands, with samesake doing the retrieval and the whole thing exposed over MCP. Includes the run-it-yourself steps and the gotchas we hit.
+---
+
+import { Steps, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+This builds the [`apps/ecommerce-assistant`](https://github.com/asyncdotengineering/samesake/tree/main/apps/ecommerce-assistant) example: a shopping assistant that handles requests like *"I like vintage clothes under $200"*, follow-ups that remember the budget, aggregations like *"which brand lists the most shoes?"*, and multi-collection brand questions — all by letting an LLM call into a **samesake** search layer.
+
+It's the [Weaviate Query Agent e-commerce recipe](https://docs.weaviate.io/agents/query/recipes), rebuilt with **samesake** for retrieval and **[Mastra](https://mastra.ai)** for the agent, plus an **MCP** server so any MCP client (Claude Desktop, Cursor, another app) can use the same tools.
+
+```
+Mastra Agent (gpt-4.1-mini)
+├── searchProducts        →  samesake.search  (hybrid: FTS + vector, NLQ budget parsing)
+├── searchBrands          →  samesake.search  (brand hierarchy / country / rating)
+├── countProductsByBrand  →  SQL GROUP BY      (which brand lists the most shoes)
+└── averagePrice          →  SQL AVG           (avg price for a brand)
+        │
+        ▼
+  Postgres + pgvector
+  └── project_qa_ecommerce.c_products / c_brands   (samesake, namespaced)
+
+MCPServer (stdio)  →  exposes all four tools + the agent itself
+```
+
+## The mental model
+
+Three pieces, three jobs:
+
+- **samesake** is the *retrieval layer*. You declare your catalog in TypeScript; it compiles to Postgres tables with full-text search and vector embeddings, and gives you one `search()` call that blends them.
+- **Mastra** is the *agent*. An LLM that you hand a set of tools (functions). It decides which tool to call, with what arguments, and turns the results into an answer. It also keeps conversation history.
+- **MCP** is the *plug*. Wrap your tools in an MCP server and any MCP-speaking client can drive them — you build the capability once.
+
+The agent never talks to Postgres directly. It calls tools; the tools call samesake (or SQL). That separation is the whole design.
+
+## 1. Scaffold + dependencies
+
+A standalone Bun app — no framework needed.
+
+```jsonc
+// package.json (deps)
+"@samesake/core": "^1.2.0",   // inside this monorepo the app uses "workspace:*"; published is ^1.2.0
+"@samesake/server": "^1.2.0",
+"@mastra/core": "^1.42.0",
+"@mastra/mcp": "^1.10.0",
+"@ai-sdk/openai": "^3.0.71",
+"ai": "^6.0.184",
+"postgres": "^3.4.9",
+"zod": "^4.4.3"
+```
+
+You'll need a Postgres database with `pgvector` (Neon, Supabase, or local), plus a `DATABASE_URL`, a `GEMINI_API_KEY` (embeddings + NLQ), and an `OPENAI_API_KEY` (the agent). Put them in `apps/ecommerce-assistant/.env`.
+
+## 2. Declare the collections
+
+The recipe has two datasets — clothing items and brands — so we declare two samesake `collection()`s. Field descriptions matter: they're what the agent leans on, so we mirror them into the tool descriptions later.
+
+```ts
+// src/samesake.ts
+import { z } from "zod";
+import { collection, f, Channels, gates } from "@samesake/core";
+import { createMatcher } from "@samesake/server";
+import { geminiEmbed, geminiGenerate } from "./providers.ts";
+
+export const PROJECT = "qa-ecommerce";
+export const PRODUCTS = "products";
+export const BRANDS = "brands";
+
+export const products = collection(PRODUCTS, {
+  fields: {
+    name: f.text({ searchable: true }),
+    description: f.text({ searchable: true }),
+    brand: f.text({ searchable: true, filterable: true, facet: true }),
+    category: f.text({ filterable: true, facet: true }),
+    subcategory: f.text({ filterable: true, facet: true }),
+    collection: f.text({ filterable: true, facet: true }),
+    price: f.number({ filterable: true, facet: "range", budget: true }),
+    image_url: f.text(),
+  },
+  indexing: {
+    surfaces: {
+      embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => `${data.name} ${data.description} ${data.brand} ${data.category} ${data.subcategory}`.trim() },
+      fts_doc:   { kind: "fts",   build: ({ data }) => `${data.name} ${data.brand}`.trim() },
+    },
+    gate: gates.always,
+  },
+  embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
+  search: {
+    channels: [
+      Channels.fts({ fields: ["name", "description", "brand"], weight: 1 }),
+      Channels.cosine({ embedding: "doc", weight: 1 }),
+    ],
+    combiner: "rrf",
+    // NLQ turns "less than $200" into a hard max_price filter.
+    nlq: {
+      enable: true,
+      semanticRewrite: true,
+      schema: z.object({ semantic_query: z.string(), max_price: z.number().optional() }),
+    },
+  },
+});
+
+// brands: name, parent_brand, description, country, avg_customer_rating, foundation_year
+// (same shape — see the repo for the full definition)
+```
+
+The `budget: true` on `price` plus the `nlq` block is what lets a shopper say *"under $200"* in plain English and get a hard filter, not a fuzzy vibe.
+
+## 3. Wire your models (bring-your-own)
+
+`@samesake/server` ships no AI SDK — you pick the models. This app uses Gemini for embeddings and NLQ:
+
+```ts
+// src/providers.ts  (abridged)
+export const geminiEmbed: EmbedFn = async ({ text, dim }) => {
+  // POST to gemini-embedding-2:embedContent, outputDimensionality = dim
+};
+export const geminiGenerate: GenerateFn = async ({ prompt, system, schema }) => {
+  // POST to gemini-3.1-flash-lite:generateContent with responseJsonSchema = schema
+};
+```
+
+```ts
+// src/samesake.ts (continued)
+let _matcher: ReturnType<typeof createMatcher> | null = null;
+export function getMatcher() {
+  if (_matcher) return _matcher;
+  _matcher = createMatcher({
+    databaseUrl: process.env.DATABASE_URL!,
+    apiKey: process.env.API_KEY ?? "dev-key-please-change",
+    migrate: "eager",
+    embed: geminiEmbed,
+    generate: geminiGenerate,
+  });
+  return _matcher;
+}
+```
+
+<Aside type="caution" title="Embedding rate limits will bite during the seed">
+Bulk indexing makes one embedding call per document. Depending on your key/tier, the embedding API may throttle you (we saw 429s at ~40 req/min on a Gemini key whose project had no billing enabled). The fix is in `providers.ts`: a light delay between calls plus exponential backoff on 429/500/503. Indexing then completes — just slower. A billing-enabled key removes the throttle with zero code changes.
+</Aside>
+
+## 4. The tools
+
+Two search tools, two aggregation tools. The split that matters: **search vs. aggregate**.
+
+```ts
+// src/tools.ts (search — abridged)
+export const searchProducts = createTool({
+  id: "search_products",
+  description:
+    "Semantic + keyword search over the catalog. Prices are in USD; pass max_price to cap the budget (hard filter).",
+  inputSchema: z.object({
+    query: z.string(),
+    max_price: z.number().optional(),
+    category: z.enum(PRODUCT_CATEGORIES).optional(),
+    limit: z.number().int().min(1).max(50).default(8),
+  }),
+  execute: async ({ query, max_price, category, limit }) => {
+    const filters: Record<string, unknown> = {};
+    if (typeof max_price === "number") filters.price = { $lte: max_price };
+    if (category) filters.category = category;
+    const result = await getMatcher().search(PROJECT, PRODUCTS, { q: query, filters, limit });
+    return { count: result.hits.length, products: result.hits.map(toProduct) };
+  },
+});
+```
+
+<Aside type="tip" title="samesake.search() needs a query — aggregations don't go through it">
+`search()` requires a non-empty `q` (or image) — it's a retrieval call, not a browse-and-group call, and it can't express a `GROUP BY`. So *"which brand lists the most shoes"* and *"average price for brand X"* run as **direct SQL** against the compiled collection table (`project_qa_ecommerce.c_products`), exactly like the recipe's agent running an aggregation in the database.
+</Aside>
+
+```ts
+// src/tools.ts (aggregations — abridged)
+export const countProductsByBrand = createTool({
+  id: "count_products_by_brand",
+  description: "Count items per brand, ranked. Pass `category` (e.g. shoes -> Footwear) or omit for the whole catalog.",
+  inputSchema: z.object({ category: z.enum(PRODUCT_CATEGORIES).optional() }),
+  execute: async ({ category }) => {
+    const rows = await sql()`
+      SELECT brand, count(*)::int AS count FROM ${sql().unsafe(PRODUCTS_TABLE)}
+      WHERE ${category ? sql()`category = ${category}` : sql()`true`}
+      GROUP BY brand ORDER BY count DESC`;
+    return { top: rows[0] ?? null, by_brand: rows };
+  },
+});
+
+export const averagePrice = createTool({
+  id: "average_price",
+  description: "Average price (USD) and item count for a brand across the whole catalog.",
+  inputSchema: z.object({ brand: z.string() }),
+  execute: async ({ brand }) => { /* SELECT count(*), avg(price) WHERE brand = $1 */ },
+});
+
+export const tools = { searchProducts, searchBrands, countProductsByBrand, averagePrice };
+```
+
+<Aside type="caution" title="Why two aggregation tools, not one with a `metric` switch">
+We first built a single `aggregate_products(metric, category?, brand?)` tool. The model kept *inventing* a `category` filter on the average-price call (defaulting to the first enum value), so *"average price for Loom & Aura"* silently became *"…in the Tops category"* — a wrong answer that looked right. No amount of "only set category if asked" in the description fixed it. The reliable fix was structural: give `average_price` no `category` parameter to misuse. **When a model abuses an optional field, remove the field — don't beg it not to.**
+</Aside>
+
+## 5. The agent
+
+```ts
+// src/agent.ts
+import { Agent } from "@mastra/core/agent";
+import { openai } from "@ai-sdk/openai";
+import { tools } from "./tools.ts";
+
+export const ecommerceAgent = new Agent({
+  id: "ecommerce-assistant",
+  name: "ECommerceAssistant",
+  instructions:
+    "You are a friendly e-commerce shopping assistant. Help the user find products, compare options, " +
+    "and answer questions about brands. Recommend specific items with names, brands and prices. " +
+    "Use search_products (max_price for budgets), search_brands for brand details, and the aggregation " +
+    "tools for counts/averages. Prices are in USD.",
+  model: openai("gpt-4.1-mini"),
+  tools,
+});
+
+// Keep history so "same budget as before" resolves against earlier turns.
+export class ECommerceAssistant {
+  private history: { role: "user" | "assistant"; content: string }[] = [];
+  constructor(private agent = ecommerceAgent) {}
+  async chat(message: string) {
+    this.history.push({ role: "user", content: message });
+    const res = await this.agent.generate(this.history);
+    this.history.push({ role: "assistant", content: res.text });
+    return res.text;
+  }
+}
+```
+
+`agent.generate(history)` takes the whole message array, so multi-turn memory is just an array you append to.
+
+## 6. Expose it over MCP
+
+```ts
+// src/mcp.ts
+import { MCPServer } from "@mastra/mcp";
+import { tools } from "./tools.ts";
+import { ecommerceAgent } from "./agent.ts";
+
+export const mcpServer = new MCPServer({
+  id: "samesake-ecommerce",
+  name: "Samesake E-commerce Assistant",
+  version: "1.0.0",
+  tools,
+  agents: { ecommerceAgent }, // becomes an `ask_ecommerceAgent` tool
+});
+
+if (import.meta.main) await mcpServer.startStdio();
+```
+
+Register it with any MCP client:
+
+```jsonc
+{
+  "mcpServers": {
+    "samesake-ecommerce": {
+      "command": "bun",
+      "args": ["run", "--cwd", "/abs/path/to/apps/ecommerce-assistant", "mcp"]
+    }
+  }
+}
+```
+
+## 7. Seed and run
+
+The seed pulls the same demo data the recipe uses — the public `weaviate/agents` datasets on Hugging Face — via the datasets REST API, applies the collections, pushes the rows, and builds the indexes.
+
+<Steps>
+
+1. **Install and configure.** Fill `apps/ecommerce-assistant/.env` (`DATABASE_URL`, `GEMINI_API_KEY`, `OPENAI_API_KEY`).
+
+   ```bash
+   bun install
+   ```
+
+2. **Seed** (~448 products + 104 brands; the embedding step is the slow part — see the rate-limit note).
+
+   ```bash
+   bun run --cwd apps/ecommerce-assistant seed
+   ```
+
+3. **Run the conversation.**
+
+   ```bash
+   bun run --cwd apps/ecommerce-assistant demo
+   ```
+
+4. **Or serve over MCP.**
+
+   ```bash
+   bun run --cwd apps/ecommerce-assistant mcp
+   ```
+
+</Steps>
+
+## What you get
+
+The demo drives the recipe's conversation:
+
+- *"I like vintage clothes under $200"* → a curated list of items with prices (semantic search + budget filter).
+- *"What about some nice shoes, same budget?"* → footwear under $200, the budget carried from the previous turn.
+- *"Which brand lists the most shoes?"* → a real `GROUP BY` over the Footwear category.
+- *"Does Loom & Aura have parent/child brands, what countries, and the average price?"* → a brand lookup plus an average — two collections, one answer.
+
+The agent picked the tools; your app code just declared the catalog and wired the models. That's the point.
