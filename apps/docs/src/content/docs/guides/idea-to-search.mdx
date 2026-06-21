@@ -1,0 +1,168 @@
+---
+title: From a store idea to search that gets people
+description: You have an idea for a shop and you want search that understands what people mean, not just what they type. Here is the whole journey, in plain language, with sensible defaults already chosen for you.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+You have an idea. Maybe it's a clothing store, maybe a marketplace, maybe a niche boutique. And somewhere in your head you can already picture the moment that matters: a shopper lands, types *"something light for a beach wedding under 15,000"* — or pastes a photo of an outfit they screenshotted — and the right things appear. Not a "0 results" page. Not the 40,000 sequin gown. The breezy ivory linen dress they didn't have the words for.
+
+That moment is the whole job. Let's build toward it together, slowly, and by the end you'll have search that actually does it — with the sensible choices already made for you so you're not stuck picking knobs you've never heard of.
+
+## First, let's agree on what "good search" even means
+
+Forget software for a second. Imagine a friend who works at your shop, and someone walks in and says *"a light beach-wedding outfit, nothing over 15k."* What does your friend do?
+
+1. They quietly drop anything over 15,000. That's not a *preference* — it's a wall. A 16,000 dress is simply out, no matter how pretty.
+2. They drop anything sold out. No point.
+3. Then, among what's left, they reach for things that *feel* right — airy fabrics, soft summer colours, dressy-but-not-stiff — even though the customer never said the word "linen."
+
+Look closely and your friend did **three different kinds of thinking**, and they're not the same shape:
+
+- Two were **hard lines** — price, availability. Yes or no. No wiggle room.
+- One was **about meaning** — "feels like a beach wedding." Fuzzy, human, all vibes.
+
+Here's the trap almost every search falls into: it blends those together. It treats "under 15,000" as "kind of cheapish," and now a 19,000 dress sneaks in because it scored well on *vibes*. The shopper notices instantly, and trust is gone.
+
+So the one rule worth tattooing on this: **keep the hard lines hard, and keep the fuzzy stuff fuzzy.** The strict filters decide *who's allowed in the room*; the fuzzy signals only argue about *what order they stand in*.
+
+## The good news: you don't build the smarts. You wire them.
+
+You might be bracing to hand-craft all of that — write the "meaning" logic, decide how to read a product photo, figure out how to rank. You don't. samesake already knows how to do fashion search well; your job is to point it at your products and turn it on.
+
+You describe your catalog in one plain TypeScript file, and a **fashion preset** fills in the hard parts: which attributes matter, how to turn a product (and its photo) into something searchable, and a quality check that keeps junk out of your results. Sensible defaults, chosen from how good commerce search actually works — and every one of them is overridable later when you have an opinion.
+
+<Aside type="tip">
+You can start keyword-only with no model at all. But for "understands what people mean" — the thing you actually want — you'll hand samesake two small functions that call a model (to read products and to embed meaning). We'll use Google's Gemini in the examples; any provider works. See [Providers](/reference/providers/).
+</Aside>
+
+## Let's actually build it
+
+### 1. Describe your catalog (the fashion preset does the heavy lifting)
+
+Read this like a sentence: *"products are fashion items; use the fashion defaults for fields, for the photo+price+category signals, for understanding each product, and for what gets indexed."*
+
+```ts title="catalog.ts"
+import { collection, Channels, fashion } from "@samesake/core";
+
+export const products = collection("products", {
+  fields:     fashion.fields(),                 // title, brand, price, colors, category, gender… sensible defaults
+  spaces:     fashion.spaces({ visual: true }), // image + price + category + freshness signals (visual ON)
+  enrich:     fashion.enrichPipeline(),         // reads each product (and its photo) into structured attributes
+  indexing:   fashion.indexing(),               // builds the searchable text + a quality gate
+  embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } }, // the "meaning" vectors
+  search: {
+    channels: [
+      Channels.fts({ fields: ["title"], weight: 1 }), // keywords
+      Channels.cosine({ embedding: "doc", weight: 1 }), // meaning
+      Channels.spaces({ weight: 1 }),                   // visual + price + category + freshness
+    ],
+    combiner: "rrf", // merge the rankings fairly
+  },
+});
+```
+
+That's a *lot* of good behaviour for not a lot of typing — because the preset already made the choices. The four `fashion.*` lines are the defaults; you can swap any of them for your own later.
+
+### 2. Wire up your matcher (and turn on the smart re-check)
+
+The `matcher` holds your database connection and your two model functions. We'll also switch on a second-stage **re-ranker** — a quick "is this *actually* relevant?" pass over the top results — because for fashion it's worth it.
+
+```ts title="search.ts"
+import { createMatcher, fashionRerank } from "@samesake/server";
+import { products } from "./catalog.ts";
+import { geminiEmbed, geminiGenerate } from "./gemini.ts"; // your two model fns — see Providers
+
+const matcher = createMatcher({
+  databaseUrl: process.env.DATABASE_URL!,
+  apiKey: process.env.API_KEY!,
+  embed: geminiEmbed,                       // turns text/images into vectors (gemini-embedding-2)
+  generate: geminiGenerate,                 // reads products + judges relevance (gemini-3.1-flash-lite)
+  rerank: fashionRerank(geminiGenerate),    // the relevance double-check, on by default once wired
+});
+
+await matcher.apply("shop", { entities: [], collections: [products] });
+```
+
+`apply` builds your database tables from the catalog file. (The two model functions are small adapters — a dozen lines each — that call Gemini/OpenAI/whatever. Copy them from [Providers](/reference/providers/).)
+
+### 3. Put products in, then bring them to life
+
+Three steps, and each one is exactly what it sounds like:
+
+```ts title="search.ts"
+// load raw products
+await matcher.pushDocuments("shop", "products", [
+  { id: "1", data: { title: "ivory linen slip dress", vendor: "atelier", price: 12900, image_url: "https://…/1.jpg", available: true } },
+  { id: "2", data: { title: "black sequin party gown",  vendor: "luxe",    price: 28000, image_url: "https://…/2.jpg", available: true } },
+]);
+
+await matcher.enrich("shop", "products"); // the model reads each product (+ photo) → colours, occasions, style, confidence
+await matcher.index("shop", "products");  // computes the meaning + visual vectors and makes it all searchable
+```
+
+- **`pushDocuments`** just stores the raw rows.
+- **`enrich`** is where the understanding happens: the model looks at the title, description, and the *image*, and fills in structured attributes — category, colours, occasions, fabric, style — plus how confident it is.
+- **`index`** turns the enriched text and the photo into vectors and writes the search index.
+
+<Aside type="note">
+`enrich` is also where the **quality gate** runs. If the model isn't confident, or the photo says "dress" while the tags say "jacket", that product is set aside (`quarantined`) instead of polluting your results. You don't configure this — the fashion preset's gate just does it. The full story is in [Pipeline lifecycle](/guides/pipeline-lifecycle/).
+</Aside>
+
+### 4. Search the way your shopper actually talks
+
+```ts title="search.ts"
+const { hits } = await matcher.search("shop", "products", {
+  q: "light dress for a beach wedding under 15000",
+  filters: { available: true },
+  limit: 10,
+});
+```
+
+The ivory linen dress comes back. The 28,000 gown does **not** — not because it's "less relevant," but because the budget was a hard line and it crossed it. Exactly the behaviour you pictured in the very first paragraph.
+
+Want to see *why* something ranked where it did?
+
+```ts
+const explained = await matcher.searchExplain("shop", "products", { q: "beach wedding dress" });
+// per result: which signals fired, the rank from each, and the merged score
+```
+
+## What just happened, under the hood
+
+You wired four things together without having to invent any of them. Here's the plain-language version of the machine you just switched on:
+
+1. **Understanding** — `enrich` had a model read each product *and its photo*, so "ivory linen slip dress" became `{ category: dress, colours: ivory, fabric: linen, occasions: evening/wedding, style: romantic }`. Now meaning can match even when words don't.
+2. **A bouncer at the door** — the gate quietly held back low-confidence or contradictory products, so your results don't fill up with mislabeled junk.
+3. **Three signals, merged fairly** — keywords (exact), meaning (the vectors), and the visual/price/category signals all rank the survivors, and `rrf` blends those rankings. Filters decided who was even eligible.
+4. **A second opinion on the top results** — the re-ranker took the best handful and asked a model "is this *really* what they meant?", then **blended** that opinion with the original ranking instead of blindly trusting it (so one bad model call can't nuke your best result). Details in [Reranking](/reference/reranking/).
+
+Every one of those is a default you can later tune — but they're *good* defaults, so you can ship first and tune when you have a reason.
+
+## Now make improvements you can actually trust
+
+Here's the thing that separates "I changed a weight and it feels better" from real progress: **measure it.** samesake ships an offline grader so you're not guessing.
+
+You hand it a small set of real queries, it runs your search, and a model scores each result for relevance — giving you actual numbers (did the right things come back? in the right order?). Change a weight, the model, the gate threshold — re-run, compare the numbers. If they drop, you don't ship it.
+
+```ts
+const result = await matcher.runEval("shop", "products", { queries: golden, judge, k: 10 });
+console.log(result.aggregate, "pass:", result.pass);
+```
+
+That's the loop that lets you improve at engineering speed instead of vibes. Start it whenever you're ready — see [Eval gate](/guides/eval-gate/). And the same judge that grades your search is the one re-ranking it, so the effort compounds.
+
+A couple of free knobs you'll reach for first:
+
+- **Tune the mix per query, no reindex.** Pass `weights` to lean more on the photo, or on price, or on meaning, for a given search.
+- **Search by picture.** You already turned the visual signal on (`spaces: fashion.spaces({ visual: true })`) — pass an `image` to `search` and a shopper can find things from a screenshot.
+
+## Where to go next
+
+You went from an idea to a search that respects budgets and stock while genuinely understanding "a light beach-wedding outfit." That's the whole core. From here it's all turning knobs you now understand:
+
+- **How the re-ranker works (and swapping in Cohere/Voyage/a local one)** — [Reranking](/reference/reranking/).
+- **The model that reads and grades your catalog** — [Relevance judge](/reference/relevance-judge/).
+- **Picking your providers and models** — [Providers](/reference/providers/).
+- **Every status a product moves through** — [Pipeline lifecycle](/guides/pipeline-lifecycle/).
+- **The precise, no-narration version in fifteen minutes** — [Quickstart](/start/quickstart/).
