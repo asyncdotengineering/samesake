@@ -1,0 +1,166 @@
+---
+title: Vercel Workflows pipeline
+description: Durable push → enrich → index with the Workflow DevKit — use workflow and use step directives plus Vercel Cron Jobs.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+[Vercel Workflows](https://useworkflow.dev/) (Workflow DevKit, package `workflow`) marks orchestrators with `"use workflow"` and durable steps with `"use step"`. Unhandled errors retry automatically; `FatalError` skips retries. Recurring syncs use a **Vercel Cron Job** that hits an API route calling `start()` from `workflow/api`.
+
+See [Running the enrich pipeline durably](/guides/enrich-pipeline/) for the five-step model.
+
+## Matcher setup
+
+```ts title="lib/matcher.ts"
+import { createMatcher, fashionRerank } from "@samesake/server";
+import { products } from "../catalog.ts";
+import { geminiEmbed, geminiGenerate } from "../gemini.ts";
+
+export const matcher = createMatcher({
+  databaseUrl: process.env.DATABASE_URL!,
+  apiKey: process.env.API_KEY!,
+  embed: geminiEmbed,
+  generate: geminiGenerate,
+  rerank: fashionRerank(geminiGenerate),
+});
+```
+
+## Workflow and steps
+
+Each matcher call lives in its own step function — failures retry per step, not per workflow.
+
+```ts title="workflows/sync-catalog.ts"
+import { FatalError } from "workflow";
+import { matcher } from "../lib/matcher.ts";
+import { fetchChangedRows } from "../catalog-source.ts";
+
+const PROJECT = "market";
+const COLLECTION = "products";
+
+export async function syncCatalog() {
+  "use workflow";
+
+  await pushStep();
+  await enrichStep();
+  await indexStep();
+}
+
+async function pushStep() {
+  "use step";
+
+  if (!process.env.DATABASE_URL) {
+    throw new FatalError("DATABASE_URL is not set");
+  }
+
+  const rows = await fetchChangedRows();
+  await matcher.pushDocuments(PROJECT, COLLECTION, rows);
+}
+
+async function enrichStep() {
+  "use step";
+  await matcher.enrich(PROJECT, COLLECTION);
+}
+
+async function indexStep() {
+  "use step";
+  await matcher.index(PROJECT, COLLECTION);
+}
+```
+
+```ts title="workflows/maintenance.ts"
+import { matcher } from "../lib/matcher.ts";
+
+const PROJECT = "market";
+const COLLECTION = "products";
+
+export async function catalogMaintenance() {
+  "use workflow";
+
+  await revalidateImagesStep();
+  await retryFailedStep();
+}
+
+async function revalidateImagesStep() {
+  "use step";
+  await matcher.revalidateImages(PROJECT, COLLECTION);
+}
+
+async function retryFailedStep() {
+  "use step";
+  await matcher.retryFailed(PROJECT, COLLECTION);
+}
+```
+
+Use `import { sleep } from "workflow"` and `await sleep("5s")` when you need a delay between steps — sleeping doesn't consume compute.
+
+## Start workflows from API routes
+
+Trigger runs with `start()` from `workflow/api`. It returns immediately; the workflow executes asynchronously.
+
+```ts title="app/api/cron/sync-catalog/route.ts"
+import { start } from "workflow/api";
+import { syncCatalog } from "@/workflows/sync-catalog";
+
+export async function GET() {
+  const run = await start(syncCatalog, []);
+  return Response.json({ message: "sync started", runId: run.runId });
+}
+```
+
+```ts title="app/api/cron/maintenance/route.ts"
+import { start } from "workflow/api";
+import { catalogMaintenance } from "@/workflows/maintenance";
+
+export async function GET() {
+  const run = await start(catalogMaintenance, []);
+  return Response.json({ message: "maintenance started", runId: run.runId });
+}
+```
+
+## Vercel Cron Jobs
+
+Point crons at those routes in `vercel.json`:
+
+```json title="vercel.json"
+{
+  "crons": [
+    { "path": "/api/cron/sync-catalog", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/maintenance", "schedule": "0 * * * *" }
+  ]
+}
+```
+
+Secure cron routes with `CRON_SECRET` (Vercel sends it as `Authorization: Bearer …`) so random HTTP clients can't trigger full syncs.
+
+## Webhook fast-path
+
+```ts title="app/api/webhooks/product/route.ts"
+import { start } from "workflow/api";
+import { matcher } from "@/lib/matcher";
+import { syncCatalog } from "@/workflows/sync-catalog";
+
+export async function POST(request: Request) {
+  const product = await request.json();
+
+  await matcher.pushDocuments("market", "products", [product]);
+
+  // Next cron picks up enrich/index — or start the workflow now:
+  const run = await start(syncCatalog, []);
+
+  return Response.json({ ok: true, runId: run.runId });
+}
+```
+
+<Aside type="note">
+Workflow DevKit is evolving quickly. For the latest setup (Next.js plugin, `workflow` package version, deployment flags), follow the official [Getting started with Next.js](https://useworkflow.dev/docs/getting-started/next) guide. The `start()` import path (`workflow/api`) and `"use workflow"` / `"use step"` directives are stable in the current v5 docs.
+</Aside>
+
+## Why this fits samesake
+
+Vercel Workflows keep orchestration in your repo — no separate queue service if you're already on Vercel. Each `"use step"` boundary matches a matcher call: a transient embed failure retries `indexStep` without re-running `enrichStep`. samesake's idempotent incrementality still means unchanged rows are cheap inside each step.
+
+## Where to go next
+
+- **Concept and platform picker** — [Running the enrich pipeline durably](/guides/enrich-pipeline/)
+- **Row statuses** — [Pipeline lifecycle](/guides/pipeline-lifecycle/)
+- **Workflow DevKit docs** — [useworkflow.dev](https://useworkflow.dev/)
