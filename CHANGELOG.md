@@ -2,7 +2,17 @@
 
 All notable changes to samesake. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased] — indexing DSL breaking cutover
+## [2.0.0] — indexing DSL (breaking)
+
+### Breaking changes
+
+- **Removed `CollectionEmbeddingDef.source`** — doc embeddings no longer accept a `$`-template string; declare text in `indexing.surfaces` instead.
+- **Removed `fashion.composeEmbedDoc` / `fashion.embedDocSource` / `FASHION_EMBED_DOC_SOURCE`** — use `fashion.indexing()` surface builders.
+- **Removed doc-path `resolveEmbedTemplate`** — no `$`-template expansion, no `data.title` fallback, no apparel hardcode.
+- **`collection().indexing` is now required** — a config without it is a compile error.
+- **Generated `fts` column derives only from persisted `fts_src`** — legacy fallback expressions are removed.
+
+Migrate by: replace `embeddings.*.source` with an `indexing.surfaces` builder; see [/guides/pipeline-lifecycle](/guides/pipeline-lifecycle).
 
 ### Added
 
@@ -17,9 +27,6 @@ All notable changes to samesake. Format roughly follows [Keep a Changelog](https
 
 ### Changed
 
-- **Breaking:** collection configs now declare `indexing` explicitly; `CollectionEmbeddingDef.source` and doc-template fallback behavior are removed.
-- **Breaking:** `fashion.composeEmbedDoc`, `fashion.embedDocSource`, and `FASHION_EMBED_DOC_SOURCE` are removed in favor of `fashion.indexing()`.
-- **Breaking:** generated `fts` now derives only from persisted `fts_src`; legacy fallback expressions are removed.
 - Added apply-time indexing manifest validation: dense surfaces must reference existing embeddings and FTS search requires an FTS indexing surface.
 - **Enrich persists indexing surfaces** — `doc`, `rerank_doc`, `fts_src` written at enrich; indexer consumes persisted text; `indexing.gate` sets `quarantined` or `ready` (G2/G3/G5).
 - **`search()` excludes non-`ready` rows** when the collection has an enrich pipeline — quarantined/failed/dead rows never surface in FTS, cosine, or spaces legs.
