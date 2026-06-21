@@ -1,0 +1,173 @@
+---
+title: Search for a fashion marketplace that never holds still
+description: You run a fashion marketplace — many sellers, a catalog that changes every hour, and shoppers who type what they mean. Here is how to enrich every product, search by intent instead of keywords, keep your filters honest, and keep it all fresh with a pipeline that runs itself.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A marketplace is a different animal from a single shop. You don't own the listings — your sellers do. There are tens of thousands of products, written by hundreds of different people who all describe things their own way. New drops land every hour. Prices move. Things sell out and come back. A seller swaps a product photo without telling anyone. And your shoppers? They don't type "midi dress" — they type *"breezy summer dress for a garden party, nothing pink, under 5000."*
+
+So you have two messes to tame at once: the **products** are inconsistent, and the **queries** are human. Keyword search — match the words in the query to the words in the listing — fails at both ends. The seller wrote "boho maxi," the shopper typed "flowy long dress for a beach holiday," and they share zero words. Zero results. On a marketplace that happens *constantly*.
+
+Let's fix both, and — the part that actually keeps a marketplace alive — let's make it stay fixed as the catalog churns, without you babysitting it.
+
+## The two things you have to get right
+
+Strip it down. Good marketplace search needs exactly two things to work:
+
+1. **Make every product mean the same thing.** A seller's messy "boho maxi, perfect for summer 🌸" and another's "long floral dress" should both become the *same structured truth*: `{ category: dress, length: maxi, pattern: floral, occasions: vacation/casual, style: bohemian }`. Once products speak a consistent language, you can actually match and filter them.
+2. **Understand what the shopper meant.** "Under 5000" is a hard wall. "Not pink" is a hard wall. "Breezy summer garden-party dress" is *meaning*. You have to pull the walls out as filters and keep the meaning as meaning.
+
+Notice these are the same two jobs, pointed in opposite directions: **understand the product**, and **understand the query**. samesake does the first with *enrichment* and the second with *intent search*. You wire them; you don't build them.
+
+## Step 1 — Describe the catalog (the preset is your best default)
+
+One file. The fashion preset fills in the parts that take real expertise — which attributes matter, how to read a product *and its photo* into structured fields, and a quality gate.
+
+```ts title="catalog.ts"
+import { collection, Channels, fashion } from "@samesake/core";
+
+export const products = collection("products", {
+  fields:     fashion.fields(),                 // brand, price, category, gender, colors, occasions… + filterable flags
+  spaces:     fashion.spaces({ visual: true }), // photo + price + category + freshness signals
+  enrich:     fashion.enrichPipeline(),         // reads each messy listing (+ image) into consistent attributes
+  indexing:   fashion.indexing(),               // builds the searchable text + the quality gate
+  embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
+  search: {
+    channels: [
+      Channels.fts({ fields: ["title"], weight: 1 }),
+      Channels.cosine({ embedding: "doc", weight: 1 }), // meaning — this is what makes it "intent", not keyword
+      Channels.spaces({ weight: 1 }),
+    ],
+    combiner: "rrf",
+  },
+});
+```
+
+Every `filterable` attribute the preset declares (category, gender, colors, price, availability…) becomes a real database column you can filter on — and crucially, it's filled by *enrichment*, not by trusting whatever the seller typed. That's how your filters stay honest across a thousand sellers' habits.
+
+## Step 2 — Wire the matcher (with the relevance double-check on)
+
+```ts title="matcher.ts"
+import { createMatcher, fashionRerank } from "@samesake/server";
+import { products } from "./catalog.ts";
+import { geminiEmbed, geminiGenerate } from "./gemini.ts"; // your two model fns — see Providers
+
+export const matcher = createMatcher({
+  databaseUrl: process.env.DATABASE_URL!,
+  apiKey: process.env.API_KEY!,
+  embed: geminiEmbed,                    // gemini-embedding-2
+  generate: geminiGenerate,              // gemini-3.1-flash-lite — reads products + parses queries + judges relevance
+  rerank: fashionRerank(geminiGenerate), // re-checks the top results, on by default once wired
+});
+
+await matcher.apply("market", { entities: [], collections: [products] });
+```
+
+## Step 3 — The pipeline that keeps it fresh (this is the heart of a marketplace)
+
+Here's where a marketplace is different from a shop you set up once. Your catalog is a *river*, not a lake. So you don't "load the data" — you run a small loop that keeps the index in sync with whatever your sellers did since last time.
+
+The loop is three commands, and the magic is that **they're all incremental and idempotent** — running them on an unchanged catalog does almost nothing:
+
+```ts title="sync.ts"
+// Run this on a schedule (cron) and/or from your store webhooks.
+async function sync(rows) {
+  await matcher.pushDocuments("market", "products", rows); // upsert raw listings
+  await matcher.enrich("market", "products");              // understand the new/changed ones
+  await matcher.index("market", "products");               // (re)build vectors for the new/changed ones
+}
+```
+
+Why this is safe to run every five minutes over your whole catalog without melting your model bill:
+
+- **`pushDocuments` fingerprints each product.** It computes a `content_hash` from the listing's fields + image. On upsert, if the hash is **identical** to what's stored, nothing else changes — the product is untouched. If the hash is **different** (a seller edited the title, dropped the price, swapped the photo), it resets that row's `enriched_at` and `indexed_at` to null — marking it "dirty."
+- **`enrich` only processes dirty rows** (`enriched_at IS NULL`). New products and genuinely-changed products get re-read by the model; the other 49,000 untouched listings are skipped entirely. No wasted model calls.
+- **`index` only processes stale rows.** Same idea for the vectors.
+
+So a full re-sync of a 50,000-product marketplace where 80 things changed costs you ~80 enrichments, not 50,000. You can run it as often as you like.
+
+<Aside type="tip">
+Wire `sync` to your store **webhooks** for near-instant updates (product created/updated → push just that product), *and* run it on a **cron** every few minutes as a safety net to catch anything a webhook missed. Because it's idempotent, the two can't conflict. Pulling from Shopify/WooCommerce? The [integration guides](/integrations/shopify/) give you the connector that turns a store feed into the `rows` above.
+</Aside>
+
+### The two background jobs that make it durable
+
+Two more commands you run on a slower schedule (say, hourly) — these are what separate a toy from something that survives a real marketplace:
+
+```ts title="maintenance.ts"
+await matcher.revalidateImages("market", "products"); // a seller swapped a photo behind the same URL? re-embed it
+await matcher.retryFailed("market", "products");      // a flaky seller image or model hiccup? retry with backoff
+```
+
+- **`revalidateImages`** catches the sneaky case: a seller replaces the image at `https://…/red-dress.jpg` with a *blue* dress, same URL. Keyword/URL-based systems never notice and serve the stale look forever. samesake checks the image's fingerprint and, when it changed, forces a re-embed so visual search tells the truth.
+- **`retryFailed`** means a single product whose image timed out, or that hit a model rate-limit, doesn't silently vanish from your marketplace. It's marked `failed`, retried later with exponential backoff, and only given up on (`dead`) after several honest attempts.
+
+Every product is always in one honest state — `pending`, `ready`, `quarantined`, `failed`, or `dead` — and only `ready` ones show in search. The whole state machine is in [Pipeline lifecycle](/guides/pipeline-lifecycle/).
+
+<Aside type="note">
+The quality **gate** runs inside `enrich`: if the model isn't confident, or the photo says "dress" while the seller's tags say "jacket", that listing is set aside (`quarantined`) instead of poisoning your results. On a marketplace with uneven seller quality, this is doing a lot of quiet work for you — and it's already on.
+</Aside>
+
+## Step 4 — Search by intent, with filters that hold
+
+Now the shopper side. Two things are happening when someone searches *"breezy summer dress for a garden party, nothing pink, under 5000"*:
+
+**The meaning is matched, not the words.** Because your `search` config carries the `cosine` (meaning) channel, the query and every product live in the same "meaning space." "Breezy summer garden-party dress" lands near "flowy floral linen midi" even with no shared words. That's intent search — and on text queries it's the default behaviour, so you get it for free.
+
+**The hard constraints become filters.** "Under 5000" and "nothing pink" are walls, not vibes. The fashion preset gives you a query parser (`fashion.nlq`) that turns the sentence into structured constraints, which you pass as real filters:
+
+```ts title="search.ts"
+import { fashion } from "@samesake/core";
+import { matcher } from "./matcher.ts";
+import { geminiGenerate } from "./gemini.ts";
+
+// 1. Parse the shopper's sentence into intent + hard constraints
+const parsed = await geminiGenerate({
+  model: "gemini-3.1-flash-lite",
+  system: fashion.nlq.instructions,
+  prompt: "breezy summer dress for a garden party, nothing pink, under 5000",
+  schema: fashion.nlq.schema(),
+});
+// parsed → { semantic_query: "flowy summer garden-party dress",
+//            max_price: 5000, exclude_colors: ["pink"] }
+
+// 2. Search by the meaning, with the constraints enforced as filters
+const { hits } = await matcher.fashionSearch("market", "products", {
+  q: parsed.semantic_query,
+  filters: { available: true, max_price: parsed.max_price, exclude_colors: parsed.exclude_colors },
+  limit: 20,
+});
+```
+
+A pink 6,000 dress can be the most beautiful match in your catalog and it still won't show — because price and colour were walls, and `fashionSearch` pushes them into the database as real conditions. The meaning only decides the *order* of the dresses that were allowed through. That's the rule from the very top, working exactly as promised.
+
+And because `fashionRerank` is wired, the top handful get a final "is this *actually* a garden-party dress?" pass from a model — blended with the retrieval order, never blindly replacing it ([Reranking](/reference/reranking/)).
+
+## Step 5 — Improve on numbers, not vibes
+
+On a marketplace you'll constantly be tempted to fiddle — change a weight, swap a model, tighten the gate. Don't guess whether it helped. samesake ships an offline grader: a frozen set of real queries, scored for relevance by the same model that reranks. Change something, re-run, compare the numbers; if relevance drops, you don't ship it.
+
+```ts
+const result = await matcher.runEval("market", "products", { queries: golden, judge, k: 10 });
+console.log(result.aggregate, "pass:", result.pass);
+```
+
+That's how you tune a marketplace without playing whack-a-mole. See [Eval gate](/guides/eval-gate/).
+
+## What you ended up with
+
+- Every messy seller listing **enriched** into one consistent, filterable shape.
+- **Intent search** that matches meaning, not keywords — with the hard constraints pulled out as filters that never bend.
+- A **continuous pipeline** that keeps the index in sync with a churning catalog, cheaply, because it only touches what changed — plus image revalidation and retries so nothing rots or silently disappears.
+- A way to **measure** every change before it ships.
+
+All of it on good defaults you can override the day you have an opinion.
+
+## Where to go next
+
+- **Connect a real store feed** — [Shopify](/integrations/shopify/), [WooCommerce](/integrations/woocommerce/), [MedusaJS](/integrations/medusajs/).
+- **Every status a product moves through** — [Pipeline lifecycle](/guides/pipeline-lifecycle/).
+- **How the re-ranker works (and swapping providers)** — [Reranking](/reference/reranking/).
+- **Picking models and providers** — [Providers](/reference/providers/).
+- **A single-store, start-from-scratch version** — [From a store idea to search](/guides/idea-to-search/).
