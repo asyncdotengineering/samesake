@@ -26,3 +26,22 @@ How the community uses drizzle for pgvector/tsvector (gh + web, cited in the #59
 - **Layering**: `db/storage-adapter.ts` currently delegates `facets` to `core/facets.ts` (a db→core import; no runtime cycle since core/facets never imports the adapter). As more ops migrate, the Postgres-specific impl files should relocate under `db/postgres/` and the adapter own them outright — noted as later cleanup, not done now.
 - Two test ctx literals (`record-failure`, `retry-failed`) gained the `storage` field.
 - This work sits on top of the already-shipped 2.1.0 (relevance floor + NLQ + reranker); nothing here changes 2.1.0 behaviour.
+
+---
+
+## Milestone (turn 2): `ctx.db` removed — StorageAdapter is the sole DB contract
+
+**Commit `e59105d`.** The headline of #59 is done + verified (full server suite **232/232**, tsc clean).
+
+What changed:
+- `StorageAdapter` gained execution methods: `client(context)` (raw parameterized `.unsafe()` client) and `exec<T>(sql)` (Drizzle `sql` template), alongside `db` (portable query-builder) and `facets()`.
+- Every `ctx.db` / `getPgClient(ctx.db)` / `ctx.db.execute` across **17 core services**, the cache/migration db modules (`migrations`, `parse-cache`, `stage-cache`), and the app-builder `/healthz` route now routes through `ctx.storage.*`.
+- **`MatcherCtx.db` deleted.** The core no longer holds a raw postgres-js driver. (Internal type — not consumer-facing; `createMatcher`/the matcher object are unchanged.)
+
+### Design decision: primitives + per-op methods, not 40 boilerplate methods at once
+The strict #59 criterion ("no `sql.raw`/`getPgClient` outside the adapter") implies relocating every dialect SQL op into a typed adapter method (~40 across 17 mixed orchestration+SQL services). Doing all of that in one pass — right after the 2.1.0 search ship — is high-risk churn for low marginal return on a Postgres-only engine. Instead:
+- **Done now:** the field is gone, the adapter is the single DB contract, and the major self-contained op (`facets`) is a real method. Raw dialect SQL executes through the adapter's `client`/`exec` (a legitimate adapter-mediated-execution pattern — PayloadCMS's drizzle base likewise exposes the drizzle instance to its ops — **not** a workaround).
+- **Remaining (the per-op deepening):** 18 files still *build* dialect SQL in core (executed via the adapter). Relocating each into a typed `StorageAdapter` method — `hybridQuery`, the DDL `applyCollection`, `upsert`, `match*`, `variantGroups`, `explain*`, `indexDocuments` — is the long tail, to be done op-by-op (each its own verified commit, `facets` is the template). A future SQLite adapter needs these as methods; today's Postgres-only engine does not block on them.
+
+### Drizzle version finding (answers "is there a newer drizzle that helps?")
+Installed **drizzle-orm 0.45.2** — already well past 0.31, so the **native pgvector helpers are already available** (`vector` column type, `cosineDistance`/`l2Distance`/`innerProduct`, `.using('hnsw', col.op('vector_cosine_ops'))`). Nothing newer to adopt. samesake currently hand-writes the vector SQL; when the dialect ops are relocated into adapter methods, the **vector schema/DDL + cosine ordering** can use these native helpers for type-safety (FTS `@@`/`ts_rank` and the RRF fusion stay raw — drizzle has no native FTS). This is a clean-up opportunity *inside* the future adapter methods, not a blocker.
