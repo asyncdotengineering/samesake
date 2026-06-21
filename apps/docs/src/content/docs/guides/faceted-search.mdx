@@ -1,0 +1,187 @@
+---
+title: Faceted instant search — refine as you type
+description: Build the classic search box plus a refinement sidebar with counts — brand, category, price buckets — that updates on every keystroke. Declare facets once; samesake computes the rest.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Picture a shopper on your site. They type *"linen"* in the search box and, before they hit Enter, results already reshuffle. On the left, checkboxes: **Brand** (12), **Category** (8), **Colours** (5). Each label shows how many products match *right now* — not a stale count from yesterday's index, but the count **after** the current query and any filters you've already applied.
+
+That sidebar is **faceted search**. The search box handles meaning and keywords; the facets handle narrowing ("only Uniqlo", "dresses only", "under 8,000") with honest counts so people know what they'll get before they click.
+
+Let's wire it up — index once, search with facets on every keystroke, and let clicking a facet become a hard filter.
+
+## Three field roles (search box vs filters vs facets)
+
+On the collection, fields play three different jobs:
+
+- **`searchable`** — feeds the search box (full-text and meaning channels).
+- **`filterable`** — can become a hard `filters: { … }` condition (price cap, in-stock only).
+- **`facet: true` or `facet: "range"`** — drives the refinement sidebar with per-value counts (or price buckets for ranges).
+
+The fashion preset declares all three sensibly out of the box:
+
+```ts title="catalog.ts"
+import { collection, Channels, fashion } from "@samesake/core";
+
+export const products = collection("products", {
+  fields:     fashion.fields(),       // brand, category, colors, price… with filterable + facet flags
+  spaces:     fashion.spaces({ visual: true }),
+  enrich:     fashion.enrichPipeline(),
+  indexing:   fashion.indexing(),
+  embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
+  search: {
+    channels: [
+      Channels.fts({ fields: ["title"], weight: 1 }),
+      Channels.cosine({ embedding: "doc", weight: 1 }),
+      Channels.spaces({ weight: 1 }),
+    ],
+    combiner: "rrf",
+  },
+});
+```
+
+Not fashion? Same idea with raw field helpers — mark what the box searches, what filters hard, and what gets a count column:
+
+```ts title="catalog.ts — generic facets"
+import { collection, f, Channels, gates } from "@samesake/core";
+
+export const products = collection("products", {
+  fields: {
+    title:    f.text({ searchable: true }),
+    brand:    f.text({ filterable: true, facet: true }),
+    category: f.text({ filterable: true, facet: true }),
+    colors:   f.text({ filterable: true, facet: true }),   // or f.array({ …, facet: true })
+    price:    f.number({ filterable: true, facet: "range", budget: true }),
+    available: f.boolean({ filterable: true, facet: true }),
+  },
+  indexing: {
+    surfaces: {
+      embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => `${data.title} ${data.brand}`.trim() },
+      fts_doc:   { kind: "fts",   build: ({ data }) => `${data.title} ${data.brand}`.trim() },
+    },
+    gate: gates.always,
+  },
+  embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
+  search: { channels: [Channels.fts({ fields: ["title"], weight: 1 }), Channels.cosine({ embedding: "doc", weight: 1 })], combiner: "rrf" },
+});
+```
+
+`facet: "range"` on a number field gives you histogram buckets (min, max, and a handful of lo/hi bands). Everything else with `facet: true` returns value → count pairs.
+
+## Index it, keep it fresh
+
+Facets read live from the same Postgres rows as search — so run the usual pipeline after you load or change catalog data:
+
+```ts title="sync.ts"
+await matcher.pushDocuments("shop", "products", rows);
+await matcher.enrich("shop", "products");
+await matcher.index("shop", "products");
+```
+
+For a catalog that changes often, schedule that trio (or wire it to webhooks) so facet counts stay honest. The durable version — retries, image revalidation, quarantine — is in [Pipeline lifecycle](/guides/pipeline-lifecycle/) and the [Running the pipeline](/guides/enrich-pipeline/) guides.
+
+## Search with facets — one call, hits + counts
+
+Pass the facet field names on `search`. samesake runs the same query and filters you would for results, then aggregates counts for each requested facet **on that narrowed set**:
+
+```ts title="search.ts"
+import { createMatcher, fashionRerank } from "@samesake/server";
+import { geminiEmbed, geminiGenerate } from "./gemini.ts";
+
+const matcher = createMatcher({
+  databaseUrl: process.env.DATABASE_URL!,
+  apiKey: process.env.API_KEY!,
+  embed: geminiEmbed,
+  generate: geminiGenerate,
+  rerank: fashionRerank(geminiGenerate),
+});
+
+const result = await matcher.search("shop", "products", {
+  q: "linen dress",
+  facets: ["brand", "category", "colors"],
+  filters: { available: true },
+  limit: 24,
+});
+
+// result.hits — the product rows, ranked
+// result.facets — per-field counts for the sidebar
+```
+
+### What `result.facets` looks like
+
+Count facets (text, enum, boolean, array fields with `facet: true`):
+
+```ts
+result.facets.brand
+// { values: [{ value: "Uniqlo", count: 14 }, { value: "Muji", count: 9 }, …] }
+
+result.facets.category
+// { values: [{ value: "dress", count: 22 }, { value: "shirt", count: 11 }, …] }
+```
+
+Range facets (`f.number({ facet: "range" })`):
+
+```ts
+result.facets.price
+// {
+//   min: 1200,
+//   max: 48000,
+//   buckets: [
+//     { lo: 1200, hi: 9000, count: 31 },
+//     { lo: 9000, hi: 16800, count: 18 },
+//     …
+//   ],
+// }
+```
+
+Your UI renders `values` as checkboxes (or chips) with the count beside each label. When someone clicks **Uniqlo**, you don't need a separate facet API — add a filter and search again:
+
+```ts
+await matcher.search("shop", "products", {
+  q: "linen dress",
+  facets: ["brand", "category", "colors"],
+  filters: { available: true, brand: "Uniqlo" },
+  limit: 24,
+});
+```
+
+Counts and hits both respect the same `q` + `filters`. That's what makes "14" next to Uniqlo trustworthy — it's 14 *among in-stock linen dresses*, not 14 in the whole catalog.
+
+<Aside type="tip">
+Request only the facets you render. Each name in `facets: [...]` is a grouped SQL aggregate — keep the list to what the sidebar actually shows.
+</Aside>
+
+## Ranking you still control
+
+Facets narrow and count; **ranking** decides order inside the narrowed set. Business rules — bury unavailable, boost your house brand, personalization — live on `search.rankingPolicy` and the multiplicative ranking pass. Start with the fashion defaults; when you want to tune relevance vs availability vs margin, read [Reranking](/reference/reranking/) and the ranking section in [Build a search experience](/start/build-a-search-experience/).
+
+## Instant — fire search on every keystroke
+
+Hybrid search against Postgres + pgvector is fast enough to run **debounced** on each keystroke (200–300 ms is a common sweet spot). You get the classic instant-search feel: type → hits update → facet counts update → click a facet → filter tightens — all without a separate search service.
+
+Two latency knobs worth knowing:
+
+- **`rerank: false`** on hot paths skips the second-stage LLM judge when you want the snappiest first-stage RRF order.
+- **`weights`** per query lean harder on keywords vs meaning vs visual without reindexing.
+
+For production quality on fashion, keep `fashionRerank(geminiGenerate)` wired globally and only opt out on typeahead if profiling says you need to.
+
+## Sensible defaults recap
+
+| Piece | Default |
+| --- | --- |
+| Field shapes + facet flags | `fashion.fields()` |
+| Enrich + gate | `fashion.enrichPipeline()` + `fashion.indexing()` |
+| Embeddings | `gemini-embedding-2`, dim 1536 |
+| Generate / judge / rerank | `gemini-3.1-flash-lite` via `fashionRerank(geminiGenerate)` |
+| Visual signal | `fashion.spaces({ visual: true })` |
+
+Copy the provider adapters from [Providers](/reference/providers/), `apply` once, then the push → enrich → index loop above.
+
+## Where to go next
+
+- **First-principles walkthrough of the whole search stack** — [From a store idea to search that gets people](/guides/idea-to-search/).
+- **Indexing surfaces and pipeline states** — [Pipeline lifecycle](/guides/pipeline-lifecycle/).
+- **Tuning weights, rerank blend, and measuring with eval** — [Tuning search relevance](/guides/tuning-search/) and [Eval gate](/guides/eval-gate/).
+- **Fifteen-minute minimal setup** — [Quickstart](/start/quickstart/).
