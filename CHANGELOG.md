@@ -2,6 +2,12 @@
 
 All notable changes to samesake. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.2]
+
+### Fixed
+
+- **Quarantine gate leak when the collection has spaces** — the indexer's space-backfill clause (`OR space_vec IS NULL`) sat outside the `pipeline_status = 'ready'` guard, so a freshly-enriched **quarantined** row (NULL `space_vec`) was indexed and promoted to `ready`, defeating the gate. Any collection with both an enrich gate and spaces (e.g. every fashion store) leaked non-apparel / low-confidence / cross-signal-disagree items into search. The backfill is now guarded by `pipeline_status`.
+
 ## [2.0.1]
 
 ### Added
