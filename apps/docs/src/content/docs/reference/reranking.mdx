@@ -192,7 +192,27 @@ const localRerank: RerankFn = async ({ query, candidates }) => {
 };
 ```
 
+A ready-made recipe ships in `examples/fashion-search/rerank.ts`: **`onnxReranker()`** runs `mxbai-rerank-xsmall` locally via transformers.js (Node / Bun / container), and **`workersAiReranker(env.AI)`** uses Cloudflare Workers AI (`@cf/baai/bge-reranker-base`). A native ONNX runtime (`onnxruntime-node`) does **not** run on Cloudflare Workers — use the Workers AI binding there.
+
 See [Providers](/reference/providers/) for wiring `embed` and `generate` alongside `rerank`.
+
+## Relevance floor
+
+Reranking reorders; the **relevance floor** _removes_. `search.relevanceFloor` is an absolute query–document cosine similarity (0–1) a semantic-only hit must clear to survive — FTS keyword matches are exempt. It suppresses no-match padding: a query with no real match returns few/no results instead of the nearest neighbours.
+
+```ts
+collection("products", {
+  // …
+  search: {
+    channels: [/* … */],
+    relevanceFloor: 0.5, // calibrated for gemini-embedding-2
+  },
+});
+```
+
+- **Structured-intent bypass** — when NLQ derives hard filters (price/colour/category/…), those filters define relevance, so the floor is skipped; a filter-dominated query like `"anything under 2000"` is never emptied.
+- **Calibration** — `0.5` is calibrated for `gemini-embedding-2` on a labelled positive/negative probe (positives mean cosine ≈0.60, negatives ≈0.46). Recalibrate per embedding model; absolute thresholds drift with the model and corpus.
+- **Cosine vs reranker** — on the same probe a cross-encoder reranker rejected 100% of no-match queries vs the cosine floor's 92%. The cosine floor is the model-free default that works on every runtime; wire a reranker (above) when you want the stronger signal and your runtime supports it.
 
 ## Graceful degradation
 

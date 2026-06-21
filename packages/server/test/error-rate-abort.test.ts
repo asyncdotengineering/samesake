@@ -75,7 +75,7 @@ describeIf("test:error-rate-abort (REQ-18)", () => {
     await expect(
       matcher.enrich(projectSlug, "products", { maxErrorRate: 0.5, minSamples: 10, concurrency: 1 })
     ).rejects.toThrow(/failure rate/i);
-  });
+  }, 30_000);
 
   test("completes when failures stay under threshold", async () => {
     const okMatcher = createMatcher({

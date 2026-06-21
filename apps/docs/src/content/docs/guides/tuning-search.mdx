@@ -120,6 +120,8 @@ The classic failure: an LLM query parser extracts `color = "black"` and hard-fil
 out of the NLQ schema. Diagnose which with `searchExplain`'s `appliedFilters`.
 </Aside>
 
+For the full story — how a sentence splits into filters + a clean `semantic_query`, how price/numeric intent is handled, and the **`search.relevanceFloor`** that returns *nothing* instead of nearest-neighbour padding when there's no real match — see [Conversational search](/guides/conversational-search/).
+
 ## 6. Multimodal & cross-modal signals
 
 With a multimodal embedding model, an image space gives you three retrieval modes over one index:

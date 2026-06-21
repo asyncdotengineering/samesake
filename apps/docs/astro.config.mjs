@@ -60,6 +60,7 @@ export default defineConfig({
             { label: "From a store idea to search that gets people", slug: "guides/idea-to-search" },
             { label: "Faceted instant search", slug: "guides/faceted-search" },
             { label: "Search for a fashion marketplace", slug: "guides/marketplace-search" },
+            { label: "Conversational search — intent & price", slug: "guides/conversational-search" },
             { label: "From an idea to a working agent", slug: "guides/from-idea-to-agent" },
             { label: "Shopping agent with Mastra + samesake", slug: "guides/mastra-ecommerce-assistant" },
             { label: "Fashion app with Porulle + Next.js", slug: "guides/porulle-fashion-app" },

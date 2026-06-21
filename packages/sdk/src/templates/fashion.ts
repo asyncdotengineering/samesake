@@ -337,25 +337,36 @@ export function fashionIndexing(opts: { titleKey?: string } = {}): IndexingDef {
 
 // ── Fashion-aware NLQ defaults (region-neutral) ─────────────────────────
 export function fashionNlqSchema(): z.ZodType {
+  // Every constraint field is `.nullable()` (not `.optional()`) so the model is forced
+  // to emit it — value or null — instead of silently dropping it; operational
+  // descriptions tell the model exactly how to map natural language to each field.
   return z.object({
-    category: zEnum([...fashionTaxonomy.map((c) => c.id), "any"]).optional().describe("set only when unambiguous"),
-    gender: zEnum([...fashionEnums.gender, "any"]).optional(),
-    colors: z.array(zEnum(fashionEnums.colors)).optional(),
-    exclude_colors: z.array(zEnum(fashionEnums.colors)).optional(),
-    occasions: z.array(zEnum(fashionEnums.occasions)).optional(),
-    exclude_patterns: z.array(zEnum(fashionEnums.pattern)).optional(),
-    exclude_terms: z.array(z.string()).optional().describe("negated attributes/styles, e.g. bodycon, skinny"),
-    max_price: z.number().optional().describe("0 if none stated"),
-    min_price: z.number().optional().describe("0 if none stated"),
-    semantic_query: z.string().describe("descriptive intent to match semantically, stripped of price/negation; never empty"),
+    category: zEnum([...fashionTaxonomy.map((c) => c.id), "any"]).nullable().describe("Product category, only when unambiguous; else null."),
+    gender: zEnum([...fashionEnums.gender, "any"]).nullable().describe("Target gender if stated; else null."),
+    colors: z.array(zEnum(fashionEnums.colors)).nullable().describe("Colors the shopper explicitly wants, e.g. 'red dress' -> ['red']; else null."),
+    exclude_colors: z.array(zEnum(fashionEnums.colors)).nullable().describe("Colors explicitly excluded, e.g. 'not black' -> ['black']; else null."),
+    occasions: z.array(zEnum(fashionEnums.occasions)).nullable().describe("Occasions/use explicitly stated, e.g. 'for a wedding'; else null."),
+    exclude_patterns: z.array(zEnum(fashionEnums.pattern)).nullable().describe("Patterns excluded, e.g. 'no prints'; else null."),
+    exclude_terms: z.array(z.string()).nullable().describe("Negated attributes/styles, e.g. ['bodycon','skinny']; else null."),
+    max_price: z.number().nullable().describe("Upper price bound as a plain number; strip currency + commas. Map 'under/below/less than/up to N' -> N. null if no upper bound."),
+    min_price: z.number().nullable().describe("Lower price bound as a plain number. Map 'over/above/more than/at least/from N' -> N. 'between A and B' sets min=A and max=B. null if no lower bound."),
+    semantic_query: z.string().describe("The remaining descriptive intent, STRIPPED of every constraint mapped above (price, color, gender, negation), rewritten as a rich product-description fragment. Never empty; never echoes price/constraint words. e.g. 'red shoes under 3000' -> 'shoes'."),
   });
 }
 
-export const FASHION_NLQ_INSTRUCTIONS = `Parse a fashion shopper's search query.
-Map EXPLICIT constraints to filters only when clearly stated: price limits, negations ("not bodycon", "no prints"), colors, gender, occasion.
-Do NOT invent filters the shopper didn't state. Set category only when unambiguous.
-Budget words without a number ("cheap", "affordable", "budget") -> price_budget_hint=cheap; ("luxury", "high-end", "premium") -> premium. An explicit number always wins.
-semantic_query: rewrite the remaining descriptive intent as a rich product-description fragment (e.g. "office wear for women" -> "professional tailored office workwear for women").`;
+export const FASHION_NLQ_INSTRUCTIONS = `Parse a fashion shopper's search query into structured filters and a clean semantic_query.
+
+- Map EXPLICIT constraints to filters only when clearly stated: price bounds, colors, gender, occasion, negations ("not bodycon", "no prints"). Do NOT invent filters the shopper didn't state. Set category only when unambiguous.
+- Price: "under/below/less than/up to N" -> max_price=N; "over/above/at least/from N" -> min_price=N; "between A and B" -> min_price=A and max_price=B. Strip currency symbols and commas.
+- Budget words without a number ("cheap", "affordable", "budget") -> price_budget_hint=cheap; ("luxury", "high-end", "premium") -> premium. An explicit number always wins.
+- semantic_query: the remaining descriptive intent, STRIPPED of every constraint mapped above (price, color, gender, negation), rewritten as a rich product-description fragment. Never empty; never echo the price/constraint words.
+
+<examples>
+<example><input>men's shoes under 3000</input><output>{"gender":"men","max_price":3000,"min_price":null,"colors":null,"semantic_query":"men's shoes"}</output></example>
+<example><input>silver watch over 6000</input><output>{"min_price":6000,"max_price":null,"colors":["silver"],"semantic_query":"wristwatch"}</output></example>
+<example><input>red dress for a wedding under 5000</input><output>{"colors":["red"],"occasions":["wedding"],"max_price":5000,"semantic_query":"dress for a wedding"}</output></example>
+<example><input>office wear for women, nothing bodycon</input><output>{"gender":"women","exclude_terms":["bodycon"],"semantic_query":"professional tailored office workwear for women"}</output></example>
+</examples>`;
 
 // Standard fashion search fields. Declared attributes resolve from enriched.* (filled by the
 // enrich pipeline). Override paths/keys as your raw catalog requires.

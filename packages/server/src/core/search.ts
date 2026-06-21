@@ -237,6 +237,7 @@ async function runHybridQuery(
   filters: SearchFilters,
   filterOpts: FilterCompileOpts,
   weights: ChannelWeights,
+  relevanceFloor: number | null,
   limit: number,
   offset: number,
   mode: HybridRunMode = "search"
@@ -258,6 +259,11 @@ async function runHybridQuery(
   const hasCos = weights.cosine > 0 && vector !== null;
   const hasSpc = weights.spaces > 0 && spaceVector !== null;
   const hasRec = weights.recency > 0;
+  // Absolute semantic floor (passed in by the caller, already gated to skip
+  // structured-intent queries). A hit with no FTS keyword match must clear this
+  // query–document cosine similarity, else it is dropped (suppresses no-match
+  // padding). Only applies when a cosine leg is active.
+  const needCosFloor = relevanceFloor !== null && hasCos;
   const recField = sanitiseIdent(weights.recencyField);
   const fieldCols = Object.keys(def.fields).map((k) => `d.${sanitiseIdent(k)}`).join(", ");
 
@@ -329,8 +335,11 @@ async function runHybridQuery(
     }
 
     if (hasCos && vecRef) {
+      const cosCol = needCosFloor
+        ? `, (1 - (embedding <=> ${vecRef}::vector))::float AS cos`
+        : "";
       ctes.push(`sem AS (
-        SELECT id, row_number() OVER (ORDER BY embedding <=> ${vecRef}::vector) AS rn
+        SELECT id, row_number() OVER (ORDER BY embedding <=> ${vecRef}::vector) AS rn${cosCol}
         FROM ${table}
         WHERE embedding IS NOT NULL AND ${where}
         ORDER BY embedding <=> ${vecRef}::vector
@@ -405,17 +414,24 @@ async function runHybridQuery(
         LIMIT ${limitRef} OFFSET ${offsetRef}
       `;
     } else {
+      const floorRef = needCosFloor ? addParam(relevanceFloor) : null;
+      const floorCols = needCosFloor
+        ? `,
+                 ${hasFts ? "(l.rn IS NOT NULL)" : "FALSE"} AS fts_present,
+                 s.cos AS cos_sim`
+        : "";
+      const floorWhere = needCosFloor ? ` AND (fts_present OR cos_sim >= ${floorRef})` : "";
       query = `
         WITH ${ctes.join(", ")},
         fused AS (
           SELECT ${fusedId} AS id,
-                 (${scoreExprs.join(" + ")}) AS score
+                 (${scoreExprs.join(" + ")}) AS score${floorCols}
           ${fusedFrom}
         ),
         ranked AS (
           SELECT id, score, count(*) OVER ()::int AS total_candidates
           FROM fused
-          WHERE id IS NOT NULL
+          WHERE id IS NOT NULL${floorWhere}
           ORDER BY score DESC
           LIMIT ${limitRef} OFFSET ${offsetRef}
         )
@@ -609,6 +625,14 @@ export function makeSearchService(
     relaxed: boolean;
     relaxedFields: string[];
   }> {
+    // Structured-intent bypass: when NLQ derived hard filters, those filters define
+    // relevance — skip the semantic floor so filter-dominated queries are not emptied.
+    const effectiveFloor =
+      Object.keys(r.nlq.filters).length > 0
+        ? null
+        : typeof r.def.search?.relevanceFloor === "number"
+          ? r.def.search.relevanceFloor
+          : null;
     let { rows, softFieldsUsed, totalCandidates, filterSql, filterParams } = await runHybridQuery(
       ctx,
       r.project.schema_name,
@@ -620,6 +644,7 @@ export function makeSearchService(
       r.mergedFilters,
       r.filterOpts,
       r.weights,
+      effectiveFloor,
       limit,
       r.offset,
       mode
@@ -643,6 +668,7 @@ export function makeSearchService(
         r.mergedFilters,
         { ...r.filterOpts, excludeSoft: true },
         r.weights,
+        effectiveFloor,
         limit,
         r.offset,
         mode

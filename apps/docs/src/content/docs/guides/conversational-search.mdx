@@ -1,0 +1,151 @@
+---
+title: Conversational search — intent, price, and no-match handling
+description: How samesake turns a sentence like "comfortable red dress for a summer wedding under 5000" into precise results — hard filters for the constraints, a clean semantic query for the feel, and nothing at all when there is no real match.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Shoppers don't type keywords. They type sentences: *"comfortable red dress for a summer wedding under 5000"*, *"men's running shoes around 8k"*, *"something warm but not bulky"*. A keyword box throws most of that away. This guide is about the part that makes search feel like it *understands* — and, just as important, the part that makes it stay quiet when it has nothing good to say.
+
+There are sensible defaults for all of it. If you use the fashion preset you already have everything below; the guide explains what's happening so you can trust it and tune it.
+
+## A sentence is really two things
+
+Picture a friend behind the counter hearing *"comfortable red dress for a summer wedding under 5000."* They split it without thinking:
+
+- **The walls** — hard, non-negotiable constraints. *Red.* *A dress.* *For a wedding.* *Nothing over 5,000.* A 5,001 navy blazer is simply out, no matter how lovely.
+- **The feel** — the fuzzy, semantic part. *Comfortable. Summer. Wedding-appropriate.* There's no checkbox for "feels like a summer wedding"; that's what the embedding is for.
+
+samesake does the same split. A natural-language parser (NLQ) reads the query and produces **structured filters** for the walls and a **clean `semantic_query`** for the feel — with the constraint words stripped out so they don't pollute the embedding.
+
+```ts
+const { hits } = await matcher.search("shop", "products", {
+  q: "comfortable red dress for a summer wedding under 5000",
+});
+```
+
+That's the whole call. To *see* the split, use `searchExplain`:
+
+```ts
+const ex = await matcher.searchExplain("shop", "products", {
+  q: "comfortable red dress for a summer wedding under 5000",
+});
+
+ex.parsed.semantic_query;            // "comfortable dress for a summer wedding"  ← the feel, price/colour stripped
+ex.constraintTrace.appliedFilters;   // { price: { $lte: 5000 }, colors: ["red"], occasions: ["wedding"], category: "dresses" }
+```
+
+The filters narrow the candidate set in SQL — exactly, every time. The `semantic_query` is what gets embedded and matched. They're orthogonal: one is a wall, the other is a gradient.
+
+## Numbers are walls, not vibes
+
+Price is the constraint shoppers state most often, and it must be obeyed literally:
+
+| They type | Becomes |
+|---|---|
+| "…under / below / up to 3000" | `price ≤ 3000` |
+| "…over / above / at least 6000" | `price ≥ 6000` |
+| "…between 2000 and 4000" | `2000 ≤ price ≤ 4000` |
+| "cheap" / "affordable" (no number) | a budget *hint* that tilts ranking, not a hard wall |
+
+Currency symbols and commas are stripped (`"Rs 5,000"` → `5000`). Crucially, the number is **removed from `semantic_query`** — `"men's shoes under 3000"` embeds as `"men's shoes"`, not `"men's shoes under 3000"`. If the price words leaked into the embedding they'd drag the vector toward unrelated "cheap/discount" products; keeping the query clean is what makes the *feel* part accurate.
+
+<Aside type="tip">
+Hard filters always win over semantic similarity. A gorgeous 5,200 dress that's a perfect semantic match for *"summer wedding"* is still dropped by `price ≤ 5000`. That's the point — the shopper drew a wall.
+</Aside>
+
+## You get this for free with the fashion preset
+
+`fashionSearchPreset` (and `fashion.nlq`) wire the parser, the schema, and the filterable fields for you:
+
+```ts
+import { fashionSearchPreset } from "@samesake/core";
+
+const products = fashionSearchPreset({
+  textModel: "gemini-embedding-2",
+  textDim: 1536,
+  enrichmentModel: "gemini-3.1-flash-lite",
+});
+```
+
+Building a custom collection? Wire NLQ yourself by handing the parser instructions and a schema. The schema names the constraints you want pulled out (`max_price`, `colors`, `category`, …) plus a `semantic_query`; the instructions teach the model to map phrases to fields and to keep `semantic_query` clean:
+
+```ts
+collection("products", {
+  fields: {
+    price: f.number({ filterable: true, budget: true }),
+    colors: f.array(f.enum(COLORS), { filterable: true }),
+    // …
+  },
+  search: {
+    channels: [/* fts + cosine + spaces */],
+    nlq: {
+      instructions: fashion.nlq.instructions, // or your own
+      schema: fashion.nlq.schema(),
+      semanticRewrite: true,
+    },
+  },
+});
+```
+
+Two things make extraction reliable: the schema's constraint fields are **nullable but required** (the model must emit each one — a value or `null` — instead of quietly dropping it), and the instructions carry **few-shot examples** showing the exact mapping. A weaker prompt leaves the price word stuck in `semantic_query`; few-shot examples fix it.
+
+## The quiet part: returning *nothing*
+
+The hardest thing for search to do is admit it found nothing. A shopper types *"laptop"* into a clothing store; pure nearest-neighbour search hands back the three least-irrelevant handbags. That's the "0 results would've been more honest" problem.
+
+samesake's answer is the **relevance floor** — an absolute query-to-document cosine threshold a semantic-only hit must clear to survive:
+
+```ts
+search: {
+  channels: [/* … */],
+  relevanceFloor: 0.5, // calibrated for gemini-embedding-2
+}
+```
+
+Below it, padding is dropped. So *"laptop"* in a fashion catalog returns **nothing** rather than handbags. Two design choices make it safe:
+
+- **Keyword matches are exempt.** A hit that matches the query's words via full-text search survives even if its cosine is low — so an exact product-name search never gets floored.
+- **Structured-intent queries bypass the floor.** When NLQ derived hard filters, *those* define relevance, so the semantic floor steps aside. `"anything under 2000"` is almost pure constraint with thin semantic intent — it returns everything ≤ 2,000, never an empty page.
+
+<Aside type="caution">
+The floor is an **absolute** threshold, so it's specific to your embedding model and drifts with the corpus. `0.5` is calibrated for `gemini-embedding-2`; recalibrate with the [eval gate](/guides/eval-gate/) if you change models. Diagnose any surprising empty/padded result with `searchExplain` first.
+</Aside>
+
+## When you want the strongest signal: a reranker
+
+The cosine floor is model-free and runs on every runtime, which makes it the right default. But a **cross-encoder reranker** — a model that scores `(query, document)` pairs directly — is a sharper relevance signal (in our calibration it rejected 100% of no-match queries vs the floor's 92%). It's [bring-your-own](/reference/reranking/) via `rerank?: RerankFn`, and a ready recipe ships in `examples/fashion-search/rerank.ts`:
+
+```ts
+import { onnxReranker, workersAiReranker } from "./rerank.ts";
+
+// Node / Bun / container — local ONNX cross-encoder (mxbai-rerank-xsmall):
+createMatcher({ /* … */, rerank: onnxReranker() });
+
+// Cloudflare Workers — Workers AI (native ONNX can't run on Workers):
+createMatcher({ /* … */, rerank: workersAiReranker(env.AI) });
+```
+
+Reranking *reorders* the floored set; it doesn't replace the floor. Reach for it when you want the extra precision and your runtime supports it. See [Reranking](/reference/reranking/) for the contract and the blend behaviour.
+
+## Inspect everything with `searchExplain`
+
+When a result surprises you — too many, too few, the wrong order — don't guess. `searchExplain` shows the parse and the applied constraints:
+
+```ts
+const ex = await matcher.searchExplain("shop", "products", { q: "watch over 8000" });
+ex.parsed.semantic_query;          // "wristwatch"
+ex.constraintTrace.appliedFilters; // { price: { $gte: 8000 } }
+```
+
+If `appliedFilters` is empty when you expected a price filter, the parser missed the number — strengthen your NLQ instructions or examples. If a good item is missing, check whether the floor dropped it (low cosine, no keyword match) or a hard filter excluded it.
+
+## The shape of it
+
+1. A sentence splits into **hard filters** (the walls) and a **clean `semantic_query`** (the feel).
+2. **Numbers are walls** — `under/over/between` become price filters and are stripped from the embedding.
+3. The **relevance floor** keeps no-match queries honest (nothing, not padding); FTS matches and structured-intent queries are exempt.
+4. A **cross-encoder reranker** is the sharper signal when you want it — BYO, Cloudflare-safe.
+5. **`searchExplain`** tells you exactly what happened.
+
+Next: [Tuning search relevance](/guides/tuning-search/) for the knobs, and [Faceted instant search](/guides/faceted-search/) for the refinement sidebar that pairs with this.

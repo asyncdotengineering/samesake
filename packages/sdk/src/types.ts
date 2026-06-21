@@ -365,6 +365,14 @@ export interface CollectionSearchDef {
   variantGroup?: string;
   /** Post-fusion ranking boosts applied after rerank (when present). */
   rankingPolicy?: RankingPolicy;
+  /**
+   * Minimum query–document cosine similarity (0–1) a semantic-only hit must clear
+   * to survive; hits that also match via FTS keywords are exempt. Suppresses
+   * no-match padding — a query with no real match returns few/no results instead
+   * of the nearest neighbours. Calibrate per embedding model (≈0.5 for
+   * gemini-embedding-2); see guides/eval-gate.
+   */
+  relevanceFloor?: number;
   nlq?: {
     instructions?: string;
     semanticRewrite?: boolean;

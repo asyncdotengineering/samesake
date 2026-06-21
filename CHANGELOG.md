@@ -2,6 +2,20 @@
 
 All notable changes to samesake. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.1.0]
+
+### Added
+
+- **`search.relevanceFloor`** — an absolute query–document cosine floor (0–1) that drops semantic-only hits below the threshold; FTS keyword matches are exempt. Suppresses no-match padding (a query with no real match returns few/no results instead of the nearest neighbours). **Bypassed for structured-intent queries**: when NLQ derives hard filters (price/colour/category/etc.), those filters define relevance, so the semantic floor is skipped and filter-dominated queries (e.g. "anything under 2000") are never emptied. `fashionSearchPreset` defaults it to `0.5` (calibrated for `gemini-embedding-2`; override via the new `relevanceFloor` option). Calibrated on a labelled positive/negative probe (positives mean cosine ≈0.60, negatives ≈0.46). A cross-encoder reranker is a stronger relevance signal still (100% vs 92% no-match rejection on the same probe) — see `reference/reranking` for the BYO recipe — but the cosine floor is the model-free, runtime-universal default (a native ONNX reranker cannot run on Cloudflare Workers).
+
+### Changed
+
+- **NLQ extraction reshaped to a structured-output pattern** — `fashionNlqSchema` constraint fields are now `.nullable()` (forcing the model to emit each one, value or null) with operational descriptions, and `FASHION_NLQ_INSTRUCTIONS` carries few-shot `<examples>`. Fixes inconsistent `semantic_query` cleaning so price/colour words no longer leak into the embedded query (and therefore the relevance floor's signal).
+
+### Fixed
+
+- `searchExplain` no longer errors (`could not determine data type of parameter`) when `relevanceFloor` is set — the floor parameter is bound only on the query path that uses it.
+
 ## [2.0.2]
 
 ### Fixed

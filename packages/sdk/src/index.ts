@@ -297,6 +297,8 @@ type CollectionInput<
     /** Declared field whose value groups product variants; results collapse to one per group. */
     variantGroup?: NoInfer<keyof TFields & string>;
     rankingPolicy?: RankingPolicy;
+    /** Absolute cosine floor (0–1) a semantic-only hit must clear; FTS keyword matches are exempt. Suppresses no-match padding. */
+    relevanceFloor?: number;
     nlq?: {
       instructions?: string;
       semanticRewrite?: boolean;
@@ -475,6 +477,8 @@ export function fashionSearchPreset(opts: {
   imageDim?: number;
   enableVisual?: boolean;
   enrichmentModel?: string;
+  /** Absolute cosine floor for semantic-only hits (FTS matches exempt). Default 0.5, calibrated for gemini-embedding-2. */
+  relevanceFloor?: number;
   fields?: {
     title?: string;
     brand?: string;
@@ -554,6 +558,7 @@ export function fashionSearchPreset(opts: {
         Channels.spaces({ weight: 1 }),
       ],
       combiner: "rrf",
+      relevanceFloor: opts.relevanceFloor ?? 0.5,
       defaultSpaceWeights: {
         intent: 1,
         price: 0.4,
