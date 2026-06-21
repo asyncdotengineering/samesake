@@ -50,7 +50,7 @@ GEMINI_API_KEY=... bun examples/fashion-search/eval-judge.ts
 
 <Steps>
 
-1. **Calibrate the judge (once per prompt change).** Run `matcher.calibrateSearch` / `calibrate.ts` against a labeled fixture so judge-vs-human F1 meets your trust bar. Bump the judge `version` string when the rubric changes — stale cache entries must not mix versions.
+1. **Calibrate the judge (once per prompt change).** Run `matcher.calibrateSearch` / `calibrate.ts` against a labeled fixture so judge-vs-human F1 meets your trust bar. Bump the judge `version` string when the rubric changes — stale cache entries must not mix versions. See [Relevance judge](/reference/relevance-judge/) for the judge API, prompt, and schema.
 
 2. **Baseline the current placeholders.** With `GEMINI_API_KEY` set, run the gate and save the artifact:
 
@@ -84,6 +84,7 @@ Core ranking uses **multiplicative fusion**: normalized relevance raised to `rel
 
 ## Related docs
 
+- [Relevance judge](/reference/relevance-judge/) — `makeLlmJudge`, grading schema, versioning, and calibration.
 - [Eval from search snapshots](/guides/eval-from-snapshots/) — build a corpus and offline baseline before going live.
 - [Tuning search relevance](/guides/tuning-search/) — diagnose with `searchExplain`, fix data, then measure.
 - [Pipeline lifecycle](/guides/pipeline-lifecycle/) — how the indexing gate quarantines low-confidence rows.

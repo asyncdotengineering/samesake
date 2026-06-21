@@ -139,6 +139,7 @@ data and signals are right — re-weighting noise just reshuffles noise.
 
 Default reranking uses **`fashionRerank(generate)`** when wired on the matcher — a position-aware
 **blend** with first-stage RRF, not a full replace. Pass `rerank: false` per query to force pure RRF.
+See [Reranking](/reference/reranking/) and [Relevance judge](/reference/relevance-judge/) for the full contract.
 
 **Empirical tuning:** `FASHION_CONFIDENCE_FLOOR` and `relevanceExponent` are placeholders until
 you run the offline eval gate — see [Eval gate — tune floor and exponents](/guides/eval-gate/).

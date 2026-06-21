@@ -55,6 +55,14 @@ export default defineConfig({
             { label: "Eval gate — tune floor and exponents", slug: "guides/eval-gate" },
           ],
         },
+        {
+          label: "Reference",
+          items: [
+            { label: "Reranking", slug: "reference/reranking" },
+            { label: "Relevance judge", slug: "reference/relevance-judge" },
+            { label: "Providers", slug: "reference/providers" },
+          ],
+        },
       ],
     }),
   ],
