@@ -44,6 +44,17 @@ export default defineConfig({
           ],
         },
         {
+          label: "Running the pipeline",
+          items: [
+            { label: "Running the enrich pipeline durably", slug: "guides/enrich-pipeline" },
+            { label: "In-memory pipeline", slug: "guides/pipeline-in-memory" },
+            { label: "Inngest pipeline", slug: "guides/pipeline-inngest" },
+            { label: "Upstash Workflow pipeline", slug: "guides/pipeline-upstash" },
+            { label: "Cloudflare Workflows pipeline", slug: "guides/pipeline-cloudflare-workflows" },
+            { label: "Vercel Workflows pipeline", slug: "guides/pipeline-vercel-workflows" },
+          ],
+        },
+        {
           label: "Guides",
           items: [
             { label: "From a store idea to search that gets people", slug: "guides/idea-to-search" },
