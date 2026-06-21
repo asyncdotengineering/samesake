@@ -101,7 +101,8 @@ export function makeProjectsService(
   schemaGen: SchemaGen,
   collectionsSchemaGen: CollectionsSchemaGen
 ) {
-  const { db, systemTables } = ctx;
+  const { systemTables } = ctx;
+  const db = ctx.storage.db;
   const projects = systemTables.samesakeProjects;
   const liveCollections = new Map<string, CollectionDef>();
   // Short-TTL cache so a single request's many getProject() sub-calls (resolveProductImage,

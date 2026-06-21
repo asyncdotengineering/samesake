@@ -28,7 +28,7 @@ export function makeReviewService(ctx: MatcherCtx, projectsService: ProjectsServ
     if (!project) throw new Error(`project "${projectSlug}" not found`);
     const limit = Math.min(opts?.limit ?? 20, 200);
     const maxConf = opts?.maxConfidence ?? 0.7;
-    const rows = await getPgClient(ctx.db, "review").unsafe(
+    const rows = await ctx.storage.client("review").unsafe(
       `SELECT id, data->>'title' AS title, enriched->>'category' AS category,
               (enriched->>'confidence')::float AS confidence,
               coalesce(enriched->'uncertain_fields', '[]'::jsonb) AS uncertain_fields,
@@ -66,7 +66,7 @@ export function makeReviewService(ctx: MatcherCtx, projectsService: ProjectsServ
     if (!project) throw new Error(`project "${projectSlug}" not found`);
     if (!Object.keys(fields).length) throw new Error("no corrections supplied");
     const t = collectionTableName(project.schema_name, collectionName);
-    const rows = await getPgClient(ctx.db, "review").unsafe(
+    const rows = await ctx.storage.client("review").unsafe(
       `SELECT data->>'title' AS title, enriched FROM ${t} WHERE id = $1`,
       [docId]
     );
@@ -75,7 +75,7 @@ export function makeReviewService(ctx: MatcherCtx, projectsService: ProjectsServ
     const title = (rows[0].title as string) ?? null;
 
     for (const [field, value] of Object.entries(fields)) {
-      await ctx.db.insert(corrections).values({
+      await ctx.storage.db.insert(corrections).values({
         project: projectSlug,
         collection: collectionName,
         docId,
@@ -86,7 +86,7 @@ export function makeReviewService(ctx: MatcherCtx, projectsService: ProjectsServ
       });
     }
 
-    await getPgClient(ctx.db, "review").unsafe(
+    await ctx.storage.client("review").unsafe(
       `UPDATE ${t}
        SET enriched = coalesce(enriched, '{}'::jsonb) || $1::jsonb || '{"_corrected": true}'::jsonb,
            indexed_at = NULL,
@@ -104,7 +104,7 @@ export function makeReviewService(ctx: MatcherCtx, projectsService: ProjectsServ
     collectionName: string,
     limit = 3
   ): Promise<string[]> {
-    const rows = await ctx.db
+    const rows = await ctx.storage.db
       .select({
         field: corrections.field,
         oldValue: corrections.oldValue,

@@ -269,7 +269,6 @@ export interface MatcherConfig {
 
 // ── What the internal modules consume ───────────────────────────────────
 export interface MatcherCtx {
-  db: PostgresJsDatabase;
   storage: StorageAdapter;
   schema: string;            // system schema (always set; default applied)
   projectPrefix: string;     // per-project schema prefix (always set)

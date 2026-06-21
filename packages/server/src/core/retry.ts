@@ -48,7 +48,7 @@ export function makeRetryService(
     const table = collectionTableName(project.schema_name, collectionName);
     const hasEnrich = isPipeline(def.enrich);
 
-    const deadRows = await getPgClient(ctx.db, "retry").unsafe(
+    const deadRows = await ctx.storage.client("retry").unsafe(
       `UPDATE ${table}
        SET pipeline_status = 'dead', updated_at = now()
        WHERE pipeline_status = 'failed' AND attempt_count >= $1
@@ -57,7 +57,7 @@ export function makeRetryService(
     );
     const dead = deadRows.length;
 
-    const retryable = await getPgClient(ctx.db, "retry").unsafe(
+    const retryable = await ctx.storage.client("retry").unsafe(
       `SELECT id, data, enriched, image_etag, enriched_at
        FROM ${table}
        WHERE pipeline_status = 'failed'

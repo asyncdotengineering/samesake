@@ -276,7 +276,7 @@ export function makeEmbedIndexService(
       ? `pipeline_status = 'ready' AND enriched_at IS NOT NULL AND (indexed_at IS NULL OR indexed_at < enriched_at${spaceBackfill})`
       : `indexed_at IS NULL OR (enriched_at IS NOT NULL AND indexed_at < enriched_at)${spaceBackfill}`;
 
-    const pending = await getPgClient(ctx.db, "embed-index").unsafe(
+    const pending = await ctx.storage.client("embed-index").unsafe(
       `SELECT id, data, enriched, ingested_at, doc FROM ${table}
        WHERE (${staleClause})
        ORDER BY id LIMIT $1`,
@@ -290,7 +290,7 @@ export function makeEmbedIndexService(
 
     async function markIndexSkipped(id: string): Promise<void> {
       const spaceClause = hasSpace ? ", space_vec = NULL" : "";
-      await getPgClient(ctx.db, "embed-index").unsafe(
+      await ctx.storage.client("embed-index").unsafe(
         `UPDATE ${table}
          SET indexed_at = now(), doc = NULL, embedding = NULL${spaceClause}, updated_at = now()
          WHERE id = $1`,
@@ -417,7 +417,7 @@ export function makeEmbedIndexService(
           params.push(...fieldValues, row.id);
           const setClause = colNames.map((c, k) => `${c} = $${k + 1}`).join(", ");
 
-          await getPgClient(ctx.db, "embed-index").unsafe(
+          await ctx.storage.client("embed-index").unsafe(
             `UPDATE ${table}
              SET ${setClause}, indexed_at = now(), pipeline_status = 'ready', last_error = NULL, updated_at = now()
              WHERE id = $${params.length}`,
@@ -464,7 +464,7 @@ export function makeEmbedIndexService(
     const textEmbedCache = new Map<string, number[]>();
     const imageEmbedCache = new Map<string, number[]>();
 
-    const rows = await getPgClient(ctx.db, "embed-index").unsafe(
+    const rows = await ctx.storage.client("embed-index").unsafe(
       `SELECT id, data, enriched, ingested_at, doc FROM ${table} WHERE id = $1`,
       [rowId]
     );
@@ -530,7 +530,7 @@ export function makeEmbedIndexService(
       colNames.push(...fieldCols.map(([n]) => sanitiseIdent(n)));
       params.push(...fieldValues, parsedRow.id);
       const setClause = colNames.map((c, k) => `${c} = $${k + 1}`).join(", ");
-      await getPgClient(ctx.db, "embed-index").unsafe(
+      await ctx.storage.client("embed-index").unsafe(
         `UPDATE ${table}
          SET ${setClause}, indexed_at = now(), pipeline_status = 'ready', last_error = NULL, updated_at = now()
          WHERE id = $${params.length}`,
@@ -560,7 +560,7 @@ export function makeEmbedIndexService(
         parsedRow.id,
       ];
       const setClause = colNames.map((c, k) => `${c} = $${k + 1}`).join(", ");
-      await getPgClient(ctx.db, "embed-index").unsafe(
+      await ctx.storage.client("embed-index").unsafe(
         `UPDATE ${table}
          SET ${setClause}, indexed_at = now(), pipeline_status = 'ready', last_error = NULL, updated_at = now()
          WHERE id = $${params.length}`,

@@ -34,7 +34,7 @@ export async function recordPipelineFailure(
   error: unknown
 ): Promise<void> {
   const msg = (error instanceof Error ? error.message : String(error)).slice(0, 500);
-  await getPgClient(ctx.db, "pipeline-failure").unsafe(
+  await ctx.storage.client("pipeline-failure").unsafe(
     `UPDATE ${table}
      SET attempt_count = attempt_count + 1,
          last_error = $1,

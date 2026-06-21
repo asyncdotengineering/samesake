@@ -1,6 +1,8 @@
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import type { SQL } from "drizzle-orm";
 import type { CollectionDef } from "@samesake/core";
 import { computeFacets, type FacetResult } from "../core/facets.ts";
+import { getPgClient, type PgUnsafe } from "../core/db-utils.ts";
 
 /** Inputs for a facet aggregation over a collection's filtered candidate set. */
 export interface FacetQuery {
@@ -21,8 +23,12 @@ export interface FacetQuery {
  * relocated behind a method, and is removed once they all are.
  */
 export interface StorageAdapter {
-  /** Raw Drizzle handle. Temporary escape hatch during the op-by-op migration. */
+  /** Drizzle handle for portable query-builder operations (insert/update/select). */
   readonly db: PostgresJsDatabase;
+  /** Raw parameterized-query client (`.unsafe(sql, params)`) for dialect-specific SQL. */
+  client(context?: string): PgUnsafe;
+  /** Execute a Drizzle `sql` template; returns the driver result (rows for SELECTs). */
+  exec<T = unknown>(query: SQL): Promise<T>;
   /** Close the connection. No-op when the consumer owns the handle. */
   close(): Promise<void>;
   /** Facet aggregation over the filtered candidate set. */
@@ -39,6 +45,14 @@ export class PostgresAdapter implements StorageAdapter {
 
   get db(): PostgresJsDatabase {
     return this.handle.db;
+  }
+
+  client(context = "query"): PgUnsafe {
+    return getPgClient(this.handle.db, context);
+  }
+
+  async exec<T = unknown>(query: SQL): Promise<T> {
+    return (await this.handle.db.execute(query)) as T;
   }
 
   close(): Promise<void> {

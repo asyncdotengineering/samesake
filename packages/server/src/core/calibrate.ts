@@ -19,7 +19,7 @@ export interface CalibrateInput {
 }
 
 export function makeCalibrateService(ctx: MatcherCtx, schemaGen: SchemaGen) {
-  const { db } = ctx;
+  const db = ctx.storage.db;
 
   return {
     async runCalibrate(input: CalibrateInput): Promise<CalibrateResult> {

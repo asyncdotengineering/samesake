@@ -203,7 +203,7 @@ export async function resolveBudgetHints(
       const where = category ? `WHERE category = $2 AND ${col} IS NOT NULL` : `WHERE ${col} IS NOT NULL`;
       const params: unknown[] = [pct];
       if (category) params.push(category);
-      const rows = await getPgClient(ctx.db, "parameterized search query").unsafe(
+      const rows = await ctx.storage.client("parameterized search query").unsafe(
         `SELECT percentile_cont($1) WITHIN GROUP (ORDER BY ${col}) AS v FROM ${table} ${where}`,
         params
       );
@@ -442,7 +442,7 @@ async function runHybridQuery(
     }
   }
 
-  const rows = await getPgClient(ctx.db, "parameterized search query").unsafe(query, params);
+  const rows = await ctx.storage.client("parameterized search query").unsafe(query, params);
   const totalCandidates =
     mode === "explain"
       ? rows.length
@@ -505,7 +505,7 @@ export function makeSearchService(
         .map((c) => `${c} = EXCLUDED.${c}`)
         .join(", ");
 
-      await getPgClient(ctx.db, "parameterized search query").unsafe(
+      await ctx.storage.client("parameterized search query").unsafe(
         `INSERT INTO ${table} (${cols.join(", ")}, indexed_at, pipeline_status, updated_at)
          VALUES (${placeholders}, now(), 'ready', now())
          ON CONFLICT (id) DO UPDATE SET ${updateSet}, indexed_at = now(), pipeline_status = 'ready', updated_at = now()`,
@@ -757,7 +757,7 @@ export function makeSearchService(
     if (r.weights.spaces > 0 && r.spaceSegments && rows.length) {
       const segs = r.spaceSegments;
       const ids = rows.map((row) => String(row.id));
-      const vecRows = await getPgClient(ctx.db, "parameterized search query").unsafe(
+      const vecRows = await ctx.storage.client("parameterized search query").unsafe(
         `SELECT id, space_vec::text AS space_vec FROM ${table} WHERE id = ANY($1::text[])`,
         [ids]
       );

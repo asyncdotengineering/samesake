@@ -36,7 +36,7 @@ export function makeIngestService(ctx: MatcherCtx, projectsService: ProjectsServ
         (data.content_hash as string | undefined) ?? computeContentHash(data);
       data.content_hash = contentHash;
 
-      await getPgClient(ctx.db, "ingest").unsafe(
+      await ctx.storage.client("ingest").unsafe(
         `INSERT INTO ${table} (id, data, content_hash, ingested_at, updated_at)
          VALUES ($1, $2::jsonb, $3, now(), now())
          ON CONFLICT (id) DO UPDATE SET
@@ -82,7 +82,7 @@ export function makeIngestService(ctx: MatcherCtx, projectsService: ProjectsServ
     if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
 
     const table = collectionTableName(project.schema_name, collectionName);
-    const result = await getPgClient(ctx.db, "ingest").unsafe(
+    const result = await ctx.storage.client("ingest").unsafe(
       `DELETE FROM ${table} WHERE id = ANY($1)`,
       [ids]
     );

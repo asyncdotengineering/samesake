@@ -56,7 +56,7 @@ export function makeExplainService(
   projectsService: ProjectsService,
   schemaGen: SchemaGen
 ) {
-  const { db } = ctx;
+  const db = ctx.storage.db;
   const SYS = ctx.schema;
 
   return {

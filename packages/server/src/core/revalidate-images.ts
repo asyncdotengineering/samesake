@@ -35,7 +35,7 @@ export function makeRevalidateImagesService(ctx: MatcherCtx, projectsService: Pr
     const limit = opts?.limit ?? 100_000;
     const consumesImages = enrichConsumesImages(def);
 
-    const rows = await getPgClient(ctx.db, "revalidate-images").unsafe(
+    const rows = await ctx.storage.client("revalidate-images").unsafe(
       `SELECT id, data, image_etag
        FROM ${table}
        WHERE data->>'image_url' IS NOT NULL AND data->>'image_url' <> ''
@@ -78,7 +78,7 @@ export function makeRevalidateImagesService(ctx: MatcherCtx, projectsService: Pr
 
       if (imageChanged) {
         changed++;
-        await getPgClient(ctx.db, "revalidate-images").unsafe(
+        await ctx.storage.client("revalidate-images").unsafe(
           `UPDATE ${table}
            SET indexed_at = NULL,
                enriched_at = CASE WHEN $1 THEN NULL ELSE enriched_at END,
@@ -90,7 +90,7 @@ export function makeRevalidateImagesService(ctx: MatcherCtx, projectsService: Pr
         );
       } else {
         unchanged++;
-        await getPgClient(ctx.db, "revalidate-images").unsafe(
+        await ctx.storage.client("revalidate-images").unsafe(
           `UPDATE ${table}
            SET image_etag = $1,
                image_checked_at = now(),

@@ -330,7 +330,7 @@ export function makeAgentToolsService(
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
     const table = collectionTableName(project.schema_name, collectionName);
-    const rows = await getPgClient(ctx.db, "agent-tools").unsafe(
+    const rows = await ctx.storage.client("agent-tools").unsafe(
       `SELECT data FROM ${table} WHERE id = $1 LIMIT 1`,
       [req.image.productId]
     );
@@ -350,7 +350,7 @@ export function makeAgentToolsService(
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
     const table = collectionTableName(project.schema_name, collectionName);
-    const rows = await getPgClient(ctx.db, "agent-tools").unsafe(
+    const rows = await ctx.storage.client("agent-tools").unsafe(
       `SELECT id, indexed_at, updated_at FROM ${table} WHERE id = ANY($1::text[])`,
       [ids]
     );

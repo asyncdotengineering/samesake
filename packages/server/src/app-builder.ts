@@ -10,7 +10,7 @@ import { ClientError } from "./errors.ts";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import type { StorageAdapter } from "./db/storage-adapter.ts";
 import type { EntityDef, ProjectConfig } from "@samesake/core";
 import type { MatchService } from "./core/match.ts";
 import type { SearchService } from "./core/search.ts";
@@ -33,7 +33,7 @@ export interface AppDeps {
   ensureMigrations: () => Promise<void>;
   runMigrationsOnRequest?: boolean;
   observability: Observability;
-  db: PostgresJsDatabase;
+  storage: StorageAdapter;
   services: {
     match: MatchService;
     search: SearchService;
@@ -131,7 +131,7 @@ function readBearer(c: { req: { header(name: string): string | undefined } }): s
 }
 
 export function buildApp(deps: AppDeps): Hono {
-  const { apiKey, ensureMigrations, runMigrationsOnRequest = true, observability, db, services } = deps;
+  const { apiKey, ensureMigrations, runMigrationsOnRequest = true, observability, storage, services } = deps;
   const app = new Hono();
 
   // Lazy migrations on first request.
@@ -161,12 +161,12 @@ export function buildApp(deps: AppDeps): Hono {
   }
 
   app.get("/v1/healthz", async (c) => {
-    const ext = await db.execute<{ extname: string; extversion: string }>(sql`
+    const ext = await storage.exec<{ extname: string; extversion: string }[]>(sql`
       SELECT extname, extversion FROM pg_extension
       WHERE extname IN ('vector', 'pg_trgm', 'unaccent', 'fuzzystrmatch')
       ORDER BY extname
     `);
-    const ver = await db.execute<{ ver: string }>(sql`SELECT version() AS ver`);
+    const ver = await storage.exec<{ ver: string }[]>(sql`SELECT version() AS ver`);
     return c.json({
       status: "ok",
       postgres: ver[0]?.ver ?? null,

@@ -231,7 +231,7 @@ export function makeEnrichPipelineService(
         const derivedCtx: DerivedDocContext = { data, enriched };
         const surfaces = persistIndexingSurfaces(def.indexing, derivedCtx);
 
-        await getPgClient(ctx.db, "enrich").unsafe(
+        await ctx.storage.client("enrich").unsafe(
           `UPDATE ${table}
            SET enriched = $1::jsonb,
                enriched_at = now(),
@@ -253,7 +253,7 @@ export function makeEnrichPipelineService(
           ]
         );
       } else {
-        await getPgClient(ctx.db, "enrich").unsafe(
+        await ctx.storage.client("enrich").unsafe(
           `UPDATE ${table}
            SET enriched = $1::jsonb, enriched_at = now(), updated_at = now()
            WHERE id = $2`,
@@ -343,7 +343,7 @@ export function makeEnrichPipelineService(
       // corrections table may not exist on older deployments; few-shot is best-effort
     }
 
-    const pending = await getPgClient(ctx.db, "enrich").unsafe(
+    const pending = await ctx.storage.client("enrich").unsafe(
       `SELECT id, data, image_etag FROM ${table}
        WHERE enriched_at IS NULL
        ORDER BY id

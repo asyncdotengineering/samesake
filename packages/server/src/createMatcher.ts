@@ -207,7 +207,6 @@ export function createMatcher(config: MatcherConfig): Matcher {
   // Build the ctx. ensureMigrations is wired below after we have it.
   let migrationsPromise: Promise<void> | null = null;
   const ctx: MatcherCtx = {
-    db: storage.db,
     storage,
     schema,
     projectPrefix,
@@ -278,7 +277,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
       upsert: upsertService,
       projects: projectsService,
     },
-    db: built.db,
+    storage,
   });
 
   // migrate() respects the config.migrate mode.

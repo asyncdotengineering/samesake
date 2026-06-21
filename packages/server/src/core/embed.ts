@@ -72,7 +72,8 @@ export function parseVector(s: string): number[] {
 }
 
 export function makeEmbedService(ctx: MatcherCtx) {
-  const { db, systemTables, embed: userEmbed } = ctx;
+  const { systemTables, embed: userEmbed } = ctx;
+  const db = ctx.storage.db;
   const cache = systemTables.samesakeEmbedCache;
 
   async function embedQuery(req: EmbedRequest): Promise<number[]> {

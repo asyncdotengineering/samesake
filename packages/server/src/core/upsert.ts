@@ -26,7 +26,7 @@ export function makeUpsertService(
   parseService: ParseService,
   schemaGen: SchemaGen
 ) {
-  const { db } = ctx;
+  const db = ctx.storage.db;
   const SYS = ctx.schema;
 
   async function upsertOne(

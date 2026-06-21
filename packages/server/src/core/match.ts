@@ -111,7 +111,7 @@ export function makeMatchService(
   projectsService: ProjectsService,
   schemaGen: SchemaGen
 ) {
-  const { db } = ctx;
+  const db = ctx.storage.db;
   const SYS_NORMALISE = sql`${sql.identifier(ctx.schema)}.samesake_normalise`;
   const SYS_PHONETIC = sql`${sql.identifier(ctx.schema)}.samesake_phonetic`;
 

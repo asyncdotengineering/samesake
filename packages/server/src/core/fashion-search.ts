@@ -196,7 +196,7 @@ export function makeFashionSearchService(
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
     const table = collectionTableName(project.schema_name, collectionName);
-    const rows = await getPgClient(ctx.db, "fashion-search").unsafe(
+    const rows = await ctx.storage.client("fashion-search").unsafe(
       `SELECT data FROM ${table} WHERE id = $1 LIMIT 1`,
       [image.productId]
     );
@@ -323,12 +323,12 @@ export function makeFashionSearchService(
     const table = collectionTableName(project.schema_name, collectionName);
 
     if (event.type === "product.delete") {
-      await getPgClient(ctx.db, "fashion-sync").unsafe(`DELETE FROM ${table} WHERE id = $1`, [event.id]);
+      await ctx.storage.client("fashion-sync").unsafe(`DELETE FROM ${table} WHERE id = $1`, [event.id]);
       searchResultCache.invalidateProjectCollection(projectSlug, collectionName);
       return { synced: true, action: "deleted", needsReindex: false };
     }
 
-    const rows = await getPgClient(ctx.db, "fashion-sync").unsafe(
+    const rows = await ctx.storage.client("fashion-sync").unsafe(
       `SELECT data FROM ${table} WHERE id = $1 LIMIT 1`,
       [event.id]
     );
@@ -346,7 +346,7 @@ export function makeFashionSearchService(
       setFragments.push(`${sanitiseIdent(fieldName)} = $${params.length}`);
     }
     if (setFragments.length) {
-      await getPgClient(ctx.db, "fashion-sync").unsafe(
+      await ctx.storage.client("fashion-sync").unsafe(
         `UPDATE ${table} SET ${setFragments.join(", ")} WHERE id = $1`,
         params
       );
