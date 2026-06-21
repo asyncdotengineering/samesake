@@ -87,6 +87,7 @@ export interface Matcher {
   indexDocuments: ReturnType<typeof makeSearchService>["indexDocuments"];
   ingest: ReturnType<typeof makeIngestService>["ingestCollection"];
   pushDocuments: ReturnType<typeof makeIngestService>["upsertDocuments"];
+  removeDocuments: ReturnType<typeof makeIngestService>["removeDocuments"];
   enrich: ReturnType<typeof makeEnrichPipelineService>["enrichCollection"];
   reviewList: ReturnType<typeof makeReviewService>["reviewList"];
   reviewCorrect: ReturnType<typeof makeReviewService>["reviewCorrect"];
@@ -315,6 +316,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
     indexDocuments: searchService.indexDocuments,
     ingest: ingestService.ingestCollection,
     pushDocuments: ingestService.upsertDocuments,
+    removeDocuments: ingestService.removeDocuments,
     enrich: enrichService.enrichCollection,
     index: embedIndexService.indexCollection,
     reviewList: reviewService.reviewList,

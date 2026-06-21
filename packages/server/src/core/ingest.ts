@@ -70,6 +70,30 @@ export function makeIngestService(ctx: MatcherCtx, projectsService: ProjectsServ
     return { upserted };
   }
 
+  async function removeDocuments(
+    projectSlug: string,
+    collectionName: string,
+    ids: string[]
+  ): Promise<{ removed: number }> {
+    if (ids.length === 0) return { removed: 0 };
+    const project = await projectsService.getProject(projectSlug);
+    if (!project) throw new Error(`project "${projectSlug}" not found`);
+    const def = await projectsService.getCollectionDef(projectSlug, collectionName);
+    if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
+
+    const table = collectionTableName(project.schema_name, collectionName);
+    const result = await getPgClient(ctx.db, "ingest").unsafe(
+      `DELETE FROM ${table} WHERE id = ANY($1)`,
+      [ids]
+    );
+    const removed = (result as { count?: number }).count ?? 0;
+
+    if (removed > 0) {
+      searchResultCache.invalidateProjectCollection(projectSlug, collectionName);
+    }
+    return { removed };
+  }
+
   async function pullFromConnectors(
     projectSlug: string,
     collectionName: string,
@@ -126,7 +150,7 @@ export function makeIngestService(ctx: MatcherCtx, projectsService: ProjectsServ
     return pullFromConnectors(projectSlug, collectionName, connectors);
   }
 
-  return { upsertDocuments, ingestCollection, pullFromConnectors };
+  return { upsertDocuments, removeDocuments, ingestCollection, pullFromConnectors };
 }
 
 export type IngestService = ReturnType<typeof makeIngestService>;
