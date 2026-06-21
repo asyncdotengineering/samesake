@@ -7,7 +7,7 @@ Mode: autonomous-stand + start-refactor (tiny commits, each green). Executing is
 - Final: remove `ctx.db` (raw handle private to PostgresAdapter).
 
 ## Doing
-- C2: migrate facets behind `storage.facets()` (lowest-risk self-contained op, proves the pattern).
+(empty — seam + first op-migration shipped; remaining ops sequenced in #59 + Backlog)
 
 ## Done
 - **C1 — the seam.** `db/storage-adapter.ts`: `StorageAdapter` interface + `PostgresAdapter` (owns connection lifecycle). `MatcherCtx` gains `storage`; `createMatcher` builds `PostgresAdapter(built)`, `ctx.db = storage.db` (escape hatch during migration), `close()` routed through the adapter. Fixed two test ctx literals (record-failure, retry-failed). tsc clean; 4/4 createMatcher tests green.
