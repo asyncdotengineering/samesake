@@ -1,0 +1,1302 @@
+[
+ {
+  "id": "39988",
+  "data": {
+   "title": "Gas Men Europa White Shoes",
+   "vendor": "Northstar Apparel",
+   "price": 3750,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/33/image/image.jpg?Expires=1782037954&Signature=d-yNXhqP5gxANJRjUdnfxei0ECOTt26LCR7yIiL8ACNacmLxSjnKk0A80rGeQ0NTOLQdUA0jQtRenyV9F6YNw0VmCm13jDP-JenwgVVCgcNF-iS~hG9L67r8K5QMybN60VgyB5J6-HShYDtkj~hrznJk9DDo1FUAcajUI3XYEyHK1Bv0iBVT3ggj6ntmh-i8Oby8SJJoWwXzH5nPDKGgSNh04eO7o9qhqxpGgQhSYbS2We5~l6GR7BvVKip7RSWDNWtJFqeu0zT5uXNHjMhkxgJnJME7Hn3dfqNoX-~V9n41ZHLS5Gw4TexS9aWqnaO0h7YXTFlqmVGgjNX5Iqd2Fw__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Gas Men Europa White Shoes. Men's casual shoes in white, suited for casual wear (winter).",
+   "_truth": {
+    "gender": "Men",
+    "color": "White",
+    "type": "Casual Shoes",
+    "sub": "Shoes",
+    "usage": "Casual"
+   },
+   "raw_type": "Casual Shoes",
+   "raw_tags": [
+    "Shoes",
+    "Casual Shoes",
+    "Casual",
+    "White",
+    "Winter"
+   ]
+  }
+ },
+ {
+  "id": "9036",
+  "data": {
+   "title": "Buckaroo Men Flores Black Formal Shoes",
+   "vendor": "Northstar Apparel",
+   "price": 7950,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/25/image/image.jpg?Expires=1782037954&Signature=iJVifJB69F~XMK20DcpP819vtSl5iJ-QMAO~3BSTKOaHzQpgWpR81KPzgXys-sF7wwMEmgm9hMJra8nQgPdriRTw2h5LlBetVWSQG-o6swUl~LoEu6uhlAPH3koEo2EGDGOQmOg-1wecH9FAMFHn7fFDsfIbOTghhLOE4JOWoMe1TPwUUczuQ9G0prdCv8VZpt7AW0CWmLZAvH9nSzEnCYoegUIlmKDqabb26GFIcr2~9EJgcpk~MGJ39OnAWQrRXW2Dr1ZGJQDimCEdR8~yIs-lR1YwJAgwVml17OT3sOHsrUUG3Sict5OyplD-qBS0UpO6HMOdIZ2CaWEjHEV37w__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Buckaroo Men Flores Black Formal Shoes. Men's formal shoes in black, suited for formal wear (winter).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Black",
+    "type": "Formal Shoes",
+    "sub": "Shoes",
+    "usage": "Formal"
+   },
+   "raw_type": "Formal Shoes",
+   "raw_tags": [
+    "Shoes",
+    "Formal Shoes",
+    "Formal",
+    "Black",
+    "Winter"
+   ]
+  }
+ },
+ {
+  "id": "34009",
+  "data": {
+   "title": "Gini and Jony Girls Black Top",
+   "vendor": "Northstar Apparel",
+   "price": 1600,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/99/image/image.jpg?Expires=1782037954&Signature=nnVD-9SdP29En7W~~spQP33abMNWRC7hJgmNPtSK2KMdMdaWF2984qUGOnJhwSAy9m2dV89GtMNRspNZOTgIQzcSQ4pUrCZffq2nupIFlxVfsKO0jyGY0qEBq03cAHMY~IXDPmIdGzdc0Ti2y92BtWy3ow3YR88Y0X7R27PRgse~Mxjy1yTXsojfIHaz9gnynvvAI5YLk-GAO7It4D-x1~af85--gUm9LTpPebFSGwleCr0EQZgJgnyBk42RxxJeBQrwPTFvGF2v7jV~hwXXaun~C~ktQoMjykCDD1u-blOpt8aO8mtzjqaZmzo5YgGO1oLOrTqGF6BLTCDIt3ZtBw__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Gini and Jony Girls Black Top. Girls's tops in black, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Girls",
+    "color": "Black",
+    "type": "Tops",
+    "sub": "Topwear",
+    "usage": "Casual"
+   },
+   "raw_type": "Tops",
+   "raw_tags": [
+    "Topwear",
+    "Tops",
+    "Casual",
+    "Black",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "43369",
+  "data": {
+   "title": "Reebok Men Black Possession Flip Flops",
+   "vendor": "Northstar Apparel",
+   "price": 900,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/84/image/image.jpg?Expires=1782037954&Signature=HbPP5YHXzfPVxalRKIulUBzcCTxJ7DMa8af5SH1~2WCDsiGrxrcZ4GD-Em0lq7umSKMeU4KYYnjf0NpASCAvFgAC7f7la~u57X8d1Znvyjhm77NjoUHRQmItyqsOouK-c7Ik0pQFZjQHxcSwU0E04ceGnhw4xyjvIL7bBIek~Nan3LTjkX095nUvv4fXMWNd3ZTKyM9C-Z6kWOppQW6geFQklB~aQK4GuBmnM2yByVDxsltnSOV0d0pLexf6tNhOwQfutDALOqklBdGuhWSBNW4nT27hhfdME1617qF3NRADhmXtQepWv63y1Ldyp~6a9QL8LNzzBgbpGELo8olxtg__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Reebok Men Black Possession Flip Flops. Men's flip flops in black, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Black",
+    "type": "Flip Flops",
+    "sub": "Flip Flops",
+    "usage": "Casual"
+   },
+   "raw_type": "Flip Flops",
+   "raw_tags": [
+    "Flip Flops",
+    "Flip Flops",
+    "Casual",
+    "Black",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "49653",
+  "data": {
+   "title": "Mineral Women Green Top",
+   "vendor": "Northstar Apparel",
+   "price": 2350,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/78/image/image.jpg?Expires=1782037954&Signature=okH42tDENKaeO19G1D7V9t5QCxdeaz9nX9J~2qLwD5q2IjrNkBkfkcy1z4dNB~dphbLm-ump78Vs4TCiHshud964xJZES8bnQ3Inl1FkXawpF~vHG43f~gzkLRjgv71AzPPrMc9Z7dgqz-EtCEBuR7axPPa9enPO9pg5Vr8cSiSVgYiriWML4jAOyhlpyjxTacu-bxAbtPtrzqVTw87JztvHHgOJn40eFChwDAO6KH0Avt6lZD0TYm4R8Jw2k5IdMbYSV8satSYiCNpODE7JzewGKBnatmwn0PtaXjZsZ1gDHQYY4tTamOI6I0KRDiEUJlztKdkHk4K-1GjfZl~nlw__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Mineral Women Green Top. Women's tops in green, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Women",
+    "color": "Green",
+    "type": "Tops",
+    "sub": "Topwear",
+    "usage": "Casual"
+   },
+   "raw_type": "Tops",
+   "raw_tags": [
+    "Topwear",
+    "Tops",
+    "Casual",
+    "Green",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "19123",
+  "data": {
+   "title": "Lotto Men XL Water Man Silver Slippers",
+   "vendor": "Northstar Apparel",
+   "price": 1300,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/81/image/image.jpg?Expires=1782037954&Signature=TXJqv0tP54NzUOHMtBOMxb9CAVj~xP7HXYdo22bwu3geyNDW54ZmeJ9FdMo5RcbF4xFKecqF~JR2RfNC3Ev7NZg6k3E9nMn9ziPZrleVXliYYj-PAfZAY86btK8eDFN42l~zRrUjr8j9fC86gD4bLhviS5upWFXBjTp-2WANq4hfTYhW-0xYIA6nh4na4D5DQ0UzzSkYjrcZC3IMU-SgKFZDEbAuEuplAKaU3~madzj9dTrtY2R~SOEJfyLmQgY0mOndrvS0frYBcuEzFxLgeN8dqDU0Qz8LRVG7raYlvcE6VFtYu6j~f5gOUSgk4MaLgO8dGgPdvYjxb0qhFpT6sw__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Lotto Men XL Water Man Silver Slippers. Men's flip flops in silver, suited for casual wear (fall).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Silver",
+    "type": "Flip Flops",
+    "sub": "Flip Flops",
+    "usage": "Casual"
+   },
+   "raw_type": "Flip Flops",
+   "raw_tags": [
+    "Flip Flops",
+    "Flip Flops",
+    "Casual",
+    "Silver",
+    "Fall"
+   ]
+  }
+ },
+ {
+  "id": "12967",
+  "data": {
+   "title": "ADIDAS Men Spry M Black Sandals",
+   "vendor": "Northstar Apparel",
+   "price": 2850,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/21/image/image.jpg?Expires=1782037954&Signature=DOB5uk9gHV5OQDnsTd3yha8D~Kri5qR-56nDVOOBphx0t2oIqLFHpGXmxrEkcP~V2eHAHpvD3XyyTCNxLNwozSJIn-hNboqtHrDLS-96oFobD0D20ONfeQzqun46O~C6RRYBO5OnSvkD36qGF3rOKV3R2KUXdEphk69eESP~M7WkoTHz0W5j~9naN1UoYgOK0-lysMH4vO20cKIT1BvhZOGJHIyYYLlTCnz-dZyvC18pUjSwr2EQKfoVewDX28nzFxXvuRq5~K1aQT7fCm-klp-ch9VrslfPUjRCzIMCZxeT4nUayenHDvEwdvQJr0qNgdO9Gor3leiO0qQkcqCDmw__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "ADIDAS Men Spry M Black Sandals. Men's sandals in black, suited for casual wear (fall).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Black",
+    "type": "Sandals",
+    "sub": "Sandal",
+    "usage": "Casual"
+   },
+   "raw_type": "Sandals",
+   "raw_tags": [
+    "Sandal",
+    "Sandals",
+    "Casual",
+    "Black",
+    "Fall"
+   ]
+  }
+ },
+ {
+  "id": "25349",
+  "data": {
+   "title": "Levis Men Red Brief",
+   "vendor": "Northstar Apparel",
+   "price": 550,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/93/image/image.jpg?Expires=1782037954&Signature=Xkc4tGNGhIQM48JfEruGZG1jigJmf7LNQJhyq3UC9l0VPQxT31y2sBpjECIvCFxo8N4-W99HCGa7P81MuBDUS64hBZKwI~Tz1k3Wy0t2YVevMXD50TQOcHo6vH9QfPxZNFzgaQp7KsAi9cvFz8UR710mNj-1xDbEpMWyz6xTNjOUpby4aQJGvyfEyJhFGMxn5G27uXVIQTeKbBOwE6fLoIJ74mPGwCvpNDCr9cTv5TQt3vE1xenPOYR3FFoyT5-jti0Zn9BTYTZr3-QXdKkjesYpDqAm~vdYK~Qx5JpChwIpkQs8js7jVoN6nkwma2Di29H1~rAXlxMXg8uYUPHlmg__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Levis Men Red Brief. Men's briefs in red, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Red",
+    "type": "Briefs",
+    "sub": "Innerwear",
+    "usage": "Casual"
+   },
+   "raw_type": "Briefs",
+   "raw_tags": [
+    "Innerwear",
+    "Briefs",
+    "Casual",
+    "Red",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "13419",
+  "data": {
+   "title": "United Colors of Benetton Men Solid Pink Polo T-shirts",
+   "vendor": "Northstar Apparel",
+   "price": 950,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/82/image/image.jpg?Expires=1782037954&Signature=ddhWFIrydOwd4a2GoSuVDXXu1gJLpS0woDvri9ahF83SO~suUIbi3yy5f1MXHnFr9va5P1Zrc9z5zqRGJ3xM-m8pf5ASYoL-wR6ue02aDf0ZelPb3auvhHRUddaH4YGAw7u8zSOzhEfoJ0SSMRlir8UnBmPLaDfHj~BAbNCYv5ciuRvNwHm2L6zzNswctvLELMkqqLqYxHMeFePV0tPGdKb9bXCAYFG~AHgLPs0DOFytEeUJbS3p9PTg7lzK8jIEYX3ZVRTBterKPu72vi0ZmvF6Ee~g2vwdWtRHIRpjJSity0ncZLT8G7H2sXhcDIpi~Nbl0qCdI32RYPIQmq2x6A__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "United Colors of Benetton Men Solid Pink Polo T-shirts. Men's tshirts in pink, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Pink",
+    "type": "Tshirts",
+    "sub": "Topwear",
+    "usage": "Casual"
+   },
+   "raw_type": "Tshirts",
+   "raw_tags": [
+    "Topwear",
+    "Tshirts",
+    "Casual",
+    "Pink",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "39386",
+  "data": {
+   "title": "Peter England Men Party Blue Jeans",
+   "vendor": "Northstar Apparel",
+   "price": 4050,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/1/image/image.jpg?Expires=1782037954&Signature=VKj8bhXFyFTfRL6QDtZPXe0wP-bKzaPJtpA0qyQ1jTG709nwolHxao2Ydrtomc9e3iToPwHdNC8-RKOQ3XW9RURR8I3GY4A~zNCtp0dTZOdJLFqDfaVKtcmMDqpvz8rj4YuKB4qMmVYtfa6yrWWkoOl0GF0~PCqEcjqy3v-7vG4GH9QGjkQ2I-SRsNn8nCXmZnRTREOM3W2flE15vHNgGPm1uSB1YE~HjecIgKt38MQiIFx~lzYSs-fzwI1-Lty4LhRYAn9MeVMPpWXdQI8SsSeagxZFyUzqdQ6XGmGF7eBnj7v2SAjK~N~5RqBcSVcHYml3suUTbMxgowV0kW3VCA__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Peter England Men Party Blue Jeans. Men's jeans in blue, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Blue",
+    "type": "Jeans",
+    "sub": "Bottomwear",
+    "usage": "Casual"
+   },
+   "raw_type": "Jeans",
+   "raw_tags": [
+    "Bottomwear",
+    "Jeans",
+    "Casual",
+    "Blue",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "6842",
+  "data": {
+   "title": "Timberland Unisex Rubber Sole Brush Shoe Accessories",
+   "vendor": "Northstar Apparel",
+   "price": 3000,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/22/image/image.jpg?Expires=1782037954&Signature=irf6cR9uutDrweVKfNh7Sbd-9z7tLHnrfaRLh9HpaVAQ8dKTCB2uRiB9YYxFn11DmDng5234BrDNMtEFtpZSpt3vL9nSrM9HOuecHlOzzGX8z1WfU4gsTa4b30ljwBDMwP~zXGx9Vb5LopodldFNqlnR8R4OY8bKsp3~kCg8-jvXrMK2-iRYKF0vgMO103WCNceBv9~h2nm9KUN0NR2BatBWpzcN7TEN8ZdTKEt9-fD4Y1QBp1jU9mvBcHv2GPx7hjeReeM1dCdQC9fZy2hY3XkqM3rJYXeOTcx0CLYBmWd045CysO48bhyXlXylefyt~0ysVylW~fWZRFP5x3ciBw__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Timberland Unisex Rubber Sole Brush Shoe Accessories. Unisex's shoe accessories in black, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Unisex",
+    "color": "Black",
+    "type": "Shoe Accessories",
+    "sub": "Shoe Accessories",
+    "usage": "Casual"
+   },
+   "raw_type": "Shoe Accessories",
+   "raw_tags": [
+    "Shoe Accessories",
+    "Shoe Accessories",
+    "Casual",
+    "Black",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "15970",
+  "data": {
+   "title": "Turtle Check Men Navy Blue Shirt",
+   "vendor": "Northstar Apparel",
+   "price": 2400,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/0/image/image.jpg?Expires=1782037954&Signature=w9NzZ64LZl-CvPKHrfMplXgRYa6CX4bF7HORjcEzmNzO5KQG5As5mgKcu6mLw2QBxT3BOuy5Dbr9iACsPAOr8EOFys2ZEYGtFnnT89wZAuVYQPiaLVs9n3grHi~UcwuYwwFsjQVYvrvXHhI99UmtjZ3jH5W0SdrvMTGhBOiwmd~S5gqINF68pRa1wYU1ZCKBXpz4yBkXk-ZSKmRh0Yy1Rg-unT-63ipMTDm4FO--cGRsbMYlTBnFpi330JKZWkWQbhvWuQ~PfPkhDDzpJrqI~Ry6u2xGFOwfSZwWxvSHF2HkGsiPQPURbm~97wP9bu83hQ9tZrlDSKLCu~1UBeJALg__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Turtle Check Men Navy Blue Shirt. Men's shirts in navy blue, suited for casual wear (fall).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Navy Blue",
+    "type": "Shirts",
+    "sub": "Topwear",
+    "usage": "Casual"
+   },
+   "raw_type": "Shirts",
+   "raw_tags": [
+    "Topwear",
+    "Shirts",
+    "Casual",
+    "Navy Blue",
+    "Fall"
+   ]
+  }
+ },
+ {
+  "id": "15528",
+  "data": {
+   "title": "Puma Men Scribble Black Tshirts",
+   "vendor": "Northstar Apparel",
+   "price": 1650,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/61/image/image.jpg?Expires=1782037954&Signature=u8dgZLtvbV-btDVq4C9ntEu~mtCANbJ~IEgXBNbRcLdjPUtIZgFEXcD~7XnquE1v8b3SD25oaWwlRqs7OU9WQhxS4hlPz-raqreOfotJut0~eEiYF6PVA7UkgJrmVieTPYmdTBWSChippc7K4yH4-rGRSq6XfH0KWjYcXy81t17qlUxw1SnXYaIIuUBG1uw4tbaXiDXN2RQ1xlWI0wvFQAC-KMPhTluehycdonGo8PSIMzqhVhNwMn6A9XcrbMOe7v2PtgOvqSGb4tgr8c326~8DPDuMh2cWKI4cl1RgW5tcZocrftHWLdFFidkugq2ZrQBEi0xFqNOyVFIfGVQJJQ__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Puma Men Scribble Black Tshirts. Men's tshirts in black, suited for casual wear (fall).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Black",
+    "type": "Tshirts",
+    "sub": "Topwear",
+    "usage": "Casual"
+   },
+   "raw_type": "Tshirts",
+   "raw_tags": [
+    "Topwear",
+    "Tshirts",
+    "Casual",
+    "Black",
+    "Fall"
+   ]
+  }
+ },
+ {
+  "id": "2288",
+  "data": {
+   "title": "Nike Women Black T-shirt",
+   "vendor": "Northstar Apparel",
+   "price": 1300,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/73/image/image.jpg?Expires=1782037954&Signature=hof4YJlozwJeY7K25Vf8DvV~MjlKc1OCggWJQFeYDcjI7Lgcut-7DtzM6iO2uYMTE2-9OdvyWh5YMFvrkVknfdAEriU7Q9SH7QPlyDYaAazzxWL123O-0qHiTzIDy61EF0t~KcvOf8vfHnPDT6Vncl8z5A~-cNuJggnfUquOOJtP5PQiMuCX6dUcUuaZGbsW9Ojf1rAeCEOUAk~y5EFZMxibNmzQ4OtQKmd7OEihBWcuOywknIDiHunI6ZQlyE3O-iKlTpxKuIlOeKp1iNRr5V62n6ZUXaAgbVO7-UZQByiF8m4tC8j38d1TwEwNaPE0SC5rV9d1w49KMicl9xcsLg__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Nike Women Black T-shirt. Women's tshirts in black, suited for sports wear (fall).",
+   "_truth": {
+    "gender": "Women",
+    "color": "Black",
+    "type": "Tshirts",
+    "sub": "Topwear",
+    "usage": "Sports"
+   },
+   "raw_type": "Tshirts",
+   "raw_tags": [
+    "Topwear",
+    "Tshirts",
+    "Sports",
+    "Black",
+    "Fall"
+   ]
+  }
+ },
+ {
+  "id": "18461",
+  "data": {
+   "title": "David Beckham Signature Men Deos",
+   "vendor": "Northstar Apparel",
+   "price": 2600,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/24/image/image.jpg?Expires=1782037954&Signature=YmLBBvMnWqoQnVvvRwLLxEVkQnXgTjVMf~ozeyDodJ8JCJhiQf6C262ss0Fvybm5ADy9OUsqXaYD5G7zESUcYJhasSOOYa~1V46iJxPGKUVtxFc91cQMSCz6cL1zJ8WJGgZyhe6jhQH7cY26nWYCaFozK2ms-z-nKTIN0sUCgPG3BeP6GoSSdEHHKH2KHrqmyJEM4YPRakhqDGnKiPtm~jn87SqpE5VxiRvagub5W6W6xFS0b3R7SLekPWpvy3ConKFrWRDB5NeJDthlzPPLXxrgRUgNJ~DHVX77T04WL513Ko7F5mfYtyra2dVy5G-r8yQYyFQHx1UAYd8LXe3PpQ__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "David Beckham Signature Men Deos. Men's deodorant in white, suited for casual wear (spring).",
+   "_truth": {
+    "gender": "Men",
+    "color": "White",
+    "type": "Deodorant",
+    "sub": "Fragrance",
+    "usage": "Casual"
+   },
+   "raw_type": "Deodorant",
+   "raw_tags": [
+    "Fragrance",
+    "Deodorant",
+    "Casual",
+    "White",
+    "Spring"
+   ]
+  }
+ },
+ {
+  "id": "38402",
+  "data": {
+   "title": "Baggit Women Hood Dabang Black Belt",
+   "vendor": "Northstar Apparel",
+   "price": 950,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/49/image/image.jpg?Expires=1782037954&Signature=DKDbCTq0cgneklhWzEqCLl1tSt4Wb9JcPj-jDQgjkZtwS0n4GKJVY~LUZZ7Jg1RdfNPjyLKVvJAShuii0lVYUgSiqmujKnDxcNbs5kp0PfDU7hOzIkhTieNM-p-puBeT6OnEnOgTQRIMaIpFZaI6Bf~zwwX04tonlf89ZVxvedsHPbZbnGJxguzymIfVQJMZsW1yMBuva6gc00xwlXHDU88KLum7qkyl-9w346D2kAeVyV1ukbP6pHYeY82GwdIKse4BvV3nVRQeihiV2hTInoEMvFsyVdZPCPDMu0LXIA4xhdmguRZZ09~5ysRvCDVth6Q0KlNwuFUTXy2SwWVeUA__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Baggit Women Hood Dabang Black Belt. Women's belts in black, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Women",
+    "color": "Black",
+    "type": "Belts",
+    "sub": "Belts",
+    "usage": "Casual"
+   },
+   "raw_type": "Belts",
+   "raw_tags": [
+    "Belts",
+    "Belts",
+    "Casual",
+    "Black",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "48311",
+  "data": {
+   "title": "Pitaraa Women Bronze Beaded Bracelet",
+   "vendor": "Northstar Apparel",
+   "price": 3100,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/26/image/image.jpg?Expires=1782037954&Signature=k9fTLDJEkaBDQqT2pzB6-tEm5BElAtl7MrAzJON~2aAckJlaAINe~QPyJog9xv9-X0QCeZFQWQT4Q6fWLqQSToUuDktdbdaIdekdn7eVdjpkfS4q6x4xKSIz57x0Csyt~-qoT7Rr1tWU6P0CN56JoYbpA5YSC7XpMkcWFe30Dwy6eTTkW5k456h3lQEwip0M03~fwB9RiKJmB7yJlCwKEPXVuJWm8TaqbshkPR0gElmu0HKEm4zMw6636nn~Nuhs-vAz1-CksxekOOwLEoHGHFEiGhUMWYvovfx~u-NCgwiLF~8IfnyYQhYaReQ4UeCRKX-MBWQoG9BwS1D9fm2Kcg__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Pitaraa Women Bronze Beaded Bracelet. Women's bracelet in bronze, suited for casual wear (winter).",
+   "_truth": {
+    "gender": "Women",
+    "color": "Bronze",
+    "type": "Bracelet",
+    "sub": "Jewellery",
+    "usage": "Casual"
+   },
+   "raw_type": "Bracelet",
+   "raw_tags": [
+    "Jewellery",
+    "Bracelet",
+    "Casual",
+    "Bronze",
+    "Winter"
+   ]
+  }
+ },
+ {
+  "id": "8580",
+  "data": {
+   "title": "Scullers Men  Grey Waistcoat",
+   "vendor": "Northstar Apparel",
+   "price": 2650,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/44/image/image.jpg?Expires=1782037954&Signature=UaEdCiKpqDUgu3p9UHpvWBxs~pttaEX8Zj4bnjrdgG9NyHpbPnxhy-3Af96oDUxveOiXkTP4gMBarWfdf1WI30DZK-D1qdl8Oka1C12ViQTEGTzAQZ7h839Ndbm61qxeVFw2sr~qouaK37QSEXm0l46xHh0IEmCPUVyBiiP6tqModrzZKxMEea4DJHogwSvua95uhBNWTeKP7OmQPhREs-ECSnyqUfxrAasc-1aJf-1q1J7pzCXUAxQhtW7O4n2nv6TW5Lmw13dns0tQ9CzW3ScjbC8JMUiAL35D2~prFFBsA9w23m6lYUqw8r604wc~PhuEqMZ7DVOeDcA5oT-t0g__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Scullers Men  Grey Waistcoat. Men's waistcoat in grey, suited for casual wear (fall).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Grey",
+    "type": "Waistcoat",
+    "sub": "Topwear",
+    "usage": "Casual"
+   },
+   "raw_type": "Waistcoat",
+   "raw_tags": [
+    "Topwear",
+    "Waistcoat",
+    "Casual",
+    "Grey",
+    "Fall"
+   ]
+  }
+ },
+ {
+  "id": "54118",
+  "data": {
+   "title": "Rocia Women Black Flats",
+   "vendor": "Northstar Apparel",
+   "price": 4200,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/76/image/image.jpg?Expires=1782037954&Signature=tnQazx0Y1eoUUxypRKC7-Fq0k0KZCdFp19qAXZ6BhQK6Wx0iJHrITFIxAP1jmb2ZIietwxDWcEUtDyZh-nlt72jOeclcUZXBJLaD~d45-PjReUGh34BswtBuR06IpQeWTXtFQg9i91jIZyqcyQVVnRd61efpoPfdA6r7auXEbdsQk1HCPXLl7SksammCcYBLNa65CY1tknsOE2A11dCYmG7K5N71LcgGbx66bf87ru1BCG4IHXx44mQO2Pz-fvDeyQj7V4Lfbem8RM5mk7vJHIlTnP5fze5ScXUhRQECkmN70ORY8awb9JaQe0BH9EAwonknE7GyGUBTygScNhNCbg__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Rocia Women Black Flats. Women's heels in black, suited for casual wear (winter).",
+   "_truth": {
+    "gender": "Women",
+    "color": "Black",
+    "type": "Heels",
+    "sub": "Shoes",
+    "usage": "Casual"
+   },
+   "raw_type": "Heels",
+   "raw_tags": [
+    "Shoes",
+    "Heels",
+    "Casual",
+    "Black",
+    "Winter"
+   ]
+  }
+ },
+ {
+  "id": "8574",
+  "data": {
+   "title": "Crocs Dora Boots Pink Sandals",
+   "vendor": "Northstar Apparel",
+   "price": 2750,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/79/image/image.jpg?Expires=1782037954&Signature=Mi6xEh9NjKZWtNKgYw4rO04GsmlnyACIhpRhih1yLfsmirXcC7IR~o2s52fjyBUU~9JFQUL3X7HdYJMTMOsCPj3HEHrcQWLRlCT5OqV3188y6ZbLlX4fOZCpItccVku3Zcdvof8Y00eZaFKbaAH-uqVc6w3rOP2PVjk3u0m~HFAQSya3ZDId8JTRkAUQ2CyRXz1Wr~cAFWRrFYNJz~9HY1tIFMPsj0qLDTZluIX83HH9wkmzQv5-OFT~fOxMeTFVfYuykH~T3I~b5ApI2H6P4HTXjhMA77OoClIOBgYYnPIPx1KqoqgI8J9fq-FrKzEYISgab~kORra8zL4cIeemMA__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Crocs Dora Boots Pink Sandals. Women's sandals in pink, suited for casual wear (fall).",
+   "_truth": {
+    "gender": "Women",
+    "color": "Pink",
+    "type": "Sandals",
+    "sub": "Sandal",
+    "usage": "Casual"
+   },
+   "raw_type": "Sandals",
+   "raw_tags": [
+    "Sandal",
+    "Sandals",
+    "Casual",
+    "Pink",
+    "Fall"
+   ]
+  }
+ },
+ {
+  "id": "17871",
+  "data": {
+   "title": "Levis Men Boxer Maroon Brief",
+   "vendor": "Northstar Apparel",
+   "price": 600,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/47/image/image.jpg?Expires=1782037954&Signature=jqip7pEQ8Gy5aYXEuz1qPtEhz0n~pGteOqs6FREjn9KmxWqNL9Vlc4DTVE-vlW5rEIUWecDDZSCDueuIJw9TDqor8-4jbpq1Xp6xIVKswiEtG9gTv63-4G7vc08kq2JW15LRkbJK6OYnu7L4ksDwcdHKLJ1MVaPVkCItVh7Maa1q2pbfdTyAe4GxidC2BEs0dadJG0WMkqPMF4xvV8WZBn-S3SX5ECUMXtAY8FVzl9gamxA6j4yRrlqkno8mfXwju-hD8pJYAAldnw0kqfSS0MfyLqGORy1-FvrXRRRUQfQgcBPIZV9YzxyXV34y1jWZVq7huAwbgxwUYah3LQ2r6w__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Levis Men Boxer Maroon Brief. Men's briefs in maroon, suited for casual wear (winter).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Maroon",
+    "type": "Briefs",
+    "sub": "Innerwear",
+    "usage": "Casual"
+   },
+   "raw_type": "Briefs",
+   "raw_tags": [
+    "Innerwear",
+    "Briefs",
+    "Casual",
+    "Maroon",
+    "Winter"
+   ]
+  }
+ },
+ {
+  "id": "59263",
+  "data": {
+   "title": "Titan Women Silver Watch",
+   "vendor": "Northstar Apparel",
+   "price": 11600,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/2/image/image.jpg?Expires=1782037954&Signature=tnYnqqGn3BiaxomQbu4HNQGzgMRnLiBDJ9aXiVBZSt2OrPKKHR2ZxveNm7UnxQEIr2qX4S-zd5zm4gKbo6zCgmNykZOikSlW7QRpV3OpIYZJClcRuxefrYuBkNrnu0GwqTy4ZTCkhBDC~nuaz0uK377ezrnUDaGbzZrKDy-VCBeEJQ44wCV~WaHgotclXqSXRY-A00Z95ngXvhntxGRy4Q1STfGCDtfoAhFRYA04nqEoYpnswWiZ9p4VXTu-9JnoiDHZk5PxpyE1pMYKdXgFz9EqoXBbsd1NEKjNnaH5ho3qQbUiUgCDSd6iGMja2a2jZzeYGrkoUk3npsBgkJtkpg__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Titan Women Silver Watch. Women's watches in silver, suited for casual wear (winter).",
+   "_truth": {
+    "gender": "Women",
+    "color": "Silver",
+    "type": "Watches",
+    "sub": "Watches",
+    "usage": "Casual"
+   },
+   "raw_type": "Watches",
+   "raw_tags": [
+    "Watches",
+    "Watches",
+    "Casual",
+    "Silver",
+    "Winter"
+   ]
+  }
+ },
+ {
+  "id": "10268",
+  "data": {
+   "title": "Clarks Men Hang Work Leather Black Formal Shoes",
+   "vendor": "Northstar Apparel",
+   "price": 4750,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/51/image/image.jpg?Expires=1782037954&Signature=DoiyZm8NUk6Kk17QeAVE7RDfMqUWKbi66D962iOKNg2Zrq6xioIRK85zVfiIQybOq66s6RjpdkW8Wevkb5sxhlolXlH6KDyID37S07RVyPjV80zxAs4n6TkN24v2~PpoZL5UrvTIgb4gj3lw0vnDnyBhi6McPnXY4JeD~J~Ck17RcxzWWhz7xsycwUO~hEiWMOXtTqOmgkZrqMrLbkb29EAZ4aTDMmCcaMbiCMAN~fEqHKLwaft~3uGH8DgZwJvS~AIehrqEBcQtOoM0F73C~BNEPKVzZ24RanSWTsunlROTG5C4x9qIoun334HosC1TcHPyl6wUw10yKjJrDbI8Dg__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Clarks Men Hang Work Leather Black Formal Shoes. Men's formal shoes in black, suited for formal wear (fall).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Black",
+    "type": "Formal Shoes",
+    "sub": "Shoes",
+    "usage": "Formal"
+   },
+   "raw_type": "Formal Shoes",
+   "raw_tags": [
+    "Shoes",
+    "Formal Shoes",
+    "Formal",
+    "Black",
+    "Fall"
+   ]
+  }
+ },
+ {
+  "id": "51658",
+  "data": {
+   "title": "Fossil Women Copper Chronograph Watch CH2589",
+   "vendor": "Northstar Apparel",
+   "price": 7100,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/38/image/image.jpg?Expires=1782037954&Signature=vnwd2~~PeDHD5wDpIdC2gKFY7dtMX-anRgVpV8-9c0ocX18XQZer7RSErSSJ8NC9LdHOimZDKXD2U4t-8kMPi0Hej94hwHJhrbr0-LTVMAGuHE0phdvNwj~dFVKD-5ujZxvZXcbYw4DY77RqFIhUCoK9mbZ2jOsko9wm9Tw-cqUwhnJYZHyhgs3jc-89DPTBVpUzyQlz1nkEysA0uu-FCczPKsGP9V8LiXs8n5KWl565cwRHWv4Fp0L-JTz6ATko1WeY2GmzJbm0uA09TgYa-OAFdyB3zqkPNp3zjSTvgODV9E8Zw83WUf~8HTSx7Y2S7ZJCu7qH4lox8GCkolE-HQ__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Fossil Women Copper Chronograph Watch CH2589. Women's watches in copper, suited for casual wear (winter).",
+   "_truth": {
+    "gender": "Women",
+    "color": "Copper",
+    "type": "Watches",
+    "sub": "Watches",
+    "usage": "Casual"
+   },
+   "raw_type": "Watches",
+   "raw_tags": [
+    "Watches",
+    "Watches",
+    "Casual",
+    "Copper",
+    "Winter"
+   ]
+  }
+ },
+ {
+  "id": "46885",
+  "data": {
+   "title": "Ben 10 Boys Navy Blue Slippers",
+   "vendor": "Northstar Apparel",
+   "price": 1400,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/14/image/image.jpg?Expires=1782037954&Signature=zPpXDgnjHLcLzzPjtsTQOVwcMofcQHF~U8Bnx1cPQ0VU43O-KyurtUm0YwWWUsJDeUc~jA8kw3fTUHmGhu9j6rB0v06TOUzTkktNwZYs2IYbntLJtNSnIAAbWPSOs20eDQKDHSuGnG8uclzh~ZkxxHj9BYiXQ~ed2Mqi86G2t7ExGOnYsX0WoDmsLojOD4JHKOXj-~UkjgJm8Z9dkVUKM41lO-rNmOuLxWMg1ox6qY7vQXryLcq3NEtocB5pMi4qvnZekDNXI6Rw-oI5XT104n1wUUWrHrBkPxiij0nzU592ebaX7clYbgan-ejnWfKzIgm4q7Q0RQWzFQIpzHXQjw__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Ben 10 Boys Navy Blue Slippers. Boys's flip flops in navy blue, suited for casual wear (fall).",
+   "_truth": {
+    "gender": "Boys",
+    "color": "Navy Blue",
+    "type": "Flip Flops",
+    "sub": "Flip Flops",
+    "usage": "Casual"
+   },
+   "raw_type": "Flip Flops",
+   "raw_tags": [
+    "Flip Flops",
+    "Flip Flops",
+    "Casual",
+    "Navy Blue",
+    "Fall"
+   ]
+  }
+ },
+ {
+  "id": "9452",
+  "data": {
+   "title": "John Miller Men Stripes White Red Shirts",
+   "vendor": "Northstar Apparel",
+   "price": 2400,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/48/image/image.jpg?Expires=1782037954&Signature=ATToiftFdTypUQCkirqcAUGQWa1BWqlAhU35~jzwMvsZK0diIrBTQ9CgXWKhC3I2wMghvW-KWJmGMeMN0gXbKUlXOC~9NAfWkyF2TK9~NKABLGR0OoPn7hWCzJa932rJXwSzvDMDNFra-m7qOcMVTfr0rDDIlgBFtgHsePEnGTB2GXuX90ZjzZoYT6sk2uePrHOVEfV4KZGxuu8St3tXIA53mlJupiT6cc36xxH62cMF-OfZ62tu5-IUUwJN~6qUBs8ORWeN7r6XZhP~DsBkii4Z~kkr1zUzxBwlWboPhmMheaMkjh9YnAUim9Vt6WP9M~6cvYk4UzhK7xLvQM7yLg__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "John Miller Men Stripes White Red Shirts. Men's shirts in red, suited for formal wear (fall).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Red",
+    "type": "Shirts",
+    "sub": "Topwear",
+    "usage": "Formal"
+   },
+   "raw_type": "Shirts",
+   "raw_tags": [
+    "Topwear",
+    "Shirts",
+    "Formal",
+    "Red",
+    "Fall"
+   ]
+  }
+ },
+ {
+  "id": "9204",
+  "data": {
+   "title": "Puma Men Future Cat Remix SF Black Casual Shoes",
+   "vendor": "Northstar Apparel",
+   "price": 4250,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/10/image/image.jpg?Expires=1782037954&Signature=JqpVryf0e~irHuzKQ2PYgD4gF-UL8SNzewFfdLcf-iNQBQP4w4V95WbGsieBSCeMVNkdG005zKEvrkk-M6NSy6e3ieK0HuA~lGlqrfaMFZ0JFQc1mpvAdB5qQyOj-INq9-S23a2sBitzAdQHQec8Z63sqsIrD5p-7DojIkfH30qfFsMUTdyROkLhJKLAWM8MgtjzqU5UcFraCVulEOZj89dEbQrLU7cMjxAEFvgBoANtq3QSE9Ek2Kidgx25r-tJ0ub5vdvboRTuuXd585CNjX~iR4xVDNoBUJRMASCyNaotPrMcmfXsRLRe~rVuj4jgyS99Xk~qoJjiuDYADJffIQ__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Puma Men Future Cat Remix SF Black Casual Shoes. Men's casual shoes in black, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Black",
+    "type": "Casual Shoes",
+    "sub": "Shoes",
+    "usage": "Casual"
+   },
+   "raw_type": "Casual Shoes",
+   "raw_tags": [
+    "Shoes",
+    "Casual Shoes",
+    "Casual",
+    "Black",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "56825",
+  "data": {
+   "title": "John Players Men Brown Shirt",
+   "vendor": "Northstar Apparel",
+   "price": 3300,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/32/image/image.jpg?Expires=1782037954&Signature=AjwItrzzFmn7gxj6VwYHA2C9ePi3KhBDHnMMP2q6H3nlySXVM-5gEXXKqv55rXpP5VRmAjdH23iaUGmnpwXk82zB9r4oCEgV3xIkCjudvimnB1alzes-OmxEWRv2YDKa-NacmEm9hiIbZsuhWFgXIKj6oCXTlzgsWZVVkt-FbGgZWpQHmz91EwzEt3cVyfxw7Aupkev9Nmzcs84QA~RgejRN2fgQD3U6qvIyjyDKNKQz-zv4AZR0SL6JF4sjSxDV~SU9X6VLhhtXjPYxKgVaR~Ld2AUfI0xZqATOeN7cNxF1~VCs8Wn~O1q4nzCWFRqajE3s5DonTmW2larmZlb1AQ__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "John Players Men Brown Shirt. Men's shirts in brown, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Brown",
+    "type": "Shirts",
+    "sub": "Topwear",
+    "usage": "Casual"
+   },
+   "raw_type": "Shirts",
+   "raw_tags": [
+    "Topwear",
+    "Shirts",
+    "Casual",
+    "Brown",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "29928",
+  "data": {
+   "title": "Police Men Black Dial Watch PL12889JVSB",
+   "vendor": "Northstar Apparel",
+   "price": 7550,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/16/image/image.jpg?Expires=1782037954&Signature=FJ7eSt1llHmCatRVA9cEew01lJLahjZ1A4ynrJ75LxhJRA~vZOdYeX8b4EccwvfIvHtED6Bvdq6g9JPvetDBc-x2GwW7oMMRTlHB1yNuVNjh0LbhkdH6q6YLafqCnnUtR0OYOIlFihe~V51~6JJRXDHGUfsUlCEVFTgINA6xgeXoj6xOgi-TvfPiarpMCA-eRAwxF0bYVGslvGHJhUxS~0safnSqsxbSZA1gM-eTxzlnhpOC7A-88bUkg0oFg3bYqS8t0MXOsPPzq41Mx6Axwzdzj8HRvdpdtRHCd58W5GcmIbH~3~HsXyIDbLnh7jK4efH7UybPP3kZ9NeyUw4JaA__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Police Men Black Dial Watch PL12889JVSB. Men's watches in black, suited for casual wear (winter).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Black",
+    "type": "Watches",
+    "sub": "Watches",
+    "usage": "Casual"
+   },
+   "raw_type": "Watches",
+   "raw_tags": [
+    "Watches",
+    "Watches",
+    "Casual",
+    "Black",
+    "Winter"
+   ]
+  }
+ },
+ {
+  "id": "11940",
+  "data": {
+   "title": "Ganuchi Men Casual Black Sandals",
+   "vendor": "Northstar Apparel",
+   "price": 2300,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/94/image/image.jpg?Expires=1782037954&Signature=Nh5PA9ZACRuPIkiVL9q-rYVlzUeEiNVnL6AneHEFUKBw62moKZAxgNlZHaSip3k6FwuHDw0xLrE0DWPYbptcuNRBcDGehXwNmiXZlqNxeVc89geEAiRqcRGBYTasNXJ~8kJaXtP~fX7uxEv~QJMa3D0LNAWYt50O0YT-luLNVxGNK5UVZDJV8DjLPne1b8fYxUTqYqYy5ZnjrwyOP6ix3kefr9xLj5Lj4214HJY8kPZ7q4a-iA9dlw07OrZjAnjaibnGqC3lzHXCP-fXH0-2Wg6OImLYqgLXeVOzDgVuASEgDhA8fhCLprKsxCEKTyo6OlIFslWS~cRfFjDlkhhMOA__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Ganuchi Men Casual Black Sandals. Men's sandals in black, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Black",
+    "type": "Sandals",
+    "sub": "Sandal",
+    "usage": "Casual"
+   },
+   "raw_type": "Sandals",
+   "raw_tags": [
+    "Sandal",
+    "Sandals",
+    "Casual",
+    "Black",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "29570",
+  "data": {
+   "title": "Vans Men Classic Slip-On Purple & Black Shoes",
+   "vendor": "Northstar Apparel",
+   "price": 6400,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/65/image/image.jpg?Expires=1782037954&Signature=AL4DSXWlAAEikN6iCsy2rXZJ~eWch60eTkZ0gROIl8~2ayfMsVpEzdJJ3uc780Gq9tE2RryqAhfzAn~xZZIWasXrufzN10qggn~Oy9Moic-ujtIqj5ugCQVZSUXp0diRtsZJKi~XoUuVu4Op6AucJkbqikOQO3ulBwFdcEeiGIE32kOW5vh7pO3SXsUJV86IVRzvo936yJEq2L0h33qHpORiaYRI~Ec5h4MrHUDi2S9gtgQMLKJ5dOi2lEe2980ao0e-4mjLDqQIf5bVOISOS5BgzfCwwV1qu4eT2D~YkrkRUFoeMZXuAYB~l4zWjlbYutNiXIU6ZuhFD0ayiOfkUg__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Vans Men Classic Slip-On Purple & Black Shoes. Men's casual shoes in purple, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Purple",
+    "type": "Casual Shoes",
+    "sub": "Shoes",
+    "usage": "Casual"
+   },
+   "raw_type": "Casual Shoes",
+   "raw_tags": [
+    "Shoes",
+    "Casual Shoes",
+    "Casual",
+    "Purple",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "26538",
+  "data": {
+   "title": "ID Men Red Shoes",
+   "vendor": "Northstar Apparel",
+   "price": 7250,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/69/image/image.jpg?Expires=1782037954&Signature=thyxFi1dycOMhvftaH0tu0e89LCCueoEjPT9ntoLEenV7qN0J~0ODxYc9COwkJUD9kgLlgTpqTe4zWAEm2vcbBJl6g~e0Lid38J6KJZUCkX8QGco64d44bXvDNYUtawQCOxZhx95PO2mt3S5UvPpqMIyI~ONlJ2wuQxDDIKzc-ygOLcRtoKkES9oGPkujxMyQWgSNAfa-MODOsdQ4ghWA6WrlQUYgaXPhmQg7OmI529-Kq2rSWxpf5oq5ciXO-3arw1qb-qXEj6nXTQRMPps-4USIYMhhvpq7MRNpz-VNkM8EqV4h2Kz3oxIMDs8bwUPlq4T9k-~MybdaD8ih~7S8w__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "ID Men Red Shoes. Men's casual shoes in red, suited for casual wear (fall).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Red",
+    "type": "Casual Shoes",
+    "sub": "Shoes",
+    "usage": "Casual"
+   },
+   "raw_type": "Casual Shoes",
+   "raw_tags": [
+    "Shoes",
+    "Casual Shoes",
+    "Casual",
+    "Red",
+    "Fall"
+   ]
+  }
+ },
+ {
+  "id": "23278",
+  "data": {
+   "title": "Maxima Ssteele Men Off White Watch",
+   "vendor": "Northstar Apparel",
+   "price": 4800,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/42/image/image.jpg?Expires=1782037954&Signature=2st4TiOOKcEKBx7qts17cx9sc7rnAaH-aiTG66o8~UvcJsaNe-Lmo-~FtTwXXOV59lnSc0MvXNBBuPk1p3FF6PzE9YbDRdjHQznlDMh4nRe7OqI9SNOg8wNU-MamxBGe-U8ZO7aGRsXTCcJI~xwPOxQ4KeuFpGEFvT6V-jjAshGo1rh4KnGah8QL8ymBGNp4Il5cMCRul797eWj-2qTQkkctOEdfM8hW7MtaOFIZ5k7AvmidSb~BChwdRu3zjY1WvSasXNceVxGttHgQr1Nmb39a~5UG52P07EVZJpWj2Qiei46q~Z5h07NcGJGc8CUHD4iC5I6ia-gEvU4I55obIQ__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Maxima Ssteele Men Off White Watch. Men's watches in off white, suited for casual wear (winter).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Off White",
+    "type": "Watches",
+    "sub": "Watches",
+    "usage": "Casual"
+   },
+   "raw_type": "Watches",
+   "raw_tags": [
+    "Watches",
+    "Watches",
+    "Casual",
+    "Off White",
+    "Winter"
+   ]
+  }
+ },
+ {
+  "id": "10866",
+  "data": {
+   "title": "Wrangler Men Motor Rider Red T-Shirts",
+   "vendor": "Northstar Apparel",
+   "price": 1050,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/59/image/image.jpg?Expires=1782037954&Signature=d3ZoagU-q9Op6jDJZyVGuA2UNzttg8kEBiu1sETbKlIpqMfAmdxfhZqbGDkfYlBtoMcJoUoUgMZowTE6WOeihcW15KAuMVRsYeKr7lkCOMrRgHgoiM~vyCgxYRlDUM52LW6JtPFxo4TjnUtokF4FZeCNzG-75Fu3HTU5AhSOAG4tr1y6OdRa5oLbypBD79iAavpANXZ~BKAZ0XviBhBbqr3VFLlqD0SxnTwO3rpFXr5tLfHJ-Du~QAFaPlYZ6mzK2CNXb-nXZWDBxI6lppx79nJScdr00TbI-Ujh90jBG6PikwDIhbeDa1MUw5-PBQajEo2wq2nasfYP4~3eps2tgw__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Wrangler Men Motor Rider Red T-Shirts. Men's tshirts in red, suited for casual wear (fall).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Red",
+    "type": "Tshirts",
+    "sub": "Topwear",
+    "usage": "Casual"
+   },
+   "raw_type": "Tshirts",
+   "raw_tags": [
+    "Topwear",
+    "Tshirts",
+    "Casual",
+    "Red",
+    "Fall"
+   ]
+  }
+ },
+ {
+  "id": "33822",
+  "data": {
+   "title": "Puma Men Axis White & Grey Sports Shoes",
+   "vendor": "Northstar Apparel",
+   "price": 7900,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/88/image/image.jpg?Expires=1782037954&Signature=q5rrTzx9356FCtkwLIF-HYv7Tizx9ufoK6aoS2YFd1j0H4WBGklvaDhJwwGg-CqnRat02YwWPCQxPSLJLw6jzV40LVj-e~-jIetv9QSTQ~KqyqVJF6K9-svcyOHZWvQZxj-X5MgPt5KlIRHFnEdAtwl0ZLtgnSiU-HQZuM7a3KXxZjtRw1OOUQiCZ4sZXckqjVBBPx~mYvkK-jYZ1TCxgHVidw8b7PaJd0A~Jm5Z4Q3lRNvt5Z0Tm3wwZC1DrqBri-qPqRg1JHmGRphxiIHYUVW-dwV7pFKK1ykwFzbdacXL~b4kanOiU43Jt2DbnjKLkKRk8HdvUaXxG-d~E1xTXw__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Puma Men Axis White & Grey Sports Shoes. Men's sports shoes in white, suited for sports wear (summer).",
+   "_truth": {
+    "gender": "Men",
+    "color": "White",
+    "type": "Sports Shoes",
+    "sub": "Shoes",
+    "usage": "Sports"
+   },
+   "raw_type": "Sports Shoes",
+   "raw_tags": [
+    "Shoes",
+    "Sports Shoes",
+    "Sports",
+    "White",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "28456",
+  "data": {
+   "title": "Urban Yoga Women Blue Skirt With Leggings",
+   "vendor": "Northstar Apparel",
+   "price": 2850,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/98/image/image.jpg?Expires=1782037954&Signature=qt0kWpbhPUXGmZpXSLafX7L0U0eAf7y8Mqff3huc0UeznkwKq6MIQ1kIi1lt26FcyPOWWzeinQSoUX3WkTqfb1WbPdiyl7lbb6Tevyk4ZLv0A2SGEDldBWvAhoWxujD4DzRG8r8wrh0kEvc1FAi-~kinD9miyqYSMPEL~WF-Q2DQmA-gfr9028niA49ETnCQ8lvMZBcQX8fz6M0lq0ITIg~P2TPhxqd94oJzJ2B7r1aUFnGz1au0lcZD6AxoJh218HuAQOu8OhpH6dgg79wm1Pr58xgV1rs8fUyS1tLJwdY82CoTfwFQlOVeVssXZaVOsWppo6~8I4zvopa2MLGDLw__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Urban Yoga Women Blue Skirt With Leggings. Women's skirts in blue, suited for sports wear (summer).",
+   "_truth": {
+    "gender": "Women",
+    "color": "Blue",
+    "type": "Skirts",
+    "sub": "Bottomwear",
+    "usage": "Sports"
+   },
+   "raw_type": "Skirts",
+   "raw_tags": [
+    "Bottomwear",
+    "Skirts",
+    "Sports",
+    "Blue",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "43993",
+  "data": {
+   "title": "Police Women Passion Perfume",
+   "vendor": "Northstar Apparel",
+   "price": 3450,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/66/image/image.jpg?Expires=1782037954&Signature=Kq6bRwuzIXa3kl12dLuAfnOj6uUZz2smMli--yLDlDsCf9dOTmp-iCijCfGI0rLePE5gyl1moXPRIsXnASXeqSxw~VPz~Um9bzXVCOO2BoSzfFKHvsD~G7vDDTVAGRszskYdS9qU6et7ewrNcaJkP-hNzJAPsbEkVvIMt3xGDEKEZEuuDWZEr-hKd92UhWWF~K1Ay92kUInZ6T5EbLIxguPlcuYwUQvY5eUiqAnNLR09dBRC8Y-CSciqd-9loLEijhnP6jlXQtPQSGOPk8DjdLCsXCrw3FDShnUIqMdMe5ClS5VUWWf4lbT9WGcmPgRYKsu-gw1gzE3YhkJxc1j7YA__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Police Women Passion Perfume. Women's perfume and body mist in pink, suited for casual wear (spring).",
+   "_truth": {
+    "gender": "Women",
+    "color": "Pink",
+    "type": "Perfume and Body Mist",
+    "sub": "Fragrance",
+    "usage": "Casual"
+   },
+   "raw_type": "Perfume and Body Mist",
+   "raw_tags": [
+    "Fragrance",
+    "Perfume and Body Mist",
+    "Casual",
+    "Pink",
+    "Spring"
+   ]
+  }
+ },
+ {
+  "id": "5865",
+  "data": {
+   "title": "ADIDAS Men's Twelve Faster T-shirt",
+   "vendor": "Northstar Apparel",
+   "price": 1200,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/91/image/image.jpg?Expires=1782037954&Signature=YQm~6L3FozVWTD3MWWjxGMEQGJi82ZSaddL6hmENgCNp43CQ2-E3jZUlB0-hAuYahNmVpH4ODIw1QeaMZmO-pgMsheigCo6gpnpbVVFu9zwrsS7zSboiHb49ErvPE4tiIXNW3-0bR0BY9CWaNYStrZnvTe7hq5U~z54KX8x-MFiGwlMsn61Cas4dRQQSOnKjwnkHpQGmwJRX6~1pLk7aDUHUnIfWn0DRIAyk0iKWdvNJxcY0~nKvmWvin2i1dM~CsBMl5V2MM--PuoKjBmdTqA0SMNBTtcsdQT2DM91h61coIOBYP9ptysOIVXU2~mAaJqo8kgsBHZtW1W2rs3ReoQ__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "ADIDAS Men's Twelve Faster T-shirt. Men's tshirts in black, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Black",
+    "type": "Tshirts",
+    "sub": "Topwear",
+    "usage": "Casual"
+   },
+   "raw_type": "Tshirts",
+   "raw_tags": [
+    "Topwear",
+    "Tshirts",
+    "Casual",
+    "Black",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "4943",
+  "data": {
+   "title": "Gini and Jony Boy's Kaleb White Brown Kidswear",
+   "vendor": "Northstar Apparel",
+   "price": 3600,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/57/image/image.jpg?Expires=1782037954&Signature=Aj28SdQukS-PEkwQv29k5oFORBU7fwWaYg8kpgW63QmBhIBhw5DNLTwom-wGtZRPMXhONJbfO~3yPp6BNa1wdG~CsNb2JcajqdX6gVVtprQoSSv3gHRP9TgvZ6YNI9j-YjM3kkJpUtgizTBfJ~rUr3zCNGMm~4p3FZvFxAPEdnzhhwSqHezaWwsI1AhTh-Zpas2ngN63PVOlyLjUoGAD6WTZCc9ulw0huNa-nAS3tCeFAC69L3~GSfjCcBNkJg2JnQDH91hy5LIddx2y0hv3NHnlt8aUsOPC6JRzK0pEZJqChH5gG6NwpSiRz98OPjorehlFbHgVfZbZJAPUKyDWPg__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Gini and Jony Boy's Kaleb White Brown Kidswear. Men's shirts in white, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Men",
+    "color": "White",
+    "type": "Shirts",
+    "sub": "Topwear",
+    "usage": "Casual"
+   },
+   "raw_type": "Shirts",
+   "raw_tags": [
+    "Topwear",
+    "Shirts",
+    "Casual",
+    "White",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "21977",
+  "data": {
+   "title": "Murcia Women Casual Brown Handbag",
+   "vendor": "Northstar Apparel",
+   "price": 3300,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/29/image/image.jpg?Expires=1782037954&Signature=DNBtncDdApFy96p1T9WWn8uu31euxN0tgKXTwYBSLaxl6Bd0bmPjxLnMrrW3pKzVxxS~q4xHif9b4VaWjhc5XKEAZvMd6pmJ9GDwoPRPTPKkMwUp4AWKSlNYpCZM8QcSRE-WMDhknganm8cP6qsFrah5Ov6uXt22ufhZRn3ZSag~dtdXQ9avQThuogc6csHnrfwQNZ07gn~rw4xP8Ca0mJG11ViBT6~EQFmXnJmFbBgdCKTQ5GQZxESB4jJ9zrZTdG4-BdJ~PnalQHMU0Z~DIzwJatyGttA7PGfcTpwN6yLSgu7XoD8zJXZypCYxPvg0R9DQsqDnB0XpfmTFZkBH5Q__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Murcia Women Casual Brown Handbag. Women's handbags in brown, suited for casual wear (winter).",
+   "_truth": {
+    "gender": "Women",
+    "color": "Brown",
+    "type": "Handbags",
+    "sub": "Bags",
+    "usage": "Casual"
+   },
+   "raw_type": "Handbags",
+   "raw_tags": [
+    "Bags",
+    "Handbags",
+    "Casual",
+    "Brown",
+    "Winter"
+   ]
+  }
+ },
+ {
+  "id": "17429",
+  "data": {
+   "title": "CASIO G-Shock Men Black Digital Watch G-7710-1DR G223",
+   "vendor": "Northstar Apparel",
+   "price": 10550,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/20/image/image.jpg?Expires=1782037954&Signature=LtCHWuyvpBMSZAe~pKgdl7k3-3ezjVnp0rt~5wW9YHkxI22wkf0~Lq7K3JWSCxwybkO5HT7G8eswczBWZcyuxlVvdilYyHAzfj9Fndx0pQzlVIcxwQGDX3D3DBRXj6G05Bu2bIlVmGztopcndWk-fbAbgcciY8Vq4W6rS-nkX968Vn3RTaKGejozSsby4rHxq7ZoM7Ju278Ytx1wp7gdkpQWKvw7mPMouIT2R0NNvm-9SVc3LDdNbIXKWXGAiVULmFAmBKpFxiE36e1aD53jHnFzzwXP43MZJ2NVQ9XVo0LVli-kbK4ORHX0GVxcv4IOBveqQbEIf72LTLpdrurggw__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "CASIO G-Shock Men Black Digital Watch G-7710-1DR G223. Men's watches in black, suited for casual wear (winter).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Black",
+    "type": "Watches",
+    "sub": "Watches",
+    "usage": "Casual"
+   },
+   "raw_type": "Watches",
+   "raw_tags": [
+    "Watches",
+    "Watches",
+    "Casual",
+    "Black",
+    "Winter"
+   ]
+  }
+ },
+ {
+  "id": "39524",
+  "data": {
+   "title": "Peter England Unisex Orange Sleeve Bag",
+   "vendor": "Northstar Apparel",
+   "price": 3450,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/87/image/image.jpg?Expires=1782037954&Signature=HoaTMJbzSu4uH~FqPH9XK8Vs0KyukXi0f~Odb4iojoG9ct3C95eelgwYZ4OvgyiW-oTV5ciL58XB4Nm3mF4wpbyLjORZVQfrKWvEcTKX7-8qXx90GTfQJFqkvi0IzoZZ~R0nSPOAC8XPFnyA3Rx4caZks3l6pQBbb7HTT~We03mcUzhT2rKHVcsMmDT0GPckn~pibbR5eA28uSK77gjR0DkPeGl1xRY3XAPHdjeZ0JsTD7zpYhdkdgzOtWNrxW9ZoDfv7easbz-kKxZ6cnk~S4YktXgsqkQOQ1rtEV~J4tNuw1G6kOfRUhcdNZwWDSzsVR73XHAoWerWaABJ4eavSw__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Peter England Unisex Orange Sleeve Bag. Unisex's laptop bag in orange, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Unisex",
+    "color": "Orange",
+    "type": "Laptop Bag",
+    "sub": "Bags",
+    "usage": "Casual"
+   },
+   "raw_type": "Laptop Bag",
+   "raw_tags": [
+    "Bags",
+    "Laptop Bag",
+    "Casual",
+    "Orange",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "59051",
+  "data": {
+   "title": "Carlton London Women Black & Gold Toned Flats",
+   "vendor": "Northstar Apparel",
+   "price": 3350,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/34/image/image.jpg?Expires=1782037954&Signature=rN95BCxcpZHz969T-QExLK-wvwByRiwVmN3sWnV9RrB5wRC0OBo~zQ-VC31PKAJsge8ND66P2S1G~Q9yklwbDGFmErwisqVfqKOgxXQ4WmLPVioiGmaExcS8S8s41bO6eo7PQPMagAzlllOrxha7pQv7Qo6kz18GTCAr3~te9t~qDUUjghxuWSCik5zBn551yXc~iMDEa1YQaA9hRkvdhZU~b0AdSNjw03-S2m9JF0IeJvYJR2FkJ406VmD~GZo3hxU9sOMtvmqmxFSGXNt-6BZSwy74iq-xecVAInSvqH~Cqw4EA7PcitdakDdbnxHaYR1iWvT0IgCOOCDNv80NPA__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Carlton London Women Black & Gold Toned Flats. Women's flats in black, suited for casual wear (winter).",
+   "_truth": {
+    "gender": "Women",
+    "color": "Black",
+    "type": "Flats",
+    "sub": "Shoes",
+    "usage": "Casual"
+   },
+   "raw_type": "Flats",
+   "raw_tags": [
+    "Shoes",
+    "Flats",
+    "Casual",
+    "Black",
+    "Winter"
+   ]
+  }
+ },
+ {
+  "id": "59607",
+  "data": {
+   "title": "FNF Pink & Grey Wedding Collection Sari",
+   "vendor": "Northstar Apparel",
+   "price": 2900,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/60/image/image.jpg?Expires=1782037954&Signature=AC0nrN0RKujsM2O7hgdvm6OziLTswanBiSZ5g1BVld9rBz-ossEAX8BrXe8pX-TF7wZjX1GWLsDdNpUswZVGFP6ZopEFza~d4o~zheex3tpySSFvhA0XfJTcgZnm5xOD9QEdRepfThu~SztTPNWIn2iMLHYdrjUCyel-TP53521UUvgMHklF-4ZAfBid6lUzjyG5Bcl3KO7gni-H527~7VZhBel43R1fJ5YIYjAzL-YirMGE7FgMLgckmhlU-xaBvtuTZMjX4uxpHKUVHc9DUS~MmVQwa8vJPPCTTVlJvSXadiZv4216u-hy-Ov4XtsvuabhytchW0Uzg61IZoPUZA__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "FNF Pink & Grey Wedding Collection Sari. Women's sarees in grey, suited for ethnic wear (fall).",
+   "_truth": {
+    "gender": "Women",
+    "color": "Grey",
+    "type": "Sarees",
+    "sub": "Saree",
+    "usage": "Ethnic"
+   },
+   "raw_type": "Sarees",
+   "raw_tags": [
+    "Saree",
+    "Sarees",
+    "Ethnic",
+    "Grey",
+    "Fall"
+   ]
+  }
+ },
+ {
+  "id": "4729",
+  "data": {
+   "title": "Disney Kids Boy's Crew Sea Life Sialing Green Teen Kidswear",
+   "vendor": "Northstar Apparel",
+   "price": 1250,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/31/image/image.jpg?Expires=1782037954&Signature=E1xYTN11D2lRf5RxsMgl59FwEp9G538vWEucykc9CVoen2zcFcr-xwcECFF9d46UEqVsHmT2t~w02YwLOchhVjTadGHZOoHeglY9-qnfyO18da1XHmmTpCeK8e6lb9gKNH19IX0QNRD-PFxZr-skKZ4qKqYtxY-u~dog-vi-zSK9PAmpfRHrMXdMcXbVLU~iOI1S25gyAtPADeterDOfOgEnLIqIsCxq92iKTT~LMblAQhI3HZZBih8CGTIHo6ktEn1XUuX0HqYJEw26yFhbBUhQt~ERIztmaVRjyaNXNdURXzx-fThasUCELY5WnP7y4sQlY-ye-vUoG5hCCQeM4A__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Disney Kids Boy's Crew Sea Life Sialing Green Teen Kidswear. Boys's tshirts in green, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Boys",
+    "color": "Green",
+    "type": "Tshirts",
+    "sub": "Topwear",
+    "usage": "Casual"
+   },
+   "raw_type": "Tshirts",
+   "raw_tags": [
+    "Topwear",
+    "Tshirts",
+    "Casual",
+    "Green",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "47957",
+  "data": {
+   "title": "Murcia Women Blue Handbag",
+   "vendor": "Northstar Apparel",
+   "price": 5300,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/13/image/image.jpg?Expires=1782037954&Signature=2D~xj9UNcEvSMnQv4xeHNmeBv-Pv1jwE7Z5lYiZaIorHFwPs8QeW2qaosr82C6Awz-N4nWwe5Yn05q3cdVvgQPfWADplupegbpvNNs6r4kUZyqFGKB4pRuWwaI1Q~RjHbrQMVr3QcotxMdK5LEMJUUthpMrij6jEbStjKH61Ze-TasNpPXBQIWN3XWmtZSt453SohbAgtk2Lws0PujkOV5RmGQjHL6LkjL71hrUzBbI5vYfQKp0YnY5Df4U4tC6XlAmwZWgWZYIs5ymsypv6~0buOFgrisGhcaqzRpS99JEFen7blO5R7-RnaZaMOT-dACcmgIPWpG6cK1Iml3TJlQ__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Murcia Women Blue Handbag. Women's handbags in blue, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Women",
+    "color": "Blue",
+    "type": "Handbags",
+    "sub": "Bags",
+    "usage": "Casual"
+   },
+   "raw_type": "Handbags",
+   "raw_tags": [
+    "Bags",
+    "Handbags",
+    "Casual",
+    "Blue",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "42841",
+  "data": {
+   "title": "French Connection Women Beige Handbag",
+   "vendor": "Northstar Apparel",
+   "price": 4100,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/63/image/image.jpg?Expires=1782037954&Signature=r31W1OiD-uOfLXEvTBhjSebdFzsO9CqqUH0WQlrVi3cSfPlsd5pXUXXjv-EuHmHRTyhq3BEAu6y7ap1t9340fl~Z78FUdAVKUiL5oPVe3xYI3R6GBQvsoPdINbHHdaSH6FQ45yAtRtRJtXGVSM2tugidBBljenQYhxVNBwmnupGC4AcBrQgvp64Ru5Oii51Q2ad8QE-zNJ9bk-QfvAtfOyR4xKbJWSSU7SqjoiVXAUr7VCg-PODRq1ooqRNgy9PHSe-X5ZKSq08sVzWGigMxoHcsBpFmvxvGnts-rcqaXVnguBUv3Eabk4VA6gGkdLLYUH3yyfWOUIEZ7Oh~AIeJFg__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "French Connection Women Beige Handbag. Women's handbags in beige, suited for casual wear (summer).",
+   "_truth": {
+    "gender": "Women",
+    "color": "Beige",
+    "type": "Handbags",
+    "sub": "Bags",
+    "usage": "Casual"
+   },
+   "raw_type": "Handbags",
+   "raw_tags": [
+    "Bags",
+    "Handbags",
+    "Casual",
+    "Beige",
+    "Summer"
+   ]
+  }
+ },
+ {
+  "id": "21379",
+  "data": {
+   "title": "Manchester United Men Solid Black Track Pants",
+   "vendor": "Northstar Apparel",
+   "price": 1800,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/3/image/image.jpg?Expires=1782037954&Signature=SJq-GoBZDHMM186mv8b95hxushX0tT3cTNJQDkgAjPGThTCHbcUHWc0LP1pNrjZnVT7rLFbCpnS3MsOhMbflTTLYIzHWu1fUrIBUn-9UeTQWXXxVfHFvdJa5j8gGj0ZvwIh2Zz3y2jKnCeJwL9iS3w7AnjufY28zJo2iAKJKEwuEUvyzz4ilNW8fzX7vHCRdef-XB1CmqjjtyE26Lszib2kmi3B7iocWE2EaY16fpVxjh8dIJjDjvhNUuMu5dQ5hDPnDoskM0iAK8GkEcaH0vzJtri2tfvACL7xaQ2uEKaYb1JsNHaduo5UOaBPk7jLkOSPpj84~bMddhQBNQewyPg__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Manchester United Men Solid Black Track Pants. Men's track pants in black, suited for casual wear (fall).",
+   "_truth": {
+    "gender": "Men",
+    "color": "Black",
+    "type": "Track Pants",
+    "sub": "Bottomwear",
+    "usage": "Casual"
+   },
+   "raw_type": "Track Pants",
+   "raw_tags": [
+    "Bottomwear",
+    "Track Pants",
+    "Casual",
+    "Black",
+    "Fall"
+   ]
+  }
+ },
+ {
+  "id": "44970",
+  "data": {
+   "title": "Maxima Men White Dial Analog Chronograph Watch",
+   "vendor": "Northstar Apparel",
+   "price": 4850,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/86/image/image.jpg?Expires=1782037954&Signature=kQLHyfzrg5540p2HusPJQ0I0AIefWs~Li287h0VeJm8NaC9XxceVEJ~yA~XwjEOY4NP8QmmcKRTXU21m8JPSFpDz7MlXODXYeOAVFYGdfdaC1rwh1BSC4a-mj06-VCfgcLZ8SMOchmyIqcDUhqgZWz81PxcheelYvJCdbCqH6AMFCBxPuMYNuYICXPPzhVe-ueOPcIwsMg0X2iQ6ijTOYk1HXXYi~BSWzKCpyKDCuw0HKwJ6FNQ9VITCOYwdGPhqO9VzY45QcL6L32Hc6Cysru6BK09RQf3lOFBoasOumuhllFQCCcKC~0uzwK2lT3ZPyc5j3o35AfKXd916Cqwm~Q__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Maxima Men White Dial Analog Chronograph Watch. Men's watches in white, suited for casual wear (winter).",
+   "_truth": {
+    "gender": "Men",
+    "color": "White",
+    "type": "Watches",
+    "sub": "Watches",
+    "usage": "Casual"
+   },
+   "raw_type": "Watches",
+   "raw_tags": [
+    "Watches",
+    "Watches",
+    "Casual",
+    "White",
+    "Winter"
+   ]
+  }
+ },
+ {
+  "id": "3168",
+  "data": {
+   "title": "Nike Men's Incinerate MSL White Blue Shoe",
+   "vendor": "Northstar Apparel",
+   "price": 5650,
+   "available": true,
+   "image_url": "https://datasets-server.huggingface.co/cached-assets/ashraq/fashion-product-images-small/--/3859c76db2f6f3d3b9a3863345e3ccdbff75879d/--/default/train/45/image/image.jpg?Expires=1782037954&Signature=adF6PE2Z5o4Cf6k0fmuENrtkC8qYr85AC9qBmNmimydGWIQn6sd-dXED7HhDA0jBXG7EjNEdfQoMPR7GBh0-HXCdQF2Qi5ZB9Njo9RzMv8EeCWPiP~HKISMMRzJ8FRcoZ8JkohK-YQNM8Zte8wl4UOfmXnCwfdjGaWomdcKyCdi2AbC9tUtJzcQJxNx8jFhvvElaRa-vbSZ-mtuyihkWnZj9xwxu~BBoTWejQxDbAybvGpyGIhue0PtVHl2plcFjIWcxBypZ8hho97Wk22GlapJCXKH-HWOmyq8w16dakhBMS9jArs1cLMr7Oza4rFviybJTTEsbJvz4eMs7CH2R7Q__&Key-Pair-Id=K204OQ5RWQVDLD",
+   "description": "Nike Men's Incinerate MSL White Blue Shoe. Men's sports shoes in white, suited for sports wear (fall).",
+   "_truth": {
+    "gender": "Men",
+    "color": "White",
+    "type": "Sports Shoes",
+    "sub": "Shoes",
+    "usage": "Sports"
+   },
+   "raw_type": "Sports Shoes",
+   "raw_tags": [
+    "Shoes",
+    "Sports Shoes",
+    "Sports",
+    "White",
+    "Fall"
+   ]
+  }
+ }
+]
