@@ -2,6 +2,12 @@
 
 All notable changes to samesake. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.1]
+
+### Added
+
+- **`matcher.removeDocuments(project, collection, ids)`** — delete rows by id from a collection (returns `{ removed }`). Powers the delete path in the Medusa/Shopify/WooCommerce/Porulle integration guides; previously there was no per-collection delete in `@samesake/server`.
+
 ## [2.0.0] — indexing DSL (breaking)
 
 ### Breaking changes

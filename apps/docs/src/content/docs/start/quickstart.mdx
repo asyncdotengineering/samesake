@@ -112,7 +112,7 @@ API_KEY=dev-key-please-change
 4. **Search.**
 
    ```ts title="search.ts"
-   const hits = await matcher.search("shop", "products", {
+   const { hits } = await matcher.search("shop", "products", {
      q: "linen dress under 15000",
      filters: { available: true },
      limit: 10,

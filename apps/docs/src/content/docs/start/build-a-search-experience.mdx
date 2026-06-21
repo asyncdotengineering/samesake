@@ -114,7 +114,7 @@ await matcher.index("shop", "products"); // computes the "meaning" vectors and b
 ## Now search like your shopper would talk
 
 ```ts title="search.ts"
-const hits = await matcher.search("shop", "products", {
+const { hits } = await matcher.search("shop", "products", {
   q: "light dress for a beach wedding under 15000",
   filters: { available: true },
   limit: 10,
