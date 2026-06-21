@@ -48,6 +48,8 @@ import type {
   RecencySpaceDef,
   CategoricalSpaceDef,
   SpaceDef,
+  IndexingDef,
+  RankingPolicy,
 } from "./types.ts";
 import { assertIdent, assertNoIdentCollisions } from "./ident.ts";
 
@@ -61,13 +63,15 @@ export {
   fashionSearchFields,
   fashionSpaces,
   composeFashionEmbedDoc,
+  composeFashionRerankDoc,
+  fashionIndexing,
+  FASHION_CONFIDENCE_FLOOR,
   fashionClassifySchema,
   fashionExtractSchema,
   fashionCategoryAttrBlock,
   fashionNlqSchema,
   FASHION_EXTRACT_INSTRUCTIONS,
   FASHION_NLQ_INSTRUCTIONS,
-  FASHION_EMBED_DOC_SOURCE,
   type FashionEnrichOptions,
 } from "./templates/fashion.ts";
 export { IdentError, assertIdent, assertNoIdentCollisions } from "./ident.ts";
@@ -276,6 +280,7 @@ type CollectionInput<
   TSpaces extends Record<string, SpaceDef> = Record<string, never>,
 > = {
   fields: TFields;
+  indexing: IndexingDef;
   enrich?: PipelineDef;
   sources?: ConnectorDef[];
   embeddings?: TEmbeddings;
@@ -291,6 +296,7 @@ type CollectionInput<
     defaultSpaceWeights?: Partial<Record<NoInfer<keyof TSpaces & string>, number>>;
     /** Declared field whose value groups product variants; results collapse to one per group. */
     variantGroup?: NoInfer<keyof TFields & string>;
+    rankingPolicy?: RankingPolicy;
     nlq?: {
       instructions?: string;
       semanticRewrite?: boolean;
@@ -320,7 +326,22 @@ export function collection<
   if (vg && !(def.fields && vg in def.fields)) {
     throw new Error(`collection "${name}": search.variantGroup "${vg}" must be a declared field`);
   }
-  return brandDef({ ...(def as unknown as CollectionDef), name }, "collection");
+  const indexingManifest = def.indexing
+    ? {
+        surfaces: Object.fromEntries(
+          Object.entries(def.indexing.surfaces).map(([key, surface]) => [
+            key,
+            surface.kind === "dense"
+              ? { kind: "dense" as const, embedding: surface.embedding }
+              : { kind: surface.kind as "rerank" | "fts" },
+          ])
+        ),
+      }
+    : undefined;
+  return brandDef(
+    { ...(def as unknown as CollectionDef), indexingManifest, name },
+    "collection"
+  );
 }
 
 export function stage(
@@ -503,9 +524,23 @@ export function fashionSearchPreset(opts: {
       styles: f.array(f.enum(fashionAttributes.styles), { filterable: true, soft: true, path: "enriched.style_archetypes" }),
     },
     enrich: fashionEnrichmentPreset({ model: opts.enrichmentModel, imageField: fieldsMap.imageUrl, titleField: fieldsMap.title }),
+    indexing: {
+      surfaces: {
+        embed_doc: {
+          kind: "dense",
+          embedding: "intent",
+          build: ({ data, enriched }) =>
+            `${data[fieldsMap.title] ?? ""} ${enriched.search_document ?? ""}`.replace(/\s+/g, " ").trim(),
+        },
+        fts_doc: {
+          kind: "fts",
+          build: ({ data }) => `${data[fieldsMap.title] ?? ""}`.trim(),
+        },
+      },
+      gate: () => ({ index: true }),
+    },
     embeddings: {
       intent: {
-        source: "$enriched.search_document $title",
         model: opts.textModel,
         dim: opts.textDim,
         taskType: "RETRIEVAL_DOCUMENT",

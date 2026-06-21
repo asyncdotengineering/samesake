@@ -1,4 +1,4 @@
-import { collection, f, Channels, pipeline, stage, s } from "@samesake/core";
+import { collection, f, Channels, pipeline, stage, s, fashion } from "@samesake/core";
 import { createMatcher } from "@samesake/server";
 import {
   CATEGORIES,
@@ -123,9 +123,9 @@ export const productsCollection = collection("products", {
       schema: (ctx) => stage2Schema(String(ctx.enriched.category ?? "other")),
     })
   ),
+  indexing: fashion.indexing(),
   embeddings: {
     doc: {
-      source: "$enriched.embed_doc",
       model: "gemini-embedding-2",
       dim: 1536,
       taskType: "RETRIEVAL_DOCUMENT",

@@ -1,0 +1,148 @@
+---
+title: Inngest pipeline
+description: Durable push → enrich → index with Inngest steps, cron schedules, and webhook fast-paths.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+[Inngest](https://www.inngest.com/) turns each matcher call into a **durable step**. If `index` fails, Inngest retries just that step — `enrich` doesn't re-run. Cron triggers give you the safety-net loop; events give you webhook fast-paths. You serve the functions from your existing Node app.
+
+See [Running the enrich pipeline durably](/guides/enrich-pipeline/) for the five-step model. This page wires it to Inngest.
+
+## Matcher setup
+
+```ts title="lib/matcher.ts"
+import { createMatcher, fashionRerank } from "@samesake/server";
+import { products } from "../catalog.ts";
+import { geminiEmbed, geminiGenerate } from "../gemini.ts";
+
+export const matcher = createMatcher({
+  databaseUrl: process.env.DATABASE_URL!,
+  apiKey: process.env.API_KEY!,
+  embed: geminiEmbed,
+  generate: geminiGenerate,
+  rerank: fashionRerank(geminiGenerate),
+});
+```
+
+## Inngest client and functions
+
+Each stage is a separate `step.run` — durable, auto-retried (Inngest's default is four attempts per step).
+
+```ts title="inngest/client.ts"
+import { Inngest } from "inngest";
+
+export const inngest = new Inngest({ id: "samesake-pipeline" });
+```
+
+```ts title="inngest/functions.ts"
+import { inngest } from "./client.ts";
+import { matcher } from "../lib/matcher.ts";
+import { fetchChangedRows, rowFromWebhook } from "../catalog-source.ts";
+
+const PROJECT = "market";
+const COLLECTION = "products";
+
+// Scheduled full-loop — every 5 minutes, one at a time
+export const syncCatalog = inngest.createFunction(
+  {
+    id: "sync-catalog",
+    triggers: [{ cron: "*/5 * * * *" }],
+    concurrency: 1,
+  },
+  async ({ step }) => {
+    await step.run("push", async () => {
+      const rows = await fetchChangedRows();
+      await matcher.pushDocuments(PROJECT, COLLECTION, rows);
+    });
+    await step.run("enrich", () => matcher.enrich(PROJECT, COLLECTION));
+    await step.run("index", () => matcher.index(PROJECT, COLLECTION));
+  },
+);
+
+// Hourly maintenance
+export const catalogMaintenance = inngest.createFunction(
+  {
+    id: "catalog-maintenance",
+    triggers: [{ cron: "0 * * * *" }],
+  },
+  async ({ step }) => {
+    await step.run("revalidate-images", () =>
+      matcher.revalidateImages(PROJECT, COLLECTION),
+    );
+    await step.run("retry-failed", () =>
+      matcher.retryFailed(PROJECT, COLLECTION),
+    );
+  },
+);
+
+// Webhook fast-path — push one row on product update
+export const onProductUpdated = inngest.createFunction(
+  {
+    id: "product-updated",
+    triggers: [{ event: "store/product.updated" }],
+  },
+  async ({ event, step }) => {
+    await step.run("push", async () => {
+      const row = rowFromWebhook(event.data);
+      await matcher.pushDocuments(PROJECT, COLLECTION, [row]);
+    });
+    // Optional: run enrich + index inline for instant search
+    // await step.run("enrich", () => matcher.enrich(PROJECT, COLLECTION));
+    // await step.run("index", () => matcher.index(PROJECT, COLLECTION));
+  },
+);
+```
+
+<Aside type="tip">
+Cron strings support timezones: `{ cron: "TZ=Europe/Paris 0 12 * * 5" }`. A function can also have **multiple triggers** — same handler, cron plus event — if you want one function for both scheduled and manual syncs.
+</Aside>
+
+## Serve the handler
+
+Expose your functions through Inngest's `serve` handler. On Next.js App Router:
+
+```ts title="app/api/inngest/route.ts"
+import { serve } from "inngest/next";
+import { inngest } from "@/inngest/client";
+import { syncCatalog, catalogMaintenance, onProductUpdated } from "@/inngest/functions";
+
+export const maxDuration = 300;
+
+export const { GET, POST, PUT } = serve({
+  client: inngest,
+  functions: [syncCatalog, catalogMaintenance, onProductUpdated],
+});
+```
+
+Other frameworks: `inngest/express`, `inngest/hono`, etc. — same shape, different import path.
+
+## Fire events from your store webhook
+
+```ts title="app/api/webhooks/store/route.ts"
+import { inngest } from "@/inngest/client";
+
+export async function POST(request: Request) {
+  const payload = await request.json();
+  await inngest.send({
+    name: "store/product.updated",
+    data: payload,
+  });
+  return Response.json({ ok: true });
+}
+```
+
+Use `step.sendEvent("name", events[])` inside a function when you need to fan out — not needed for the catalog loop, because samesake batches internally.
+
+## Why this fits samesake
+
+Inngest's job is durability and observability, not catalog fan-out. Your 50,000-product marketplace still runs three matcher calls per sync; samesake skips unchanged rows inside each call. Separate steps mean a failed embed retry doesn't re-fetch your Shopify feed.
+
+<Aside type="note">
+Row statuses (`pending`, `ready`, `failed`, …) are in Postgres, not Inngest. See [Pipeline lifecycle](/guides/pipeline-lifecycle/).
+</Aside>
+
+## Where to go next
+
+- **Concept and platform picker** — [Running the enrich pipeline durably](/guides/enrich-pipeline/)
+- **Inngest docs** — [inngest.com/docs](https://www.inngest.com/docs)

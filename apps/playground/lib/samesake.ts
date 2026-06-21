@@ -1,24 +1,22 @@
-import { collection, Channels, fashion, type CollectionDef } from "@samesake/core";
+import { collection, Channels, f, fashion, type CollectionDef, type CollectionFieldDef } from "@samesake/core";
 import { createMatcher } from "@samesake/server";
 import { geminiEmbed } from "./embed";
 import { geminiGenerate } from "./generate";
 
 export const PROJECT = "playground";
 export const COLLECTION = "products";
+const productFields: Record<string, CollectionFieldDef> = {
+  ...fashion.fields({ brandPath: "brand" }),
+  content_hash: f.text({ path: "content_hash" }),
+};
 
-// The playground now dogfoods @samesake/core's fashion enrichment TEMPLATE (1.3.0):
-//   - fashion.enrichPipeline(): classify (category/type/gender/is-apparel) → extract
-//     (colors/pattern/material/fit/occasions/styles + per-category attrs + search_document),
-//     image-aware via the BYO generate fn.
-//   - fashion.fields(): declared attributes resolve from enriched.* (filled by the pipeline).
-//   - fashion.spaces(): visual (image) + price + category + freshness segments.
-//   - fashion.nlq: fashion-aware intent/budget parsing.
-// The doc embedding reads $enriched.embed_doc, composed by composeEmbedDocs() after enrich.
+// The playground dogfoods @samesake/core's fashion enrichment TEMPLATE: enrichPipeline,
+// fields, spaces, nlq, and indexing() — surfaces + gate persist at enrich time.
 export const products = collection(COLLECTION, {
-  // brand lives on the raw doc as `brand` (not the template's default `vendor`).
-  fields: fashion.fields({ brandPath: "brand" }),
+  fields: productFields,
+  indexing: fashion.indexing(),
   embeddings: {
-    doc: { source: fashion.embedDocSource, model: "gemini-embedding-2", dim: 1536, taskType: "RETRIEVAL_DOCUMENT" },
+    doc: { model: "gemini-embedding-2", dim: 1536, taskType: "RETRIEVAL_DOCUMENT" },
   },
   spaces: fashion.spaces(),
   enrich: fashion.enrichPipeline(),
@@ -29,6 +27,7 @@ export const products = collection(COLLECTION, {
       Channels.spaces({ weight: 1 }),
     ],
     combiner: "rrf",
+    variantGroup: "content_hash",
     nlq: {
       enable: true,
       semanticRewrite: true,

@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed, testProductsCollection } from "./fixtures.ts";
+import { collection, f, Channels, gates, s } from "../../sdk/src/index.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
@@ -68,7 +69,12 @@ describeIf("hybrid search", () => {
         },
       }))
     );
-  });
+    const { db, close } = createDbFromUrl(databaseUrl!);
+    await db.execute(sql.raw(`
+      UPDATE ${schemaName}.c_products SET fts_src = title
+    `));
+    await close();
+  }, 20_000);
 
   afterAll(async () => {
     if (schemaName) {
@@ -199,5 +205,110 @@ describeIf("hybrid search", () => {
       })
     );
     expect(ok.status).toBe(200);
+  });
+});
+
+describeIf("test:search-excludes-quarantined", () => {
+  const projectSlug = `t_${Math.random().toString(36).slice(2, 10)}`;
+  let schemaName = "";
+  let matcher: ReturnType<typeof createMatcher>;
+  const targetId = "q-target";
+
+  const quarantineCollection = collection("products", {
+    fields: {
+      title: f.text({ searchable: true }),
+      brand: f.text({ filterable: true }),
+    },
+    indexing: {
+      surfaces: {
+        embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+        fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+      },
+      gate: gates.always,
+    },
+    embeddings: {
+      doc: { model: "test-embed", dim: 8 },
+    },
+    spaces: {
+      style: s.text({ source: "$title", model: "test-embed", dim: 8 }),
+    },
+    search: {
+      channels: [
+        Channels.fts({ fields: ["title"], weight: 1 }),
+        Channels.cosine({ embedding: "doc", weight: 1 }),
+        Channels.spaces({ weight: 1 }),
+      ],
+    },
+  });
+
+  beforeAll(async () => {
+    matcher = createMatcher({
+      databaseUrl: databaseUrl!,
+      apiKey: "test-api-key-12345",
+      migrate: "eager",
+      embed: async ({ text, dim }) => stubEmbed(text, dim),
+    });
+    await matcher.migrate();
+    schemaName = (
+      await matcher.apply(projectSlug, { entities: [], collections: [quarantineCollection] })
+    ).schema;
+
+    const vec = stubEmbed("quarantine target unique", 8);
+    await matcher.indexDocuments(projectSlug, "products", [
+      {
+        id: targetId,
+        data: { title: "quarantine target unique", brand: "zara" },
+        doc: "quarantine target unique",
+        embedding: vec,
+        fields: { title: "quarantine target unique", brand: "zara" },
+      },
+    ]);
+
+    const { db, close } = createDbFromUrl(databaseUrl!);
+    await db.execute(sql.raw(`
+      UPDATE ${schemaName}.c_products
+      SET space_vec = embedding,
+          fts_src = title,
+          pipeline_status = 'ready'
+      WHERE id = '${targetId}'
+    `));
+    await db.execute(sql.raw(`
+      UPDATE ${schemaName}.c_products
+      SET pipeline_status = 'quarantined', gate_reason = 'test-quarantine'
+      WHERE id = '${targetId}'
+    `));
+    await close();
+  }, 20_000);
+
+  afterAll(async () => {
+    if (schemaName) {
+      const { db, close } = createDbFromUrl(databaseUrl!);
+      await db.execute(sql.raw(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`));
+      await close();
+    }
+    if (matcher) await matcher.close();
+  });
+
+  test("test:search-excludes-quarantined from fts, cosine, and spaces", async () => {
+    const fts = await matcher.search(projectSlug, "products", {
+      q: "quarantine target unique",
+      limit: 10,
+      weights: { fts: 1, cosine: 0, spaces: 0 },
+    });
+    expect(fts.hits.some((h) => h.id === targetId)).toBe(false);
+
+    const cosine = await matcher.search(projectSlug, "products", {
+      q: "quarantine target unique",
+      limit: 10,
+      weights: { fts: 0, cosine: 1, spaces: 0 },
+    });
+    expect(cosine.hits.some((h) => h.id === targetId)).toBe(false);
+
+    const spaces = await matcher.search(projectSlug, "products", {
+      q: "quarantine target unique",
+      limit: 10,
+      weights: { fts: 0, cosine: 0, spaces: 1 },
+    });
+    expect(spaces.hits.some((h) => h.id === targetId)).toBe(false);
   });
 });

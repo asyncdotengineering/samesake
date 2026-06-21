@@ -12,6 +12,7 @@ import type { ProjectsService } from "./projects.ts";
 import type { SearchHit, SearchService, SearchOpts, SearchFilters } from "./search.ts";
 import type { IngestService } from "./ingest.ts";
 import { collectionTableName, getByPath, getPgClient } from "./db-utils.ts";
+import { applyRankingPolicy } from "./ranking.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
 import { searchResultCache } from "./search-cache.ts";
 
@@ -50,7 +51,14 @@ function normalizeFilters(filters?: Record<string, unknown>): SearchFilters {
   return { ...(filters ?? {}) } as SearchFilters;
 }
 
-function defaultRankingPolicy(hasImage: boolean, hasPersonalization: boolean): Required<FashionRankingPolicy> {
+type ResolvedFashionRankingPolicy = FashionRankingPolicy & {
+  weights: Required<NonNullable<FashionRankingPolicy["weights"]>>;
+  businessField: string;
+  boostAvailable: boolean;
+  buryUnavailable: boolean;
+};
+
+function defaultRankingPolicy(hasImage: boolean, hasPersonalization: boolean): ResolvedFashionRankingPolicy {
   return {
     weights: {
       relevance: 1,
@@ -70,7 +78,7 @@ function mergeRankingPolicy(
   policy: FashionRankingPolicy | undefined,
   hasImage: boolean,
   hasPersonalization: boolean
-): Required<FashionRankingPolicy> {
+): ResolvedFashionRankingPolicy {
   const base = defaultRankingPolicy(hasImage, hasPersonalization);
   return {
     weights: { ...base.weights, ...(policy?.weights ?? {}) },
@@ -137,39 +145,17 @@ function personalize(hit: SearchHit, ctx?: FashionPersonalizationContext): numbe
 
 function rankHits(
   hits: SearchHit[],
-  policy: Required<FashionRankingPolicy>,
+  policy: ResolvedFashionRankingPolicy,
   personalization: FashionPersonalizationContext | undefined,
   visualById: Map<string, number>
 ): { hits: SearchHit[]; factors: Map<string, Record<string, FactorValue>> } {
-  const factors = new Map<string, Record<string, FactorValue>>();
-  const ranked = hits.map((hit) => {
-    const availabilityRaw = hitValue(hit, "available");
-    const available = availabilityRaw === undefined ? true : availabilityRaw === true;
-    const visual = visualById.get(hit.id) ?? 0;
-    const business =
-      policy.businessField && policy.businessField.length
-        ? Number(hitValue(hit, policy.businessField))
-        : 0;
-    const personalizationScore = personalize(hit, personalization);
-    const f: Record<string, FactorValue> = {
-      relevance: Number(hit.score),
-      visual,
-      available,
-      business: Number.isFinite(business) ? business : 0,
-      personalization: personalizationScore,
-    };
-    factors.set(hit.id, f);
-
-    let score = Number(hit.score) * (policy.weights.relevance ?? 1);
-    score += visual * (policy.weights.visual ?? 0);
-    score += (available ? 1 : 0) * (policy.weights.availability ?? 0);
-    score += (Number.isFinite(business) ? business : 0) * (policy.weights.business ?? 0);
-    score += personalizationScore * (policy.weights.personalization ?? 0);
-    if (!available && policy.buryUnavailable) score -= 2;
-    return { ...hit, score };
+  return applyRankingPolicy(hits, policy, {
+    resolveAxis: (hit, axis) => {
+      if (axis === "visual") return visualById.get(hit.id) ?? 0;
+      if (axis === "personalization") return personalize(hit, personalization);
+      return undefined;
+    },
   });
-  ranked.sort((a, b) => b.score - a.score);
-  return { hits: ranked, factors };
 }
 
 function relaxFilters(filters: SearchFilters): { filters: SearchFilters; relaxed: string[] } {

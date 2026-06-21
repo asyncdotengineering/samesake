@@ -1,13 +1,20 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels, s } from "../../sdk/src/index.ts";
+import { collection, f, Channels, gates, s } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed } from "./fixtures.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
+const indexingByTitle = {
+  surfaces: {
+    embed_doc: { kind: "dense" as const, embedding: "doc", build: ({ data }: { data: Record<string, unknown> }) => String(data.title ?? "").trim() },
+    fts_doc: { kind: "fts" as const, build: ({ data }: { data: Record<string, unknown> }) => String(data.title ?? "").trim() },
+  },
+  gate: gates.always,
+};
 
 const baseCollection = collection("products", {
   fields: {
@@ -15,7 +22,8 @@ const baseCollection = collection("products", {
     brand: f.text({ filterable: true }),
     price: f.number({ filterable: true }),
   },
-  embeddings: { doc: { source: "$title", model: "test-embed", dim: 8 } },
+  indexing: indexingByTitle,
+  embeddings: { doc: { model: "test-embed", dim: 8 } },
   search: {
     channels: [
       Channels.fts({ fields: ["title"], weight: 1 }),
@@ -70,7 +78,8 @@ describeIf("collection migrations", () => {
         price: f.number({ filterable: true }),
         category: f.text({ filterable: true, path: "enriched.category" }),
       },
-      embeddings: { doc: { source: "$title", model: "test-embed", dim: 8 } },
+      indexing: indexingByTitle,
+      embeddings: { doc: { model: "test-embed", dim: 8 } },
       search: {
         channels: [
           Channels.fts({ fields: ["title"], weight: 1 }),
@@ -103,7 +112,8 @@ describeIf("collection migrations", () => {
         price: f.number({ filterable: true }),
         category: f.text({ filterable: true, path: "enriched.category" }),
       },
-      embeddings: { doc: { source: "$title", model: "test-embed", dim: 8 } },
+      indexing: indexingByTitle,
+      embeddings: { doc: { model: "test-embed", dim: 8 } },
       spaces: { style: s.text({ source: "$title", model: "test-embed", dim: 8 }) },
       search: { channels: [Channels.fts({ fields: ["title"], weight: 1 }), Channels.spaces({ weight: 1 })] },
     });
@@ -133,7 +143,8 @@ describeIf("collection migrations", () => {
         price: f.number({ filterable: true }),
         category: f.text({ filterable: true, path: "enriched.category" }),
       },
-      embeddings: { doc: { source: "$title", model: "test-embed", dim: 8 } },
+      indexing: indexingByTitle,
+      embeddings: { doc: { model: "test-embed", dim: 8 } },
       search: {
         channels: [
           Channels.fts({ fields: ["title"], weight: 1 }),
@@ -160,7 +171,7 @@ describeIf("collection migrations", () => {
     expect(col.length).toBe(0);
   });
 
-  test("REQ-V03B-REPRO3: embedding def change clears indexed_at", async () => {
+  test("REQ-V03B-REPRO3: source removal no longer triggers reindex", async () => {
     await matcher.pushDocuments(projectSlug, "products", [
       { id: "m3", data: { title: "Scarf", brand: "hm", price: 20, content_hash: "m3" } },
     ]);
@@ -173,7 +184,8 @@ describeIf("collection migrations", () => {
         price: f.number({ filterable: true }),
         category: f.text({ filterable: true, path: "enriched.category" }),
       },
-      embeddings: { doc: { source: "$title $brand", model: "test-embed", dim: 8 } },
+      indexing: indexingByTitle,
+      embeddings: { doc: { model: "test-embed", dim: 8 } },
       search: {
         channels: [
           Channels.fts({ fields: ["title"], weight: 1 }),
@@ -183,14 +195,14 @@ describeIf("collection migrations", () => {
     });
 
     const r = await matcher.apply(projectSlug, { entities: [], collections: [changedSource] });
-    expect(r.plan.reindexRequired.some((x) => x.includes("embedding"))).toBe(true);
+    expect(r.plan.reindexRequired.some((x) => x.includes("embedding"))).toBe(false);
 
     const { db, close } = createDbFromUrl(databaseUrl!);
     const after = await db.execute<{ indexed_at: Date | null }>(
       sql.raw(`SELECT indexed_at FROM ${schemaName}.c_products WHERE id = 'm3'`)
     );
     await close();
-    expect(after[0]!.indexed_at).toBeNull();
+    expect(after[0]!.indexed_at).not.toBeNull();
   });
 
   test("REQ-V03B-REPRO3: dim change recreates embedding column", async () => {
@@ -201,7 +213,8 @@ describeIf("collection migrations", () => {
         price: f.number({ filterable: true }),
         category: f.text({ filterable: true, path: "enriched.category" }),
       },
-      embeddings: { doc: { source: "$title $brand", model: "test-embed", dim: 16 } },
+      indexing: indexingByTitle,
+      embeddings: { doc: { model: "test-embed", dim: 16 } },
       search: {
         channels: [
           Channels.fts({ fields: ["title"], weight: 1 }),
@@ -224,6 +237,31 @@ describeIf("collection migrations", () => {
     `));
     await close();
     expect(col[0]!.coltype).toBe("vector(16)");
+  });
+
+  test("apply fails when indexing manifest references missing embedding", async () => {
+    const invalid = collection("products", {
+      fields: {
+        title: f.text({ searchable: true }),
+      },
+      indexing: {
+        surfaces: {
+          embed_doc: { kind: "dense", embedding: "missing", build: ({ data }) => String(data.title ?? "").trim() },
+          fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+        },
+        gate: gates.always,
+      },
+      embeddings: { doc: { model: "test-embed", dim: 8 } },
+      search: {
+        channels: [
+          Channels.fts({ fields: ["title"], weight: 1 }),
+          Channels.cosine({ embedding: "doc", weight: 1 }),
+        ],
+      },
+    });
+    await expect(matcher.apply(projectSlug, { entities: [], collections: [invalid] })).rejects.toThrow(
+      /references missing embedding "missing"/
+    );
   });
 });
 
@@ -262,7 +300,8 @@ describeIf("field addition without reindex", () => {
         price: f.number({ filterable: true }),
         tag: f.text({ filterable: true }),
       },
-      embeddings: { doc: { source: "$title", model: "test-embed", dim: 8 } },
+      indexing: indexingByTitle,
+      embeddings: { doc: { model: "test-embed", dim: 8 } },
       search: {
         channels: [
           Channels.fts({ fields: ["title"], weight: 1 }),
@@ -293,7 +332,18 @@ describeIf("embed-index terminal skip", () => {
         },
       ],
     },
-    embeddings: { doc: { source: "$title", model: "test-embed", dim: 8 } },
+    indexing: {
+      surfaces: {
+        embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+        fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+      },
+      gate: ({ enriched }) => {
+        const isApparel = enriched.is_apparel_product ?? enriched.is_apparel;
+        if (isApparel === false || enriched.category === "other") return { index: false, reason: "category-other" };
+        return { index: true };
+      },
+    },
+    embeddings: { doc: { model: "test-embed", dim: 8 } },
     search: {
       channels: [
         Channels.fts({ fields: ["title"], weight: 1 }),
@@ -308,7 +358,7 @@ describeIf("embed-index terminal skip", () => {
       apiKey: "test-api-key-12345",
       migrate: "eager",
       embed: async ({ text, dim }) => stubEmbed(text, dim),
-      generate: async () => ({}),
+      generate: async () => ({ is_apparel: false, category: "other" }),
     });
     await matcher.migrate();
     schemaName = (
@@ -325,27 +375,22 @@ describeIf("embed-index terminal skip", () => {
     if (matcher) await matcher.close();
   });
 
-  test("REQ-V03B-REPRO4: skipped rows terminal — second index processes 0", async () => {
+  test("REQ-V03B-REPRO4: gate quarantines row and index excludes it", async () => {
     await matcher.pushDocuments(projectSlug, "products", [
       { id: "skip1", data: { title: "Widget", content_hash: "s1" } },
     ]);
-    const { db, close } = createDbFromUrl(databaseUrl!);
-    await db.execute(sql.raw(`
-      UPDATE ${schemaName}.c_products
-      SET enriched = '{"is_apparel":false,"category":"other"}'::jsonb, enriched_at = now()
-      WHERE id = 'skip1'
-    `));
-    await close();
+    await matcher.enrich(projectSlug, "products");
 
     expect((await matcher.index(projectSlug, "products")).indexed).toBe(0);
 
     const { db: db2, close: close2 } = createDbFromUrl(databaseUrl!);
-    const row = await db2.execute<{ indexed_at: Date | null; doc: string | null }>(
-      sql.raw(`SELECT indexed_at, doc FROM ${schemaName}.c_products WHERE id = 'skip1'`)
+    const row = await db2.execute<{ indexed_at: Date | null; doc: string | null; pipeline_status: string }>(
+      sql.raw(`SELECT indexed_at, doc, pipeline_status FROM ${schemaName}.c_products WHERE id = 'skip1'`)
     );
     await close2();
-    expect(row[0]!.indexed_at).not.toBeNull();
-    expect(row[0]!.doc).toBeNull();
+    expect(row[0]!.indexed_at).toBeNull();
+    expect(row[0]!.doc).toBe("Widget");
+    expect(row[0]!.pipeline_status).toBe("quarantined");
 
     expect((await matcher.index(projectSlug, "products")).indexed).toBe(0);
   });

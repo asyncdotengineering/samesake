@@ -44,7 +44,7 @@ Most search tools make you wrangle a separate service with its own dashboard and
 Here's a small one. Read it like a sentence — "products have a title we can search, a brand and price we can filter on, and we search them with keywords plus meaning":
 
 ```ts title="catalog.ts"
-import { collection, f, Channels } from "@samesake/core";
+import { collection, f, Channels, gates } from "@samesake/core";
 
 export const products = collection("products", {
   fields: {
@@ -54,9 +54,23 @@ export const products = collection("products", {
     color: f.text({ filterable: true }),
     available: f.boolean({ filterable: true }),
   },
+  indexing: {
+    surfaces: {
+      embed_doc: {
+        kind: "dense",
+        embedding: "doc",
+        build: ({ data }) => `${data.title} ${data.brand} ${data.color}`.trim(),
+      },
+      fts_doc: {
+        kind: "fts",
+        build: ({ data }) => `${data.title} ${data.brand}`.trim(),
+      },
+    },
+    gate: gates.always,
+  },
   embeddings: {
-    // "meaning" vectors, built from this text, using a model you supply below
-    doc: { source: "$title $brand $color", model: "gemini-embedding-2", dim: 1536 },
+    // "meaning" vectors now read from indexing.surfaces.embed_doc
+    doc: { model: "gemini-embedding-2", dim: 1536 },
   },
   search: {
     channels: [
@@ -121,7 +135,7 @@ const explained = await matcher.searchExplain("shop", "products", { q: "beach we
 You described a catalog in one file, loaded products, and ran a search that respects budgets and availability while still understanding vague, human phrasing. That's the core loop. Everything else is turning knobs on it:
 
 - **Add images.** Give a product an image URL and an image embedding, and a shopper can search by a screenshot. Same three-signal idea, one more signal.
-- **Tune the mix at query time.** Pass `weights` to dial visual vs intent vs price up or down for a given query — no reindexing.
+- **Tune the mix at query time.** Pass `weights` to dial visual vs intent vs price up or down for a given query — no reindexing. For second-stage reranking, wire a [`RerankFn`](/reference/reranking/) and see [Providers](/reference/providers/) for BYO model functions.
 - **Connect a real store.** If your catalog already lives somewhere, wire it: [MedusaJS](/integrations/medusajs/), [headless Shopify](/integrations/shopify/), [headless WooCommerce](/integrations/woocommerce/).
 
 When you're ready for the precise, no-narration version, the [Quickstart](/start/quickstart/) does the same thing in fifteen minutes and needs no model at all.

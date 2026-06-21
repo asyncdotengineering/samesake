@@ -23,16 +23,8 @@ function fieldSqlType(def: CollectionFieldDef): string {
   }
 }
 
-function ftsExpression(fields: Record<string, CollectionFieldDef>): string {
-  const parts: string[] = [];
-  for (const [name, def] of Object.entries(fields)) {
-    if (def.type === "text" && def.searchable) {
-      parts.push(`coalesce(${sanitiseIdent(name)}, '')`);
-    }
-  }
-  parts.push(`coalesce(doc, '')`);
-  if (parts.length === 1) return parts[0]!;
-  return parts.join(" || ' ' || ");
+function ftsGeneratedColumnDdl(_fields: Record<string, CollectionFieldDef>): string {
+  return `fts tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(fts_src, ''))) STORED`;
 }
 
 export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
@@ -75,7 +67,6 @@ export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
     const spaceVecCol =
       spaceDimTotal > 0 ? `,\n        space_vec vector(${spaceDimTotal})` : "";
 
-    const ftsExpr = ftsExpression(c.fields);
     const stmts: string[] = [];
 
     stmts.push(`
@@ -85,12 +76,21 @@ export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
         enriched jsonb,
         content_hash text NOT NULL,
 ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
-        fts tsvector GENERATED ALWAYS AS (to_tsvector('english', ${ftsExpr})) STORED,
+        rerank_doc text,
+        fts_src text,
+        gate_reason text,
+        ${ftsGeneratedColumnDdl(c.fields)},
         embedding vector(${embedDim})${spaceVecCol},
         ingested_at timestamptz NOT NULL DEFAULT now(),
         enriched_at timestamptz,
         indexed_at timestamptz,
-        updated_at timestamptz NOT NULL DEFAULT now()
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        pipeline_status text NOT NULL DEFAULT 'pending',
+        attempt_count int NOT NULL DEFAULT 0,
+        last_error text,
+        next_attempt_at timestamptz,
+        image_etag text,
+        image_checked_at timestamptz
       );
     `);
 
@@ -118,6 +118,31 @@ ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
     return stmts;
   }
 
+  function ensureCollectionSystemColumns(
+    schema: string,
+    collectionName: string,
+    def?: CollectionDef
+  ): string[] {
+    const coll = sanitiseIdent(collectionName);
+    const table = `${schema}.c_${coll}`;
+    const stmts: string[] = [
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS pipeline_status text NOT NULL DEFAULT 'pending';`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS attempt_count int NOT NULL DEFAULT 0;`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS last_error text;`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS next_attempt_at timestamptz;`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS image_etag text;`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS image_checked_at timestamptz;`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS rerank_doc text;`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS fts_src text;`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS gate_reason text;`,
+      `UPDATE ${table} SET pipeline_status='ready' WHERE pipeline_status='pending' AND (indexed_at IS NOT NULL OR enriched_at IS NOT NULL);`,
+    ];
+
+    void def;
+
+    return stmts;
+  }
+
   function generateCollectionsDDL(
     projectSlug: string,
     collections: CollectionDef[]
@@ -130,7 +155,7 @@ ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
     return { projectSchema: schema, statements: stmts };
   }
 
-  return { projectSchemaName, collectionTableDDL, generateCollectionsDDL };
+  return { projectSchemaName, collectionTableDDL, ensureCollectionSystemColumns, generateCollectionsDDL };
 }
 
 export type CollectionsSchemaGen = ReturnType<typeof makeCollectionsSchemaGen>;

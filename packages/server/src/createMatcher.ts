@@ -38,11 +38,14 @@ import { makeSearchService } from "./core/search.ts";
 import { makeAgentToolsService } from "./core/agent-tools.ts";
 import { makeIngestService } from "./core/ingest.ts";
 import { makeEnrichPipelineService } from "./core/enrich-pipeline.ts";
+import { makeRevalidateImagesService } from "./core/revalidate-images.ts";
 import { makeReviewService } from "./core/review.ts";
 import { makeEmbedIndexService } from "./core/embed-index.ts";
+import { makeRetryService } from "./core/retry.ts";
 import { makeFashionSearchService } from "./core/fashion-search.ts";
 import { makeCalibrateService } from "./core/calibrate.ts";
 import { makeCalibrateSearchService } from "./core/calibrate-search.ts";
+import { makeEvalService } from "./core/eval/run.ts";
 import { makeExplainService } from "./core/explain.ts";
 import { makeVariantsService } from "./core/variants.ts";
 import { makeUpsertService } from "./core/upsert.ts";
@@ -89,6 +92,9 @@ export interface Matcher {
   reviewCorrect: ReturnType<typeof makeReviewService>["reviewCorrect"];
   index: ReturnType<typeof makeEmbedIndexService>["indexCollection"];
   searchExplain: ReturnType<typeof makeSearchService>["searchExplain"];
+  runEval: ReturnType<typeof makeEvalService>["runEval"];
+  revalidateImages: ReturnType<typeof makeRevalidateImagesService>["revalidateImages"];
+  retryFailed: ReturnType<typeof makeRetryService>["retryFailed"];
   metrics: () => MetricsSnapshot;
   rotateProjectKey: ReturnType<typeof makeProjectsService>["rotateProjectKey"];
 
@@ -232,12 +238,15 @@ export function createMatcher(config: MatcherConfig): Matcher {
   const matchService = makeMatchService(ctx, embedService, parseService, projectsService, schemaGen);
   const searchService = makeSearchService(ctx, embedService, projectsService);
   const calibrateSearchService = makeCalibrateSearchService(ctx, searchService);
+  const evalService = makeEvalService(ctx, searchService);
   const agentToolsService = makeAgentToolsService(ctx, projectsService, searchService);
   const ingestService = makeIngestService(ctx, projectsService);
   const fashionSearchService = makeFashionSearchService(ctx, projectsService, searchService, ingestService);
   const enrichService = makeEnrichPipelineService(ctx, projectsService);
+  const revalidateImagesService = makeRevalidateImagesService(ctx, projectsService);
   const reviewService = makeReviewService(ctx, projectsService);
   const embedIndexService = makeEmbedIndexService(ctx, embedService, projectsService);
+  const retryService = makeRetryService(ctx, projectsService, enrichService, embedIndexService);
   const calibrateService = makeCalibrateService(ctx, schemaGen);
   const explainService = makeExplainService(ctx, embedService, projectsService, schemaGen);
   const variantsService = makeVariantsService(ctx, projectsService, schemaGen);
@@ -311,6 +320,9 @@ export function createMatcher(config: MatcherConfig): Matcher {
     reviewList: reviewService.reviewList,
     reviewCorrect: reviewService.reviewCorrect,
     searchExplain: searchService.searchExplain,
+    runEval: evalService.runEval,
+    revalidateImages: revalidateImagesService.revalidateImages,
+    retryFailed: retryService.retryFailed,
     metrics: () => observability.metrics(),
     rotateProjectKey: projectsService.rotateProjectKey,
     fetch: app.fetch.bind(app) as (request: Request) => Promise<Response>,

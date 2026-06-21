@@ -1,0 +1,142 @@
+---
+title: Providers
+description: BYO provider functions for samesake — EmbedFn, GenerateFn, RerankFn, and a provider matrix with wiring examples.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+samesake never calls a model directly. You supply functions; the matcher passes opaque model strings through from your entity config.
+
+## Matcher seams
+
+| Seam | Type | Required? | Used for |
+|------|------|-----------|----------|
+| `embed` | `EmbedFn` | **Yes** | Index + query vectors |
+| `generate` | `GenerateFn` | Optional | Enrich stages, NLQ, judge, `fashionRerank` |
+| `rerank` | `RerankFn` | Optional (default off) | Second-stage rerank — see [Reranking](/reference/reranking/) |
+| `groundImage` | `GroundImageFn` | Optional | Crop/segment before embed |
+
+`model` on each request is an **opaque string** from your catalog config. Your function decides how to map it to a provider endpoint.
+
+## `EmbedFn`
+
+```ts
+interface EmbedRequest {
+  text?: string;
+  image?: { url?: string; bytes?: Uint8Array; mimeType?: string };
+  model: string;
+  dim: number;
+  taskType?: string;           // e.g. Gemini "RETRIEVAL_QUERY" / "RETRIEVAL_DOCUMENT"
+  inputType?: "query" | "document"; // Voyage cares; most providers ignore
+}
+
+type EmbedFn = (req: EmbedRequest) => Promise<number[]>;
+```
+
+Return a vector of length `dim` or the matcher throws a clear dimension mismatch.
+
+## `GenerateFn`
+
+```ts
+interface GenerateRequest {
+  model?: string;
+  system?: string;
+  prompt: string;
+  images?: { mimeType: string; data: Uint8Array | string }[];
+  schema: Record<string, unknown>; // JSON Schema for structured output
+}
+
+type GenerateFn = (req: GenerateRequest) => Promise<unknown>;
+```
+
+Used by enrich pipelines, NLQ, the [relevance judge](/reference/relevance-judge/), and [`fashionRerank`](/reference/reranking/).
+
+## Provider matrix
+
+Examples only — not endorsements. Pick what fits your latency, cost, and compliance needs.
+
+| Provider | Embed example | Generate / judge example | Notes |
+|----------|---------------|--------------------------|-------|
+| **Gemini** | `gemini-embedding-2` | `gemini-3.1-flash-lite` | `taskType` matters (`RETRIEVAL_QUERY` vs `RETRIEVAL_DOCUMENT`); multimodal embed |
+| **OpenAI** | `text-embedding-3-large` | `gpt-4.1-mini` | Ignores `taskType`; set `dimensions` to match catalog `dim` |
+| **Voyage** | `voyage-3-large` | — | `inputType` query vs document; rerank scores already `[0,1]` |
+| **Cohere** | `embed-v4.0` | — | Rerank `relevance_score` already `[0,1]` |
+| **nomic** | `nomic-embed-text-v2` | — | Local/cloud embed |
+| **Ollama / sentence-transformers** | `nomic-embed-text` | local LLM | Self-hosted; no `taskType` |
+| **Local cross-encoder** | — | — | Rerank only; normalize logits to `[0,1]` yourself |
+
+## Wiring example — Vercel AI SDK + Gemini
+
+```ts title="embed.ts"
+import { embed } from "ai";
+import { google } from "@ai-sdk/google";
+import type { EmbedFn } from "@samesake/server";
+
+export const geminiEmbed: EmbedFn = async ({ text, model, dim, taskType, inputType }) => {
+  const { embedding } = await embed({
+    model: google.textEmbedding(model ?? "gemini-embedding-2"),
+    value: text!,
+    providerOptions: {
+      google: {
+        outputDimensionality: dim,
+        taskType:
+          taskType ??
+          (inputType === "query" ? "RETRIEVAL_QUERY" : "RETRIEVAL_DOCUMENT"),
+      },
+    },
+  });
+  return Array.from(embedding);
+};
+```
+
+```ts title="generate.ts"
+import { generateObject } from "ai";
+import { google } from "@ai-sdk/google";
+import type { GenerateFn } from "@samesake/server";
+
+export const geminiGenerate: GenerateFn = async ({ model, system, prompt, schema }) => {
+  const { object } = await generateObject({
+    model: google.languageModel(model ?? "gemini-3.1-flash-lite"),
+    schema,
+    system,
+    prompt,
+    temperature: 0,
+  });
+  return object;
+};
+```
+
+```ts title="matcher.ts"
+import { createMatcher, fashionRerank } from "@samesake/server";
+import { geminiEmbed } from "./embed.ts";
+import { geminiGenerate } from "./generate.ts";
+
+const matcher = createMatcher({
+  databaseUrl: process.env.DATABASE_URL!,
+  apiKey: process.env.API_KEY!,
+  embed: geminiEmbed,
+  generate: geminiGenerate,
+  rerank: fashionRerank(geminiGenerate, { model: "gemini-3.1-flash-lite" }),
+});
+```
+
+Declare models in your catalog to match:
+
+```ts
+embeddings: {
+  doc: { model: "gemini-embedding-2", dim: 1536, taskType: "RETRIEVAL_DOCUMENT" },
+},
+enrich: pipeline(
+  stage("vision", { model: "gemini-3.1-flash-lite", /* ... */ }),
+),
+```
+
+<Aside type="note">
+For OpenAI, swap `@ai-sdk/openai` and use `gpt-4.1-mini` for generate/judge and `text-embedding-3-large` (with `dimensions: dim`) for embed. Most OpenAI models ignore `taskType`.
+</Aside>
+
+## Related
+
+- [Reranking](/reference/reranking/) — wire a remote `RerankFn` or `fashionRerank`
+- [Relevance judge](/reference/relevance-judge/) — what `generate` must support for eval
+- [Build a search experience](/start/build-a-search-experience/) — end-to-end mental model

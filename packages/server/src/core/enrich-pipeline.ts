@@ -1,15 +1,86 @@
 import { createHash } from "node:crypto";
-import type { CollectionDef, PipelineDef, StageContext } from "@samesake/core";
+import type { CollectionDef, DerivedDocContext, DerivedDocDef, IndexingDef, PipelineDef, StageContext } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
+import { imageVersionToken } from "../connectors/normalize.ts";
 import { makeStageCacheService } from "../db/stage-cache.ts";
 import { fetchRemoteImageSafe } from "./fetch-image.ts";
 import { callWithRetry } from "./policy.ts";
 import { collectionTableName, getPgClient } from "./db-utils.ts";
+import {
+  assertErrorRateWithinLimit,
+  recordPipelineFailure,
+  type ErrorRateOpts,
+} from "./pipeline-failure.ts";
 import { normalizeSchema } from "./schema-input.ts";
 
 function isPipeline(def: CollectionDef["enrich"]): def is PipelineDef {
   return !!def && typeof def === "object" && Array.isArray((def as PipelineDef).stages);
+}
+
+function hasIndexing(def: CollectionDef): def is CollectionDef & { indexing: IndexingDef } {
+  return !!def.indexing && typeof def.indexing.gate === "function";
+}
+
+interface IndexingPersistResult {
+  doc: string | null;
+  rerank_doc: string | null;
+  fts_src: string | null;
+  pipeline_status: "ready" | "quarantined";
+  gate_reason: string | null;
+}
+
+function persistIndexingSurfaces(
+  indexing: IndexingDef,
+  ctx: DerivedDocContext
+): IndexingPersistResult {
+  let doc: string | null = null;
+  let rerank_doc: string | null = null;
+  let fts_src: string | null = null;
+
+  for (const [key, surface] of Object.entries(indexing.surfaces) as Array<[string, DerivedDocDef]>) {
+    const text = surface.build(ctx);
+    if (text === "") {
+      return {
+        doc,
+        rerank_doc,
+        fts_src,
+        pipeline_status: "quarantined",
+        gate_reason: `empty:${key}`,
+      };
+    }
+    if (surface.kind === "dense") doc = text;
+    else if (surface.kind === "rerank") rerank_doc = text;
+    else if (surface.kind === "fts") fts_src = text;
+  }
+
+  const gateResult = indexing.gate(ctx);
+  if (!gateResult.index) {
+    return {
+      doc,
+      rerank_doc,
+      fts_src,
+      pipeline_status: "quarantined",
+      gate_reason: gateResult.reason ?? "gate-rejected",
+    };
+  }
+
+  return { doc, rerank_doc, fts_src, pipeline_status: "ready", gate_reason: null };
+}
+
+function imageValidatorsForUrls(
+  imageUrls: string[],
+  data: Record<string, unknown>,
+  rowImageEtag?: string | null
+): string[] {
+  const rowToken =
+    rowImageEtag ??
+    imageVersionToken({
+      image_etag: data.image_etag,
+      image_updated_at: data.image_updated_at,
+      image_version: data.image_version,
+    });
+  return imageUrls.map(() => rowToken ?? "");
 }
 
 function stageCacheKey(
@@ -17,9 +88,13 @@ function stageCacheKey(
   model: string,
   prompt: string,
   imageUrls: string[],
+  imageValidators: string[],
   schema: Record<string, unknown>
 ): string {
-  const material = `${prompt}|${imageUrls.join(",")}|${JSON.stringify(schema)}`;
+  const urlMaterial = imageUrls
+    .map((url, i) => `${url}@${imageValidators[i] ?? ""}`)
+    .join(",");
+  const material = `${prompt}|${urlMaterial}|${JSON.stringify(schema)}`;
   const hash = createHash("sha1").update(material).digest("hex");
   return `stage:${stageName}:${model}:${hash}`;
 }
@@ -52,6 +127,7 @@ export function makeEnrichPipelineService(
     stage: PipelineDef["stages"][number],
     stageCtx: StageContext,
     docId: string,
+    rowImageEtag: string | null | undefined,
     fewShot = ""
   ): Promise<Record<string, unknown> | null> {
     if (stage.condition && !stage.condition(stageCtx)) return null;
@@ -60,7 +136,8 @@ export function makeEnrichPipelineService(
     const imageUrls = stage.images?.(stageCtx) ?? [];
     const schema = normalizeSchema(stage.schema(stageCtx));
     const model = stage.model ?? "<default>";
-    const key = stageCacheKey(stage.name, model, prompt, imageUrls, schema);
+    const imageValidators = imageValidatorsForUrls(imageUrls, stageCtx.data, rowImageEtag);
+    const key = stageCacheKey(stage.name, model, prompt, imageUrls, imageValidators, schema);
 
     const cached = await stageCache.getStageCache(key);
     if (cached && typeof cached === "object") {
@@ -109,9 +186,13 @@ export function makeEnrichPipelineService(
     }
   }
 
+  async function recordFailure(table: string, rowId: string, error: unknown): Promise<void> {
+    await recordPipelineFailure(ctx, table, rowId, error);
+  }
+
   async function enrichOne(
     def: CollectionDef,
-    row: { id: string; data: Record<string, unknown> },
+    row: { id: string; data: Record<string, unknown>; image_etag?: string | null },
     schema: string,
     collectionName: string,
     fewShot = ""
@@ -124,7 +205,7 @@ export function makeEnrichPipelineService(
     const stageCtx: StageContext = { data, enriched };
 
     for (const stage of def.enrich.stages) {
-      const result = await runStage(stage, stageCtx, row.id, fewShot);
+      const result = await runStage(stage, stageCtx, row.id, row.image_etag, fewShot);
       if (result) {
         Object.assign(enriched, result);
         enriched._stages = {
@@ -136,12 +217,53 @@ export function makeEnrichPipelineService(
     }
 
     const table = collectionTableName(schema, collectionName);
-    await getPgClient(ctx.db, "enrich").unsafe(
-      `UPDATE ${table}
-       SET enriched = $1::jsonb, enriched_at = now(), updated_at = now()
-       WHERE id = $2`,
-      [JSON.stringify(enriched), row.id]
-    );
+    try {
+      if (hasIndexing(def)) {
+        for (const [key, surface] of Object.entries(def.indexing.surfaces) as Array<[string, DerivedDocDef]>) {
+          if (typeof surface.build !== "function") {
+            throw new Error(`indexing surface "${key}" has no callable build`);
+          }
+        }
+        if (typeof def.indexing.gate !== "function") {
+          throw new Error("indexing gate is not callable");
+        }
+
+        const derivedCtx: DerivedDocContext = { data, enriched };
+        const surfaces = persistIndexingSurfaces(def.indexing, derivedCtx);
+
+        await getPgClient(ctx.db, "enrich").unsafe(
+          `UPDATE ${table}
+           SET enriched = $1::jsonb,
+               enriched_at = now(),
+               doc = $2,
+               rerank_doc = $3,
+               fts_src = $4,
+               pipeline_status = $5,
+               gate_reason = $6,
+               updated_at = now()
+           WHERE id = $7`,
+          [
+            JSON.stringify(enriched),
+            surfaces.doc,
+            surfaces.rerank_doc,
+            surfaces.fts_src,
+            surfaces.pipeline_status,
+            surfaces.gate_reason,
+            row.id,
+          ]
+        );
+      } else {
+        await getPgClient(ctx.db, "enrich").unsafe(
+          `UPDATE ${table}
+           SET enriched = $1::jsonb, enriched_at = now(), updated_at = now()
+           WHERE id = $2`,
+          [JSON.stringify(enriched), row.id]
+        );
+      }
+    } catch (e) {
+      await recordFailure(table, row.id, e);
+      return false;
+    }
     ctx.observability.inc("enrich_docs_total");
     return true;
   }
@@ -149,7 +271,7 @@ export function makeEnrichPipelineService(
   async function enrichCollection(
     projectSlug: string,
     collectionName: string,
-    opts?: { concurrency?: number; limit?: number }
+    opts?: { concurrency?: number; limit?: number } & ErrorRateOpts
   ): Promise<{ enriched: number; skipped: number; failed: number }> {
     return ctx.jobs.run(
       `enrich:${projectSlug}:${collectionName}`,
@@ -161,7 +283,7 @@ export function makeEnrichPipelineService(
   async function runEnrichCollection(
     projectSlug: string,
     collectionName: string,
-    opts?: { concurrency?: number; limit?: number }
+    opts?: { concurrency?: number; limit?: number } & ErrorRateOpts
   ): Promise<{ enriched: number; skipped: number; failed: number }> {
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
@@ -178,6 +300,30 @@ export function makeEnrichPipelineService(
             `to createMatcher (or re-apply the project in-process) before calling enrich.`
         );
       }
+    }
+    if (hasIndexing(def)) {
+      for (const [key, surface] of Object.entries(def.indexing.surfaces) as Array<[string, DerivedDocDef]>) {
+        if (typeof surface.build !== "function") {
+          throw new Error(
+            `collection "${collectionName}" indexing surface "${key}" has no callable build. ` +
+              `Indexing functions cannot be loaded from the database — pass this collection's config ` +
+              `to createMatcher (or re-apply the project in-process) before calling enrich.`
+          );
+        }
+      }
+      if (typeof def.indexing.gate !== "function") {
+        throw new Error(
+          `collection "${collectionName}" has no callable indexing gate. ` +
+            `Indexing functions cannot be loaded from the database — pass this collection's config ` +
+            `to createMatcher (or re-apply the project in-process) before calling enrich.`
+        );
+      }
+    } else {
+      throw new Error(
+        `collection "${collectionName}" has no callable indexing surfaces/gate. ` +
+          `Indexing functions cannot be loaded from the database — pass this collection's config ` +
+          `to createMatcher (or re-apply the project in-process) before calling enrich.`
+      );
     }
     requireGenerate(def);
 
@@ -198,7 +344,7 @@ export function makeEnrichPipelineService(
     }
 
     const pending = await getPgClient(ctx.db, "enrich").unsafe(
-      `SELECT id, data FROM ${table}
+      `SELECT id, data, image_etag FROM ${table}
        WHERE enriched_at IS NULL
        ORDER BY id
        LIMIT $1`,
@@ -208,7 +354,12 @@ export function makeEnrichPipelineService(
     let enriched = 0;
     let skipped = 0;
     let failed = 0;
+    let processed = 0;
     let idx = 0;
+    const errorRateOpts: ErrorRateOpts = {
+      maxErrorRate: opts?.maxErrorRate,
+      minSamples: opts?.minSamples,
+    };
 
     await Promise.all(
       Array.from({ length: concurrency }, async () => {
@@ -221,15 +372,25 @@ export function makeEnrichPipelineService(
           try {
             const ok = await enrichOne(
               def,
-              { id: String(row.id), data },
+              {
+                id: String(row.id),
+                data,
+                image_etag: (row.image_etag as string | null | undefined) ?? null,
+              },
               project.schema_name,
               collectionName,
               fewShot
             );
+            processed++;
             if (ok) enriched++;
-            else skipped++;
+            else {
+              failed++;
+              assertErrorRateWithinLimit(processed, failed, errorRateOpts);
+            }
           } catch {
+            processed++;
             failed++;
+            assertErrorRateWithinLimit(processed, failed, errorRateOpts);
           }
         }
       })
@@ -238,7 +399,7 @@ export function makeEnrichPipelineService(
     return { enriched, skipped, failed };
   }
 
-  return { enrichCollection, enrichOne, requireGenerate };
+  return { enrichCollection, enrichOne, recordFailure, requireGenerate };
 }
 
 export type EnrichPipelineService = ReturnType<typeof makeEnrichPipelineService>;

@@ -33,6 +33,32 @@ function validateProjectConfig(config: ProjectConfig): void {
     assertNoIdentCollisions(Object.keys(c.fields ?? {}), "field");
     for (const k of Object.keys(c.embeddings ?? {})) assertIdent(k, "embedding");
     for (const k of Object.keys(c.spaces ?? {})) assertIdent(k, "space");
+    validateCollectionIndexingManifest(c);
+  }
+}
+
+function validateCollectionIndexingManifest(c: CollectionDef): void {
+  const manifest = c.indexingManifest;
+  if (!manifest) return;
+  const embeddings = new Set(Object.keys(c.embeddings ?? {}));
+  const surfaces = manifest.surfaces ?? {};
+  const ftsSurfaces = new Set(
+    Object.entries(surfaces)
+      .filter(([, surface]) => surface.kind === "fts")
+      .map(([key]) => key)
+  );
+  for (const [key, surface] of Object.entries(surfaces)) {
+    if (surface.kind === "dense" && surface.embedding && !embeddings.has(surface.embedding)) {
+      throw new Error(
+        `collection "${c.name ?? "(unnamed)"}" indexing surface "${key}" references missing embedding "${surface.embedding}"`
+      );
+    }
+  }
+  const hasFtsChannel = (c.search?.channels ?? []).some((channel) => channel.kind === "fts");
+  if (hasFtsChannel && ftsSurfaces.size === 0) {
+    throw new Error(
+      `collection "${c.name ?? "(unnamed)"}" search.fts requires at least one indexing surface with kind "fts"`
+    );
   }
 }
 
@@ -175,6 +201,9 @@ export function makeProjectsService(
       ...entityStmts,
       ...createStmts,
       ...collectionMigrations.flatMap((m) => [...m.alterStatements, ...m.backfillStatements]),
+      ...(config.collections ?? []).flatMap((c) =>
+        c.name ? collectionsSchemaGen.ensureCollectionSystemColumns(projectSchema, c.name, c) : []
+      ),
     ];
 
     for (const stmt of statements) {

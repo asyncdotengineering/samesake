@@ -1,7 +1,7 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels } from "@samesake/core";
+import { collection, f, Channels, gates, pipeline, stage } from "@samesake/core";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed } from "./fixtures.ts";
@@ -15,7 +15,20 @@ const cacheCollection = collection("things", {
     title: f.text({ searchable: true }),
     category: f.enum(["a", "b"], { filterable: true }),
   },
-  embeddings: { doc: { source: "$title", model: "stub", dim: 8 } },
+  indexing: {
+    surfaces: {
+      embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+      fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+    },
+    gate: gates.always,
+  },
+  enrich: pipeline(
+    stage("classify", {
+      prompt: (ctx) => `classify ${ctx.data.title}`,
+      schema: () => ({ type: "object" }),
+    })
+  ),
+  embeddings: { doc: { model: "stub", dim: 8 } },
   search: {
     channels: [
       Channels.fts({ fields: ["title"], weight: 1 }),
@@ -66,7 +79,8 @@ describeIf("query caches (Q2)", () => {
       apiKey: "test-api-key-12345",
       migrate: "eager",
       embed: async ({ text, dim }) => stubEmbed(text, dim),
-      generate: async () => {
+      generate: async ({ prompt }) => {
+        if (prompt.startsWith("classify")) return {};
         generateCalls++;
         return { semantic_query: "widget thing", category: "a" };
       },
@@ -79,6 +93,7 @@ describeIf("query caches (Q2)", () => {
       { id: "2", data: { title: "widget two" }, doc: "widget two", embedding: stubEmbed("widget", 8), fields: { title: "widget two", category: "a" } },
       { id: "3", data: { title: "gadget" }, doc: "gadget", embedding: stubEmbed("gadget", 8), fields: { title: "gadget", category: "b" } },
     ]);
+    await matcher.enrich(projectSlug, "things");
   });
 
   afterAll(async () => {
@@ -121,6 +136,7 @@ describeIf("query caches (Q2)", () => {
     await matcher.pushDocuments(projectSlug, "things", [
       { id: "4", data: { title: "rare purple widget", category: "a" } },
     ]);
+    await matcher.enrich(projectSlug, "things");
     await matcher.index(projectSlug, "things");
 
     const after = await matcher.search(projectSlug, "things", { q, cache: true });

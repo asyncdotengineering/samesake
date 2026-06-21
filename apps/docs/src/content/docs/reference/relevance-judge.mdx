@@ -1,0 +1,148 @@
+---
+title: Relevance judge
+description: makeLlmJudge — the graded LLM relevance judge that powers both offline eval and fashionRerank, with versioning, caching, and calibration.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The relevance judge scores candidate products against a shopper query on a **0 / 1 / 2** scale with per-facet sub-grades. The same judge implementation powers both `matcher.runEval()` and [`fashionRerank`](/reference/reranking/) — one judge, two consumers.
+
+## API
+
+```ts
+import { makeLlmJudge } from "@samesake/server";
+
+const judge = makeLlmJudge(generate, {
+  model?: string;
+  version?: string;
+  batchSize?: number;
+  onError?: (msg: string) => void;
+});
+
+// RelevanceJudge
+interface RelevanceJudge {
+  version: string;
+  grade(query: string, candidates: JudgeCandidate[]): Promise<JudgedHit[]>;
+}
+
+interface JudgedHit {
+  id: string;
+  grade: 0 | 1 | 2;
+  facets: FacetGrades; // category, color, occasion, gender, style, material
+  reason: string;
+}
+```
+
+## Model is BYO / opaque pass-through
+
+The judge calls your `generate` with `model: opts.model`. Default `undefined` — your `generate` picks. No hardcoded model in the judge layer.
+
+To pin a model:
+
+```ts
+const judge = makeLlmJudge(generate, {
+  model: "gemini-3.1-flash-lite",
+  version: "fashion-judge-v2",
+});
+```
+
+## System prompt
+
+The judge uses `FASHION_JUDGE_SYSTEM` verbatim:
+
+> You are a strict multilingual commerce search relevance judge. Score each candidate 0 (irrelevant), 1 (moderately relevant), or 2 (highly relevant). Match meaning, synonyms, and translations; do not require keyword overlap. Treat explicit shopper attributes such as product type, color, material, size, and use case as required constraints. If a candidate clearly has a conflicting attribute, score it 0. For normalized color fields, require the exact requested base color; neighboring shades are not matches unless the requested color is also present. Also score per-facet relevance (category, color, occasion, gender, style, material) as 0|1|2 and give a short reason.
+
+## User prompt shape
+
+`renderCandidates` builds the user message:
+
+```text
+Shopper query: {query}
+Candidate products:
+1. {candidate.text}
+2. {candidate.text}
+...
+Return a grade 0|1|2 per candidate with facet sub-grades and a short reason. Keep the original candidate order.
+```
+
+Candidate text comes from `candidateSummary` when built from product data (title, brand, category, colors, occasions, etc.) or from the `text` field passed in (rerank path uses `rerankCandidateText`).
+
+## Structured output schema
+
+The judge passes `judgeSchema` as `generate`'s `schema` (provider JSON / responseSchema mode):
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "grades": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "grade": { "type": "number", "enum": [0, 1, 2] },
+          "facets": {
+            "type": "object",
+            "properties": {
+              "category": { "type": "number", "enum": [0, 1, 2] },
+              "color": { "type": "number", "enum": [0, 1, 2] },
+              "occasion": { "type": "number", "enum": [0, 1, 2] },
+              "gender": { "type": "number", "enum": [0, 1, 2] },
+              "style": { "type": "number", "enum": [0, 1, 2] },
+              "material": { "type": "number", "enum": [0, 1, 2] }
+            },
+            "additionalProperties": false
+          },
+          "reason": { "type": "string" }
+        },
+        "required": ["id", "grade", "reason"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["grades"],
+  "additionalProperties": false
+}
+```
+
+`parseJudgeOutput` maps the response back to `JudgedHit[]`, preserving candidate order. Missing or malformed rows get `grade: 0, reason: "judge-error"`.
+
+## Mechanics
+
+**Batching:** `batchSize` defaults to 10 — one `generate` call per batch.
+
+**Cache (eval path):** `runEval` caches judge calls under `evals/.cache/` with key `sha1(judgeVersion|query|candidate.text)` (`judgeCacheKey` in `core/eval/cache.ts`). Re-runs over an unchanged golden set issue zero new judge calls.
+
+**Never throws:** generate errors, malformed output, or omitted candidates → `grade: 0, reason: "judge-error"`. The search and eval paths continue.
+
+## Versioning and calibration
+
+`version` (default `fashion-judge-v1`) is part of the cache key **and** the calibration unit. Change prompt or model → bump `version` → re-run `calibrateJudge` before trusting the judge to gate.
+
+```ts
+import { calibrateJudge, isJudgeTrusted } from "@samesake/server";
+
+const result = await calibrateJudge(judge, humanLabels, { minLabels: 5 });
+const trusted = isJudgeTrusted(result); // default bar: F1 ≥ 0.80
+```
+
+Calibration reports precision, recall, F1, and Cohen's κ (κ-primary for ordinal agreement). See [Eval gate — tune floor and exponents](/guides/eval-gate/).
+
+<Aside type="caution">
+Do not change ranking or gate thresholds based on an uncalibrated judge. Bump `version` whenever the rubric changes so stale cache entries cannot mix.
+</Aside>
+
+## Two consumers
+
+| Consumer | Score mapping | Use |
+|----------|---------------|-----|
+| **Rerank** (`fashionRerank`) | `grade / 2 → [0, 1]` | Second-stage blend with RRF |
+| **Eval** (`runEval`) | raw `grade` | nDCG@K; `grade ≥ floor` for Hit@K; `facets` for decomposition |
+
+## Related
+
+- [Reranking](/reference/reranking/) — how judge grades become rerank scores
+- [Providers](/reference/providers/) — wire `generate` for the judge
+- [Eval from search snapshots](/guides/eval-from-snapshots/) — build a corpus before going live
+- [Eval gate](/guides/eval-gate/) — CI gate on the golden set

@@ -67,14 +67,36 @@ vs `responseJsonSchema` — stays in your `generate` function.
 Run with `matcher.enrich(project, collection)`. Colours went from mostly-empty to accurate
 ("RED PUFF SLEEVE MAXI DRESS" → `solid red`). See [the full pipeline](/guides/porulle-fashion-app/#enrich-attributes-from-the-image-samesake-enrich-pipeline).
 
-## 4. Compose what you embed
+## 4. Compose what you embed — the `indexing` DSL
 
-An embedding only knows what's in the text it was built from. Pull the attributes that matter
-into the doc embedding's `source`:
+An embedding only knows what's in the text it was built from. Declare **surface builders** on the collection — they run at enrich time, persist to the row, and the indexer reads them (no separate compose step, no string `embeddings.source` template):
 
 ```ts
-embeddings: { doc: { source: "$title $brand $category $enriched.color_text $enriched.pattern", model: "...", dim: 1536 } }
+indexing: {
+  surfaces: {
+    embed_doc: {
+      kind: "dense",
+      embedding: "doc",
+      build: ({ data, enriched }) =>
+        `${data.title} ${data.brand} ${enriched.color_text ?? ""} ${enriched.pattern ?? ""}`.trim(),
+    },
+    rerank_doc: {
+      kind: "rerank",
+      build: ({ data, enriched }) =>
+        `${data.title}. Colors: ${enriched.color_text}. Pattern: ${enriched.pattern ?? "solid"}.`,
+    },
+    fts_doc: {
+      kind: "fts",
+      build: ({ data }) => `${data.title} ${data.brand}`.trim(),
+    },
+  },
+  gate: ({ enriched }) =>
+    enriched.color_text ? { index: true } : { index: false, reason: "missing-color" },
+},
+embeddings: { doc: { model: "...", dim: 1536 } },
 ```
+
+Use `fashion.indexing()` for the fashion vertical — it wires embed, rerank, FTS surfaces and a confidence/cross-signal gate. See [Pipeline lifecycle](/guides/pipeline-lifecycle/).
 
 Now "black dress" cosine-matches products whose embedded text actually says black — the black
 dress jumped from buried to **#1**.
@@ -106,17 +128,27 @@ text→text (doc cosine), **text→image** (a text query embedded into the image
 is far stronger image→image — so "find similar" is where the visual space earns its keep, while
 text→image mainly adds category/shape sense. Know which mode a query needs.
 
-## 7. Tune query-time weights last
+## 7. Tune query-time weights and ranking policy last
 
 Channel weights (`Channels.fts({ weight })`, `Channels.cosine`, `Channels.spaces`) and
-`defaultSpaceWeights` rescale the RRF mix **without reindexing**. Reach for these only after the
-data and signals are right — re-weighting noise just reshuffles noise. Per-query `weights` let you
-push visual vs intent vs price differently for, say, a "similar look" surface vs a keyword box.
+`defaultSpaceWeights` rescale the RRF mix **without reindexing**. After first-stage fusion,
+`search.rankingPolicy` applies **multiplicative** business/availability/personalization axes on
+normalized relevance (`relevance^α × availability × business × …`) with optional
+`minRelevanceFloor`. Hard axes multiply; soft axes add. Reach for these only after the
+data and signals are right — re-weighting noise just reshuffles noise.
+
+Default reranking uses **`fashionRerank(generate)`** when wired on the matcher — a position-aware
+**blend** with first-stage RRF, not a full replace. Pass `rerank: false` per query to force pure RRF.
+See [Reranking](/reference/reranking/) and [Relevance judge](/reference/relevance-judge/) for the full contract.
+
+**Empirical tuning:** `FASHION_CONFIDENCE_FLOOR` and `relevanceExponent` are placeholders until
+you run the offline eval gate — see [Eval gate — tune floor and exponents](/guides/eval-gate/).
 
 ## 8. Measure, and respect corpus size
 
 Tune against a fixed query set, not vibes — see [Eval from search snapshots](/guides/eval-from-snapshots/)
-for relevance@k + constraint compliance. And be honest about scale: at ~30 products colour is a weak
+for relevance@k + constraint compliance, and [Eval gate](/guides/eval-gate/) for the golden-set
+harness (`runEval`) that gates ranking and floor changes. And be honest about scale: at ~30 products colour is a weak
 discriminator no matter what, because the embedding is dominated by category. Real relevance wins
 need both clean attributes **and** a catalog big enough to disambiguate.
 

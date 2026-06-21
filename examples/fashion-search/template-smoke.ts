@@ -11,10 +11,8 @@ import {
   fashionSearchFields,
   fashionSpaces,
   fashionEnrichPipeline,
-  composeFashionEmbedDoc,
   collection,
   Channels,
-  FASHION_EMBED_DOC_SOURCE,
 } from "@samesake/core";
 import { createMatcher, createDbFromUrl } from "@samesake/server";
 import { geminiEmbed, geminiGenerate } from "./gemini.ts";
@@ -24,7 +22,8 @@ const COLL = "smoke";
 
 const smoke = collection(COLL, {
   fields: fashionSearchFields(),
-  embeddings: { doc: { source: FASHION_EMBED_DOC_SOURCE, model: "gemini-embedding-2", dim: 1536, taskType: "RETRIEVAL_DOCUMENT" } },
+  indexing: fashion.indexing(),
+  embeddings: { doc: { model: "gemini-embedding-2", dim: 1536, taskType: "RETRIEVAL_DOCUMENT" } },
   spaces: fashionSpaces({ visual: false }), // text-only smoke; visual proven in repro-visual
   enrich: fashionEnrichPipeline(),
   search: {
@@ -41,21 +40,6 @@ const DOCS = [
   { id: "d4", data: { title: "Sunbeam Cotton Sundress", vendor: "Spring", price: 2990, available: true, description: "A bright yellow floral cotton sundress with thin straps." } },
 ];
 
-async function composeEmbedDocs(schema: string) {
-  const { db, close } = createDbFromUrl(process.env.DATABASE_URL!);
-  const rows = await db.execute<{ id: string; data: unknown; enriched: unknown }>(
-    sql.raw(`SELECT id, data, enriched FROM ${schema}.c_${COLL} WHERE enriched_at IS NOT NULL`)
-  );
-  for (const r of rows) {
-    const data = (typeof r.data === "string" ? JSON.parse(r.data) : r.data) as Record<string, unknown>;
-    const enriched = (typeof r.enriched === "string" ? JSON.parse(r.enriched) : r.enriched) as Record<string, unknown>;
-    if (!enriched || enriched.is_apparel_product === false) continue;
-    const next = { ...enriched, embed_doc: composeFashionEmbedDoc({ title: String(data.title ?? "") }, enriched) };
-    await db.execute(sql.raw(`UPDATE ${schema}.c_${COLL} SET enriched = '${JSON.stringify(next).replace(/'/g, "''")}'::jsonb, enriched_at = now() WHERE id = '${r.id}'`));
-  }
-  await close();
-}
-
 async function main() {
   if (!process.env.DATABASE_URL || !process.env.GEMINI_API_KEY) throw new Error("DATABASE_URL and GEMINI_API_KEY required");
   const matcher = createMatcher({ databaseUrl: process.env.DATABASE_URL, apiKey: process.env.GEMINI_API_KEY, migrate: "eager", embed: geminiEmbed, generate: geminiGenerate });
@@ -64,7 +48,6 @@ async function main() {
   await matcher.pushDocuments(SLUG, COLL, DOCS);
 
   for (let i = 0; i < 4; i++) { const r = await matcher.enrich(SLUG, COLL, { concurrency: 4, limit: 10 }); if (r.enriched === 0) break; }
-  await composeEmbedDocs(applied.schema);
   while ((await matcher.index(SLUG, COLL, { limit: 50 })).indexed > 0) {}
 
   console.log("=== enriched attributes (from the core template) ===");

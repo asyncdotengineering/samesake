@@ -54,6 +54,11 @@ describeIf("search explain", () => {
         },
       },
     ]);
+    const { db, close } = createDbFromUrl(databaseUrl!);
+    await db.execute(sql.raw(`
+      UPDATE ${schemaName}.c_products SET fts_src = title WHERE id IN ('1', '2')
+    `));
+    await close();
   });
 
   afterAll(async () => {

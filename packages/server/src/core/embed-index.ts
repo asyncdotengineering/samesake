@@ -9,6 +9,11 @@ import { fetchRemoteImageSafe } from "./fetch-image.ts";
 import { searchResultCache } from "./search-cache.ts";
 import { collectionTableName, getByPath, getPgClient } from "./db-utils.ts";
 import {
+  assertErrorRateWithinLimit,
+  recordPipelineFailure,
+  type ErrorRateOpts,
+} from "./pipeline-failure.ts";
+import {
   assembleDocVector,
   encodeCategorical,
   encodeImage,
@@ -19,6 +24,13 @@ import {
 } from "./spaces.ts";
 
 const BATCH_SIZE = 24;
+
+export class ImagePipelineError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ImagePipelineError";
+  }
+}
 
 function formatTemplateValue(v: unknown): string {
   if (v == null) return "";
@@ -112,22 +124,11 @@ async function buildDocSpaceSegments(
   const keys = spaceKeys(def);
   const segments: Array<number[] | null> = [];
   const dims: number[] = [];
-  const embKey = def.embeddings ? Object.keys(def.embeddings)[0] : null;
-  const embDef = embKey ? def.embeddings![embKey]! : null;
 
   for (const name of keys) {
     const sdef = def.spaces![name]!;
     dims.push(spaceSegmentDim(sdef));
     if (sdef.kind === "text") {
-      const reuseDoc =
-        embDef &&
-        sdef.source === embDef.source &&
-        docEmbedding &&
-        docEmbedding.length === sdef.dim;
-      if (reuseDoc) {
-        segments.push(encodeText(docEmbedding));
-        continue;
-      }
       let docText = resolveEmbedTemplate(sdef.source, data, enriched).trim();
       if (!docText) docText = String(data.title ?? "").trim();
       if (!docText) {
@@ -161,13 +162,7 @@ async function buildDocSpaceSegments(
       if (!vec) {
         const fetched = await fetchRemoteImageSafe(imageUrl);
         if (!fetched.ok) {
-          observability.log("warn", "embed-index", "image fetch failed — zero vector", {
-            space: name,
-            reason: fetched.reason,
-            url: imageUrl.slice(0, 120),
-          });
-          segments.push(new Array(sdef.dim).fill(0));
-          continue;
+          throw new ImagePipelineError(`image fetch failed: ${fetched.reason}`);
         }
         try {
           // Visual grounding: crop the salient product region before embedding (VL-CLIP-style).
@@ -198,12 +193,7 @@ async function buildDocSpaceSegments(
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           if (msg.includes("s.image space")) throw e;
-          observability.log("warn", "embed-index", "image embed failed — zero vector", {
-            space: name,
-            error: msg.slice(0, 200),
-          });
-          segments.push(new Array(sdef.dim).fill(0));
-          continue;
+          throw new ImagePipelineError(`image embed failed: ${msg.slice(0, 200)}`);
         }
       }
       segments.push(encodeImage(vec));
@@ -247,7 +237,7 @@ export function makeEmbedIndexService(
   async function indexCollection(
     projectSlug: string,
     collectionName: string,
-    opts?: { limit?: number }
+    opts?: { limit?: number } & ErrorRateOpts
   ): Promise<{ indexed: number }> {
     return ctx.jobs.run(
       `index:${projectSlug}:${collectionName}`,
@@ -259,7 +249,7 @@ export function makeEmbedIndexService(
   async function runIndexCollection(
     projectSlug: string,
     collectionName: string,
-    opts?: { limit?: number }
+    opts?: { limit?: number } & ErrorRateOpts
   ): Promise<{ indexed: number }> {
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
@@ -278,14 +268,13 @@ export function makeEmbedIndexService(
     const table = collectionTableName(project.schema_name, collectionName);
     const limit = opts?.limit ?? 100_000;
     const needsEnrich = hasEnrichPipeline(def);
-
     const staleClause = needsEnrich
-      ? "enriched_at IS NOT NULL AND (indexed_at IS NULL OR indexed_at < enriched_at)"
+      ? "pipeline_status = 'ready' AND enriched_at IS NOT NULL AND (indexed_at IS NULL OR indexed_at < enriched_at)"
       : "indexed_at IS NULL OR (enriched_at IS NOT NULL AND indexed_at < enriched_at)";
     const spaceBackfill = hasSpace ? " OR space_vec IS NULL" : "";
 
     const pending = await getPgClient(ctx.db, "embed-index").unsafe(
-      `SELECT id, data, enriched, ingested_at FROM ${table}
+      `SELECT id, data, enriched, ingested_at, doc FROM ${table}
        WHERE (${staleClause}${spaceBackfill})
        ORDER BY id LIMIT $1`,
       [limit]
@@ -297,12 +286,26 @@ export function makeEmbedIndexService(
     const imageEmbedCache = new Map<string, number[]>();
 
     async function markIndexSkipped(id: string): Promise<void> {
+      const spaceClause = hasSpace ? ", space_vec = NULL" : "";
       await getPgClient(ctx.db, "embed-index").unsafe(
         `UPDATE ${table}
-         SET indexed_at = now(), doc = NULL, embedding = NULL, updated_at = now()
+         SET indexed_at = now(), doc = NULL, embedding = NULL${spaceClause}, updated_at = now()
          WHERE id = $1`,
         [id]
       );
+    }
+
+    let processed = 0;
+    let failed = 0;
+    const errorRateOpts: ErrorRateOpts = {
+      maxErrorRate: opts?.maxErrorRate,
+      minSamples: opts?.minSamples,
+    };
+
+    function onRowFailure(error: unknown): void {
+      processed++;
+      failed++;
+      assertErrorRateWithinLimit(processed, failed, errorRateOpts);
     }
 
     for (let i = 0; i < pending.length; i += BATCH_SIZE) {
@@ -336,17 +339,8 @@ export function makeEmbedIndexService(
 
         const rowId = String(row.id);
 
-        if (needsEnrich && enriched) {
-          const isApparel = enriched.is_apparel_product ?? enriched.is_apparel;
-          if (isApparel === false || enriched.category === "other") {
-            await markIndexSkipped(rowId);
-            continue;
-          }
-        }
-
         if (embDef) {
-          let docText = resolveEmbedTemplate(embDef.source, data, enriched).trim();
-          if (!docText) docText = String(data.title ?? "").trim();
+          const docText = String(row.doc ?? "").trim();
           if (!docText) {
             ctx.observability.log("warn", "embed-index", "skipping doc — empty embedding document", {
               docId: rowId,
@@ -384,49 +378,59 @@ export function makeEmbedIndexService(
 
       for (let j = 0; j < rows.length; j++) {
         const row = rows[j]!;
-        const fieldValues = fieldCols.map(([name, fdef]) => {
-          const v = resolveFieldValue(name, fdef, row.data, row.enriched);
-          return v === undefined ? null : v;
-        });
-        const colNames: string[] = [];
-        const params: unknown[] = [];
+        try {
+          const fieldValues = fieldCols.map(([name, fdef]) => {
+            const v = resolveFieldValue(name, fdef, row.data, row.enriched);
+            return v === undefined ? null : v;
+          });
+          const colNames: string[] = [];
+          const params: unknown[] = [];
 
-        if (embDef) {
-          colNames.push("doc", "embedding");
-          params.push(docs[j], toVectorLiteral(vectors[j]!));
-        }
+          if (embDef) {
+            colNames.push("doc", "embedding");
+            params.push(docs[j], toVectorLiteral(vectors[j]!));
+          }
 
-        if (hasSpace) {
-          const docEmb = embDef ? vectors[j]! : null;
-          const { segments, dims } = await buildDocSpaceSegments(
-            def,
-            row.data,
-            row.enriched,
-            row.ingestedAt,
-            docEmb,
-            embedService,
-            textEmbedCache,
-            imageEmbedCache,
-            ctx.observability,
-            ctx.groundImage
+          if (hasSpace) {
+            const docEmb = embDef ? vectors[j]! : null;
+            const { segments, dims } = await buildDocSpaceSegments(
+              def,
+              row.data,
+              row.enriched,
+              row.ingestedAt,
+              docEmb,
+              embedService,
+              textEmbedCache,
+              imageEmbedCache,
+              ctx.observability,
+              ctx.groundImage
+            );
+            const spaceVec = assembleDocVector(segments, dims);
+            colNames.push("space_vec");
+            params.push(toVectorLiteral(spaceVec));
+          }
+
+          colNames.push(...fieldCols.map(([n]) => sanitiseIdent(n)));
+          params.push(...fieldValues, row.id);
+          const setClause = colNames.map((c, k) => `${c} = $${k + 1}`).join(", ");
+
+          await getPgClient(ctx.db, "embed-index").unsafe(
+            `UPDATE ${table}
+             SET ${setClause}, indexed_at = now(), pipeline_status = 'ready', last_error = NULL, updated_at = now()
+             WHERE id = $${params.length}`,
+            params
           );
-          const spaceVec = assembleDocVector(segments, dims);
-          colNames.push("space_vec");
-          params.push(toVectorLiteral(spaceVec));
+          ctx.observability.inc("index_docs_total");
+          indexed++;
+          processed++;
+        } catch (e) {
+          if (e instanceof ImagePipelineError) {
+            await recordPipelineFailure(ctx, table, row.id, e);
+            onRowFailure(e);
+            continue;
+          }
+          throw e;
         }
-
-        colNames.push(...fieldCols.map(([n]) => sanitiseIdent(n)));
-        params.push(...fieldValues, row.id);
-        const setClause = colNames.map((c, k) => `${c} = $${k + 1}`).join(", ");
-
-        await getPgClient(ctx.db, "embed-index").unsafe(
-          `UPDATE ${table}
-           SET ${setClause}, indexed_at = now(), updated_at = now()
-           WHERE id = $${params.length}`,
-          params
-        );
-        ctx.observability.inc("index_docs_total");
-        indexed++;
       }
     }
 
@@ -437,7 +441,138 @@ export function makeEmbedIndexService(
     return { indexed };
   }
 
-  return { indexCollection, resolveEmbedTemplate, resolveFieldValue, l2Renormalize };
+  async function indexOne(
+    projectSlug: string,
+    collectionName: string,
+    rowId: string
+  ): Promise<boolean> {
+    const project = await projectsService.getProject(projectSlug);
+    if (!project) throw new Error(`project "${projectSlug}" not found`);
+    const def = await projectsService.getCollectionDef(projectSlug, collectionName);
+    if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
+    const hasEmb = !!def.embeddings && Object.keys(def.embeddings).length > 0;
+    const hasSpace = hasSpaces(def);
+    if (!hasEmb && !hasSpace) return false;
+
+    const embKey = hasEmb ? Object.keys(def.embeddings!)[0]! : null;
+    const embDef = embKey ? def.embeddings![embKey]! : null;
+    const table = collectionTableName(project.schema_name, collectionName);
+    const fieldCols = Object.entries(def.fields);
+    const textEmbedCache = new Map<string, number[]>();
+    const imageEmbedCache = new Map<string, number[]>();
+
+    const rows = await getPgClient(ctx.db, "embed-index").unsafe(
+      `SELECT id, data, enriched, ingested_at, doc FROM ${table} WHERE id = $1`,
+      [rowId]
+    );
+    if (!rows.length) return false;
+
+    const row = rows[0]!;
+    const data =
+      typeof row.data === "string"
+        ? (JSON.parse(row.data as string) as Record<string, unknown>)
+        : (row.data as Record<string, unknown>);
+    const enrichedRaw = row.enriched;
+    const enriched =
+      enrichedRaw == null
+        ? null
+        : typeof enrichedRaw === "string"
+          ? (JSON.parse(enrichedRaw as string) as Record<string, unknown>)
+          : (enrichedRaw as Record<string, unknown>);
+    const ingestedAt =
+      row.ingested_at == null
+        ? null
+        : row.ingested_at instanceof Date
+          ? row.ingested_at
+          : new Date(String(row.ingested_at));
+    const parsedRow = { id: String(row.id), data, enriched, ingestedAt };
+
+    if (embDef) {
+      const docText = String(row.doc ?? "").trim();
+      if (!docText) return false;
+      const vec = l2Renormalize(
+        await embedService.embedQuery({
+          text: docText,
+          model: embDef.model,
+          dim: embDef.dim,
+          taskType: embDef.taskType ?? "RETRIEVAL_DOCUMENT",
+          inputType: "document",
+        })
+      );
+
+      const fieldValues = fieldCols.map(([name, fdef]) => {
+        const v = resolveFieldValue(name, fdef, parsedRow.data, parsedRow.enriched);
+        return v === undefined ? null : v;
+      });
+      const colNames: string[] = ["doc", "embedding"];
+      const params: unknown[] = [docText, toVectorLiteral(vec)];
+
+      if (hasSpace) {
+        const { segments, dims } = await buildDocSpaceSegments(
+          def,
+          parsedRow.data,
+          parsedRow.enriched,
+          parsedRow.ingestedAt,
+          vec,
+          embedService,
+          textEmbedCache,
+          imageEmbedCache,
+          ctx.observability,
+          ctx.groundImage
+        );
+        colNames.push("space_vec");
+        params.push(toVectorLiteral(assembleDocVector(segments, dims)));
+      }
+
+      colNames.push(...fieldCols.map(([n]) => sanitiseIdent(n)));
+      params.push(...fieldValues, parsedRow.id);
+      const setClause = colNames.map((c, k) => `${c} = $${k + 1}`).join(", ");
+      await getPgClient(ctx.db, "embed-index").unsafe(
+        `UPDATE ${table}
+         SET ${setClause}, indexed_at = now(), pipeline_status = 'ready', last_error = NULL, updated_at = now()
+         WHERE id = $${params.length}`,
+        params
+      );
+    } else if (hasSpace) {
+      const fieldValues = fieldCols.map(([name, fdef]) => {
+        const v = resolveFieldValue(name, fdef, parsedRow.data, parsedRow.enriched);
+        return v === undefined ? null : v;
+      });
+      const { segments, dims } = await buildDocSpaceSegments(
+        def,
+        parsedRow.data,
+        parsedRow.enriched,
+        parsedRow.ingestedAt,
+        null,
+        embedService,
+        textEmbedCache,
+        imageEmbedCache,
+        ctx.observability,
+        ctx.groundImage
+      );
+      const colNames = ["space_vec", ...fieldCols.map(([n]) => sanitiseIdent(n))];
+      const params: unknown[] = [
+        toVectorLiteral(assembleDocVector(segments, dims)),
+        ...fieldValues,
+        parsedRow.id,
+      ];
+      const setClause = colNames.map((c, k) => `${c} = $${k + 1}`).join(", ");
+      await getPgClient(ctx.db, "embed-index").unsafe(
+        `UPDATE ${table}
+         SET ${setClause}, indexed_at = now(), pipeline_status = 'ready', last_error = NULL, updated_at = now()
+         WHERE id = $${params.length}`,
+        params
+      );
+    } else {
+      return false;
+    }
+
+    ctx.observability.inc("index_docs_total");
+    searchResultCache.invalidateProjectCollection(projectSlug, collectionName);
+    return true;
+  }
+
+  return { indexCollection, indexOne, resolveEmbedTemplate, resolveFieldValue, l2Renormalize };
 }
 
 export type EmbedIndexService = ReturnType<typeof makeEmbedIndexService>;

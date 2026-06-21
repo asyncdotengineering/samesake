@@ -1,0 +1,94 @@
+---
+title: Eval gate — tune floor and exponents
+description: Derive FASHION_CONFIDENCE_FLOOR and rankingPolicy exponents from the offline eval harness — the CI gate that blocks regressions without fabricating numbers.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Ranking and gate thresholds are **empirical**. The values shipped today are **placeholders**:
+
+- `FASHION_CONFIDENCE_FLOOR = 0.5` in `@samesake/core` (`fashion.indexing().gate`)
+- `relevanceExponent = 1` (default in `rankingPolicy` / core ranking fusion)
+
+Do not change these without running the harness. Fabricating "calibrated" numbers defeats the purpose of the eval loop.
+
+## What the gate is
+
+[`examples/fashion-search/eval-judge.ts`](https://github.com/asyncdotengineering/samesake/blob/main/examples/fashion-search/eval-judge.ts) is the runnable CI gate. It:
+
+1. Loads the frozen golden set `evals/golden-queries-fashion-lk.json` (50 queries with objective `constraints`).
+2. Calls `matcher.runEval(...)` with a graded LLM judge (`makeLlmJudge`).
+3. Aggregates Hit@K, nDCG@K, MRR, null-rate, and constraint-violation rate.
+4. Sets `pass` from `thresholds` — exits **0** when all metrics meet thresholds, **nonzero** when any regress.
+
+```ts
+const res = await matcher.runEval(PROJECT, COLLECTION, {
+  queries: golden.queries,
+  judge,
+  k: 10,
+  relevanceFloor: 1,
+  thresholds: { ndcgAtK: 0.6, nullRate: 0.1, constraintViolationRate: 0 },
+});
+process.exit(res.pass ? 0 : 1);
+```
+
+`runEval` writes a JSON artifact under `evals/runs/` and caches judge calls under `evals/.cache/` (keyed by judge version + query + candidate text).
+
+### Dry-run without a key
+
+When `GEMINI_API_KEY` is unset, the script **dry-runs cleanly** (exit 0): it prints how many queries would run and does not call the judge. Use this in CI type-check paths; live gating requires the key.
+
+```bash
+# Dry-run (no key) — verifies the script loads; exit 0
+bun examples/fashion-search/eval-judge.ts
+
+# Live gate (key required) — exit 0 only when pass=true
+GEMINI_API_KEY=... bun examples/fashion-search/eval-judge.ts
+```
+
+## Procedure — derive G2 floor and G7 exponents
+
+<Steps>
+
+1. **Calibrate the judge (once per prompt change).** Run `matcher.calibrateSearch` / `calibrate.ts` against a labeled fixture so judge-vs-human F1 meets your trust bar. Bump the judge `version` string when the rubric changes — stale cache entries must not mix versions. See [Relevance judge](/reference/relevance-judge/) for the judge API, prompt, and schema.
+
+2. **Baseline the current placeholders.** With `GEMINI_API_KEY` set, run the gate and save the artifact:
+
+   ```bash
+   GEMINI_API_KEY=... bun examples/fashion-search/eval-judge.ts
+   # note aggregate ndcgAtK, nullRate, constraintViolationRate; artifact path printed
+   ```
+
+3. **Sweep candidate configs.** For each candidate:
+   - **G2 floor:** change `FASHION_CONFIDENCE_FLOOR` (or override the gate locally), re-enrich if the gate affects quarantine, re-index, re-run eval.
+   - **G7 exponents:** change `search.rankingPolicy.relevanceExponent` (and optional axis weights), re-run eval (no reindex unless ranking inputs change).
+
+   Compare `aggregate.ndcgAtK`, `aggregate.nullRate`, and `aggregate.constraintViolationRate` across the sweep. Prefer the config that **maximizes nDCG@K** without regressing null-rate or constraint-violation rate below your thresholds.
+
+4. **Commit the winner.** Update the placeholder constant / default in code only after the harness shows improvement on the golden set. Document the artifact path and thresholds in the commit message.
+
+5. **Wire CI.** Run `eval-judge.ts` in CI with `GEMINI_API_KEY`; fail the build when `pass` is false. Keep `thresholds` aligned with product requirements (the example uses `ndcgAtK: 0.6`, `nullRate: 0.1`, `constraintViolationRate: 0`).
+
+</Steps>
+
+## What to tune vs what stays fixed
+
+| Knob | Location | Re-index / re-enrich? |
+|------|----------|------------------------|
+| Confidence floor (G2) | `FASHION_CONFIDENCE_FLOOR` / `fashion.indexing().gate` | Re-enrich + re-index (gate changes quarantine) |
+| Relevance exponent (G7) | `search.rankingPolicy.relevanceExponent` | Re-run eval only |
+| Axis weights (G7) | `rankingPolicy.weights.*` | Re-run eval only |
+| Rerank blend | `matcher` `rerank: fashionRerank(generate)` | Re-run eval only |
+
+Core ranking uses **multiplicative fusion**: normalized relevance raised to `relevanceExponent`, multiplied by availability / business / personalization axes. Hard axes (e.g. availability) apply multiplicatively; soft axes add after the product. A `minRelevanceFloor` drops hits below a relevance cutoff before fusion.
+
+## Related docs
+
+- [Relevance judge](/reference/relevance-judge/) — `makeLlmJudge`, grading schema, versioning, and calibration.
+- [Eval from search snapshots](/guides/eval-from-snapshots/) — build a corpus and offline baseline before going live.
+- [Tuning search relevance](/guides/tuning-search/) — diagnose with `searchExplain`, fix data, then measure.
+- [Pipeline lifecycle](/guides/pipeline-lifecycle/) — how the indexing gate quarantines low-confidence rows.
+
+<Aside type="caution">
+Until you run step 2–4 with a real key, treat `0.5` and `relevanceExponent: 1` as **unverified placeholders**. The gate exists precisely so you cannot ship guessed numbers.
+</Aside>

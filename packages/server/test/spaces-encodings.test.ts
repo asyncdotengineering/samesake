@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { collection, f, s } from "../../sdk/src/index.ts";
+import { collection, f, gates, s } from "../../sdk/src/index.ts";
 import {
   assembleDocVector,
   assembleQueryVector,
@@ -100,6 +100,7 @@ describe("spaces encodings", () => {
     expect(() =>
       collection("big", {
         fields: { x: f.text() },
+        indexing: { surfaces: {}, gate: gates.always },
         spaces: {
           a: s.number({ field: "x", mode: "max", dims: 1001, min: 0, max: 1 }),
           b: s.number({ field: "x", mode: "max", dims: 1000, min: 0, max: 1 }),

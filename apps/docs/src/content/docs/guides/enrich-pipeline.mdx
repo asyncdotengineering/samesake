@@ -1,0 +1,86 @@
+---
+title: Running the enrich pipeline durably
+description: You've got push → enrich → index working. Now where does it actually run at 3am, and what happens when a step fails?
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+You've wired search. You've seen `pushDocuments`, `enrich`, and `index` do their thing — maybe from a script, maybe from the [marketplace guide](/guides/marketplace-search/). The catalog stays fresh because the loop is incremental: unchanged rows are no-ops, changed rows get re-read and re-embedded.
+
+That works until it doesn't. Your process restarts during deploy. A model call times out halfway through `index`. A webhook fires at the same moment the cron runs. Someone SSHs in and kills the Node process. Without durability, you're guessing what finished and what didn't.
+
+This page is about **where the loop runs** and **what catches it when something breaks**.
+
+## The loop, as five steps
+
+The continuous pipeline is really five matcher calls. Three run often; two run on a slower cadence:
+
+| Step | Matcher call | Cadence | What it does |
+|------|--------------|---------|--------------|
+| 1 | `pushDocuments(project, collection, rows)` | Every few minutes + on webhooks | Upsert raw listings; fingerprint changes reset enrich/index |
+| 2 | `enrich(project, collection)` | After push | Model reads dirty rows; gate quarantines bad ones |
+| 3 | `index(project, collection)` | After enrich | Embeds and writes vectors for stale rows |
+| 4 | `revalidateImages(project, collection)` | Hourly | Catches same-URL image swaps |
+| 5 | `retryFailed(project, collection)` | Hourly | Retries `failed` rows with backoff |
+
+Because each step is **idempotent and incremental**, you don't need clever fan-out. samesake batches internally — your job platform's job is **durability, retries, scheduling, and observability**, not splitting 50,000 products into 50,000 queue messages.
+
+<Aside type="note">
+Every row's honest state — `pending`, `ready`, `quarantined`, `failed`, `dead` — lives in the database. See [Pipeline lifecycle](/guides/pipeline-lifecycle/) for the full state machine.
+</Aside>
+
+## Why not just `setInterval`?
+
+A timer in a long-running Node process is fine for local dev. For production it falls apart quickly:
+
+- **No retries.** If `index` throws, the timer moves on. Those rows sit `failed` until something else notices.
+- **Lost work on restart.** Deploy, crash, scale-to-zero — whatever was in flight is gone.
+- **Overlapping runs.** Two crons fire at once and you double your model bill for no reason.
+- **No observability.** When search looks stale at 3am, you're grep-ing logs.
+
+A queue or workflow platform gives you **durable steps** (a failed `index` retries without re-running `enrich`), **concurrency guards**, and a dashboard that shows what ran and what didn't.
+
+## The pattern every platform guide uses
+
+Each target guide below shows the same spine:
+
+1. **Scheduled full-loop** — every few minutes: push → enrich → index. Hourly: revalidateImages → retryFailed. This is your safety net even when webhooks work.
+2. **Webhook fast-path** (optional) — one product changed → `pushDocuments` with just that row. The next scheduled enrich/index picks it up, or you run them inline in the same workflow.
+
+Keep the three main stages as **separate durable steps**. That's how you get per-stage retries, per-stage timing in your observability tool, and the guarantee that a flaky embed call doesn't force you to re-fetch your whole catalog.
+
+```ts title="matcher.ts — shared setup"
+import { createMatcher, fashionRerank } from "@samesake/server";
+import { products } from "./catalog.ts";
+import { geminiEmbed, geminiGenerate } from "./gemini.ts";
+
+export const matcher = createMatcher({
+  databaseUrl: process.env.DATABASE_URL!,
+  apiKey: process.env.API_KEY!,
+  embed: geminiEmbed,                       // gemini-embedding-2
+  generate: geminiGenerate,                 // gemini-3.1-flash-lite
+  rerank: fashionRerank(geminiGenerate),
+});
+
+await matcher.apply("market", { entities: [], collections: [products] });
+```
+
+## Pick your platform
+
+| Guide | Reach for it when… |
+|-------|-------------------|
+| [In-memory](/guides/pipeline-in-memory/) | Local dev or a single long-running process — zero extra infra |
+| [Inngest](/guides/pipeline-inngest/) | You want durable steps + cron + events with minimal ops; great on Vercel/Node |
+| [Upstash Workflow](/guides/pipeline-upstash/) | You're already on QStash or want HTTP-triggered workflows at the edge |
+| [Cloudflare Workflows](/guides/pipeline-cloudflare-workflows/) | Your app lives on Workers and you want first-party workflow durability |
+| [Vercel Workflows](/guides/pipeline-vercel-workflows/) | You're on Vercel and want `"use workflow"` / `"use step"` with Cron Jobs |
+
+<Aside type="tip">
+Pulling from Shopify, WooCommerce, or Medusa? The [integration guides](/integrations/shopify/) give you the connector that turns a store feed into the `rows` you pass to `pushDocuments`. The durable wrapper is the same no matter where the rows come from.
+</Aside>
+
+## Where to go next
+
+- **Status machine for every row** — [Pipeline lifecycle](/guides/pipeline-lifecycle/)
+- **Marketplace loop in plain language** — [Search for a fashion marketplace](/guides/marketplace-search/)
+- **Single-store version** — [From a store idea to search](/guides/idea-to-search/)

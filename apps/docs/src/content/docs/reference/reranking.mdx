@@ -1,0 +1,213 @@
+---
+title: Reranking
+description: Second-stage reranking in samesake — position-aware blend with first-stage RRF, the RerankFn contract, fashionRerank, and remote adapter examples.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Reranking is the **second stage** of search. After first-stage retrieval and RRF fusion over a deep candidate pool, an optional reranker re-scores and reorders hits before `rankingPolicy` and the final top-K slice.
+
+```text
+retrieve → RRF fuse (deep pool) → rerank (blend) → rankingPolicy → top-K
+```
+
+## When it runs
+
+Reranking is on only when a `rerank` function is wired on the matcher **and** the query does not opt out:
+
+```ts
+const wantRerank = !!ctx.rerank && opts.rerank !== false;
+```
+
+Wire `rerank` in `createMatcher({ rerank: myRerank })`. Pass `rerank: false` on a single query to force pure RRF. When `rerank` is absent, search stays on first-stage RRF only.
+
+When reranking is enabled (or variant diversification is on), search pulls a deeper pool (`RERANK_POOL = 50`) before the second stage so the final top-`limit` is chosen from real candidates rather than a pre-truncated set.
+
+## Blend, not replace
+
+The key design choice: rerank scores **blend** with retrieval position — they never fully replace it.
+
+```ts
+final = w(rank) · positionScore + (1 − w(rank)) · clamp01(rerankScore)
+positionScore = 1 / rrfRank
+```
+
+Blend weights by retrieval rank (`DEFAULT_RERANK_BLEND_WEIGHTS`, tunable via `RerankBlendWeights`):
+
+| Rank range | `w` (retrieval weight) |
+|------------|------------------------|
+| rank ≤ 3   | 0.75                   |
+| rank ≤ 10  | 0.60                   |
+| beyond 10  | 0.40                   |
+
+**Rationale:** rerankers degrade recall below retrieval-alone in 44–53% of strong-first-stage cases ("phantom hits", [arXiv:2411.11767](https://arxiv.org/abs/2411.11767)). The position weight is the guardrail: trust retrieval at the head, trust the reranker more in the tail.
+
+`DEFAULT_RERANK_BLEND_WEIGHTS` is exported from `@samesake/server` for reference; the search layer applies the blend internally via `blendRerankScore` and `mergeBlendedRerank`.
+
+## Unscored candidates keep their RRF slot
+
+`mergeBlendedRerank` never demotes a hit the reranker omitted. A candidate without a rerank score stays at its original retrieval index — it is **not** blended against a zero. Scored hits reorder only among the slots they occupied.
+
+## Candidate text
+
+The reranker sees the best available text per hit via `rerankCandidateText`:
+
+1. Persisted column `h.rerank_doc`
+2. `enriched.rerank_doc` from the indexing surface
+3. Fallback: `title` / `name` / `data.description`
+
+Declare a `rerank_doc` surface at index time for reranker-specific text — see [Pipeline lifecycle](/guides/pipeline-lifecycle/).
+
+## `RerankFn` contract
+
+```ts
+type RerankFn = (req: RerankRequest) => Promise<Array<{ id: string; score: number }>>;
+
+interface RerankRequest {
+  query: string;
+  image?: { url?: string; bytes?: Uint8Array; mimeType?: string };
+  candidates: Array<{
+    id: string;
+    text: string;
+    data: Record<string, unknown>;
+    score: number; // first-stage RRF score
+  }>;
+  topK: number;
+}
+```
+
+Returned scores **must** be in `[0, 1]`. The search layer clamps at the boundary via `clamp01` — this is a **floor**, not a normalizer. If your cross-encoder returns raw logits, squash them yourself before returning.
+
+## `fashionRerank` — fashion default, opt-in
+
+`fashionRerank` wraps [`makeLlmJudge`](/reference/relevance-judge/) and maps `grade {0,1,2} → score/2`. It is **not** bundled or auto-on — wire it explicitly:
+
+```ts
+import { createMatcher, fashionRerank } from "@samesake/server";
+
+const matcher = createMatcher({
+  embed: myEmbed,
+  generate: myGenerate,
+  rerank: fashionRerank(myGenerate, {
+    model: "gemini-3.1-flash-lite",
+    version: "fashion-judge-v2",
+  }),
+});
+```
+
+Once wired, reranking runs per query unless `rerank: false`. Not wired → pure RRF.
+
+## Remote reranker adapters
+
+No remote reranker is bundled. Any provider plugs in via `RerankFn`:
+
+```ts title="Cohere (rerank-v3.5)"
+const cohereRerank: RerankFn = async ({ query, candidates, topK }) => {
+  const res = await fetch("https://api.cohere.com/v2/rerank", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.COHERE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "rerank-v3.5",
+      query,
+      documents: candidates.map((c) => c.text),
+      top_n: topK,
+    }),
+  });
+  const { results } = (await res.json()) as {
+    results: Array<{ index: number; relevance_score: number }>;
+  };
+  return results.map((r) => ({
+    id: candidates[r.index]!.id,
+    score: r.relevance_score, // already [0, 1]
+  }));
+};
+```
+
+```ts title="Voyage (rerank-2)"
+const voyageRerank: RerankFn = async ({ query, candidates, topK }) => {
+  const res = await fetch("https://api.voyageai.com/v1/rerank", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.VOYAGE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "rerank-2",
+      query,
+      documents: candidates.map((c) => c.text),
+      top_k: topK,
+    }),
+  });
+  const { data } = (await res.json()) as {
+    data: Array<{ index: number; relevance_score: number }>;
+  };
+  return data.map((r) => ({
+    id: candidates[r.index]!.id,
+    score: r.relevance_score,
+  }));
+};
+```
+
+```ts title="Jina (jina-reranker-v2)"
+const jinaRerank: RerankFn = async ({ query, candidates, topK }) => {
+  const res = await fetch("https://api.jina.ai/v1/rerank", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.JINA_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "jina-reranker-v2",
+      query,
+      documents: candidates.map((c) => c.text),
+      top_n: topK,
+    }),
+  });
+  const { results } = (await res.json()) as {
+    results: Array<{ index: number; relevance_score: number }>;
+  };
+  return results.map((r) => ({
+    id: candidates[r.index]!.id,
+    score: r.relevance_score,
+  }));
+};
+```
+
+```ts title="Local cross-encoder (normalize the logit)"
+function sigmoid(x: number): number {
+  return 1 / (1 + Math.exp(-x));
+}
+
+const localRerank: RerankFn = async ({ query, candidates }) => {
+  const scores = await myCrossEncoder.scorePairs(
+    candidates.map((c) => [query, c.text] as [string, string])
+  );
+  return candidates.map((c, i) => ({
+    id: c.id,
+    score: sigmoid(scores[i]!), // map raw logit → [0, 1]
+  }));
+};
+```
+
+See [Providers](/reference/providers/) for wiring `embed` and `generate` alongside `rerank`.
+
+## Graceful degradation
+
+| Condition | Behaviour |
+|-----------|-----------|
+| `rerank` not wired | Pure RRF |
+| `rerank: false` on query | Pure RRF |
+| Reranker throws | First-stage order preserved; warning logged; search never throws |
+
+## Related
+
+- [Relevance judge](/reference/relevance-judge/) — the LLM judge behind `fashionRerank` and `runEval`
+- [Eval gate](/guides/eval-gate/) — measure rerank impact on the golden set
+- [Tuning search relevance](/guides/tuning-search/) — when to reach for rerank vs weights
+
+<Aside type="note">
+A no-LLM **visual-cosine** reranker variant (re-score the rerank pool by image embedding similarity) was designed but is not implemented yet.
+</Aside>

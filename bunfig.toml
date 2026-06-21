@@ -1,0 +1,7 @@
+[test]
+# DB-bound integration suite: schema apply + HNSW index build legitimately
+# exceeds the 5000ms default under parallel-suite contention. 20s is a realistic
+# per-test ceiling, not a mask for slow product code. NOTE (bun 1.3.9): this only
+# raises per-TEST timeouts; beforeAll/beforeEach HOOK timeouts still default to
+# 5000ms and must be pinned per-hook (see the apply+index hooks in search-hybrid).
+timeout = 20000

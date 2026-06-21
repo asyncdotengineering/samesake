@@ -10,7 +10,7 @@
 // is the declarative *content*: taxonomy, enums, two-stage schemas, prompts, embed-doc composer,
 // and NLQ defaults.
 import { z } from "zod";
-import type { CollectionFieldDef, PipelineDef, SpaceDef, StageDef } from "../types.ts";
+import type { CollectionFieldDef, DerivedDocContext, IndexingDef, PipelineDef, SpaceDef, StageDef } from "../types.ts";
 
 // ── Taxonomy + controlled vocabulary ────────────────────────────────────
 export const fashionTaxonomy = [
@@ -234,13 +234,64 @@ Tags: ${strOf(ctx.data[tagsKey]) || "n/a"}`,
   return { stages: [classify, extract] };
 }
 
-// ── Embed-doc composer (run after enrichment; index embeds $enriched.embed_doc) ──
+// PLACEHOLDER — tune via the offline eval gate (examples/fashion-search/eval-judge.ts + runEval);
+// see apps/docs/src/content/docs/guides/eval-gate.mdx. Requires GEMINI_API_KEY for empirical sweep.
+export const FASHION_CONFIDENCE_FLOOR = 0.5;
+
+function asArray(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map(String);
+  if (typeof v === "string" && v) return [v];
+  return [];
+}
+
+function intersects(a: string[], b: string[]): boolean {
+  const set = new Set(a.map((v) => v.toLowerCase()));
+  return b.some((v) => set.has(v.toLowerCase()));
+}
+
+function inferCategoryFromText(text: string): string | null {
+  const lower = text.toLowerCase();
+  for (const cat of fashionTaxonomy) {
+    if (lower.includes(cat.id) || lower.includes(cat.id.replace("-", " "))) return cat.id;
+    for (const t of cat.types) {
+      if (lower.includes(t)) return cat.id;
+    }
+  }
+  return null;
+}
+
+function crossSignalAgrees(ctx: DerivedDocContext): boolean {
+  const title = String(ctx.data.title ?? "");
+  const tags = asArray(ctx.data.raw_tags ?? ctx.data.tags).join(" ");
+  const rawType = String(ctx.data.raw_type ?? ctx.data.product_type ?? "");
+  const fromText = inferCategoryFromText([title, tags, rawType].filter(Boolean).join(" "));
+  const fromEnriched = String(ctx.enriched.category ?? "");
+  if (!fromText || !fromEnriched) return true;
+  return fromText === fromEnriched;
+}
+
+// Graded/compositional embed text only — hard attrs stay in filters/spaces (REQ-11b).
 export function composeFashionEmbedDoc(p: { title: string }, a: Record<string, unknown>): string {
+  const parts = [
+    `${p.title}.`,
+    (a.search_document as string) || "",
+    a.product_type ? `Type: ${a.product_type}.` : "",
+    a.pattern && a.pattern !== "solid" ? `Pattern: ${a.pattern}.` : "",
+    Array.isArray(a.occasions) && a.occasions.length ? `Occasions: ${(a.occasions as string[]).join(", ")}.` : "",
+    Array.isArray(a.styles) && a.styles.length ? `Style: ${(a.styles as string[]).join(", ")}.` : "",
+    Array.isArray(a.details) && a.details.length ? `Details: ${(a.details as string[]).slice(0, 6).join(", ")}.` : "",
+    a.modesty === "modest" ? "Modest coverage." : "",
+  ];
+  return parts.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+}
+
+export function composeFashionRerankDoc(p: { title: string }, a: Record<string, unknown>): string {
   const parts = [
     `${p.title}.`,
     (a.search_document as string) || "",
     `Category: ${a.category}, type: ${a.product_type}, for ${a.gender}.`,
     Array.isArray(a.colors) && a.colors.length ? `Colors: ${(a.colors as string[]).join(", ")}.` : "",
+    a.raw_color ? `Color name: ${a.raw_color}.` : "",
     a.pattern && a.pattern !== "solid" ? `Pattern: ${a.pattern}.` : "",
     a.material && a.material !== "unknown" ? `Material: ${a.material}.` : "",
     a.fit && a.fit !== "unknown" ? `Fit: ${a.fit}.` : "",
@@ -252,7 +303,37 @@ export function composeFashionEmbedDoc(p: { title: string }, a: Record<string, u
   return parts.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
 }
 
-export const FASHION_EMBED_DOC_SOURCE = "$enriched.embed_doc";
+export function fashionIndexing(opts: { titleKey?: string } = {}): IndexingDef {
+  const titleKey = opts.titleKey ?? "title";
+  return {
+    surfaces: {
+      embed_doc: {
+        kind: "dense",
+        embedding: "doc",
+        build: ({ data, enriched }) => composeFashionEmbedDoc({ title: String(data[titleKey] ?? "") }, enriched),
+      },
+      rerank_doc: {
+        kind: "rerank",
+        build: ({ data, enriched }) => composeFashionRerankDoc({ title: String(data[titleKey] ?? "") }, enriched),
+      },
+      fts_doc: {
+        kind: "fts",
+        build: ({ data, enriched }) =>
+          [data[titleKey], enriched.product_type, enriched.raw_color, ...(asArray(enriched.styles))].filter(Boolean).join(" "),
+      },
+    },
+    gate: ({ data, enriched }) => {
+      if (enriched.is_apparel_product === false) return { index: false, reason: "non-apparel" };
+      if (enriched.category === "other") return { index: false, reason: "category-other" };
+      if (Number(enriched.confidence ?? 1) < FASHION_CONFIDENCE_FLOOR) return { index: false, reason: "low-confidence" };
+      if (intersects(asArray(enriched.uncertain_fields), ["category", "gender", "colors"])) {
+        return { index: false, reason: "uncertain-load-bearing" };
+      }
+      if (!crossSignalAgrees({ data, enriched })) return { index: false, reason: "cross-signal-disagree" };
+      return { index: true };
+    },
+  };
+}
 
 // ── Fashion-aware NLQ defaults (region-neutral) ─────────────────────────
 export function fashionNlqSchema(): z.ZodType {
@@ -322,8 +403,7 @@ export const fashion = {
   fields: fashionSearchFields,
   spaces: fashionSpaces,
   enrichPipeline: fashionEnrichPipeline,
-  composeEmbedDoc: composeFashionEmbedDoc,
-  embedDocSource: FASHION_EMBED_DOC_SOURCE,
+  indexing: fashionIndexing,
   classifySchema: fashionClassifySchema,
   extractSchema: fashionExtractSchema,
   extractInstructions: FASHION_EXTRACT_INSTRUCTIONS,

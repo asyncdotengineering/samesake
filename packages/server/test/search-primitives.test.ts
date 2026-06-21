@@ -1,7 +1,7 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels, type CollectionDef } from "../../sdk/src/index.ts";
+import { collection, f, Channels, gates, type CollectionDef } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed } from "./fixtures.ts";
@@ -15,7 +15,14 @@ const prims = collection("products", {
     style_id: f.text({ filterable: true }),
     rank: f.number({ filterable: true }),
   },
-  embeddings: { doc: { source: "$title", model: "test-embed", dim: 8 } },
+  indexing: {
+    surfaces: {
+      embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+      fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+    },
+    gate: gates.always,
+  },
+  embeddings: { doc: { model: "test-embed", dim: 8 } },
   search: {
     channels: [
       Channels.fts({ fields: ["title"], weight: 1 }),
@@ -34,8 +41,12 @@ const DOCS = [
   { id: "5", title: "blue denim jacket", style_id: "S3", rank: 5 },
 ];
 
-function indexInto(matcher: ReturnType<typeof createMatcher>, slug: string) {
-  return matcher.indexDocuments(
+async function indexInto(
+  matcher: ReturnType<typeof createMatcher>,
+  slug: string,
+  schemaName: string
+) {
+  await matcher.indexDocuments(
     slug,
     "products",
     DOCS.map((d) => ({
@@ -46,6 +57,9 @@ function indexInto(matcher: ReturnType<typeof createMatcher>, slug: string) {
       fields: { title: d.title, style_id: d.style_id, rank: d.rank },
     }))
   );
+  const { db, close } = createDbFromUrl(databaseUrl!);
+  await db.execute(sql.raw(`UPDATE ${schemaName}.c_products SET fts_src = doc WHERE doc IS NOT NULL`));
+  await close();
 }
 
 describeIf("search primitives", () => {
@@ -65,7 +79,7 @@ describeIf("search primitives", () => {
     });
     await matcher.migrate();
     schemaName = (await matcher.apply(slug, { entities: [], collections: [prims] })).schema;
-    await indexInto(matcher, slug);
+    await indexInto(matcher, slug, schemaName);
 
     // A second matcher wired with a deterministic reranker: lower `rank` field = better.
     matcherR = createMatcher({
@@ -74,12 +88,15 @@ describeIf("search primitives", () => {
       migrate: "eager",
       embed: async ({ text, dim }) => stubEmbed(text, dim),
       rerank: async ({ candidates }) =>
-        candidates.map((c) => ({ id: c.id, score: -Number((c.data as { rank?: number }).rank ?? 0) })),
+        candidates.map((c) => ({
+          id: c.id,
+          score: 1 / Number((c.data as { rank?: number }).rank ?? 99),
+        })),
     });
     await matcherR.migrate();
     schemaNameR = (await matcherR.apply(slugR, { entities: [], collections: [prims] })).schema;
-    await indexInto(matcherR, slugR);
-  });
+    await indexInto(matcherR, slugR, schemaNameR);
+  }, 60_000);
 
   afterAll(async () => {
     const { db, close } = createDbFromUrl(databaseUrl!);
@@ -111,13 +128,25 @@ describeIf("search primitives", () => {
     expect(all.hits.filter((h) => h.style_id === "S1").length).toBeGreaterThan(1);
   });
 
-  test("rerank: BYO reranker reorders the candidate pool (rank=1 wins)", async () => {
-    const res = await matcherR.search(slugR, "products", {
+  test("rerank: blend preserves RRF head; rerank:false is pure RRF", async () => {
+    const pure = await matcher.search(slug, "products", {
       q: "red cocktail dress",
       diversify: false,
       limit: 5,
     });
-    expect(res.hits[0]!.id).toBe("2"); // doc 2 has rank=1 → promoted to top
+    const rrfOnly = await matcherR.search(slugR, "products", {
+      q: "red cocktail dress",
+      diversify: false,
+      limit: 5,
+      rerank: false,
+    });
+    const blended = await matcherR.search(slugR, "products", {
+      q: "red cocktail dress",
+      diversify: false,
+      limit: 5,
+    });
+    expect(rrfOnly.hits.map((h) => h.id)).toEqual(pure.hits.map((h) => h.id));
+    expect(blended.hits[0]!.id).toBe(pure.hits[0]!.id);
   });
 
   test("calibrateSearch: sweeps the grid and returns a recommendation (labels, no LLM)", async () => {

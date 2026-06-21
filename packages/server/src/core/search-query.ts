@@ -166,8 +166,6 @@ export async function buildQuerySpaceSegments(
   const segments: Array<number[] | null> = [];
   const dims: number[] = [];
   const weights: number[] = [];
-  const embKey = def.embeddings ? Object.keys(def.embeddings)[0] : null;
-  const embDef = embKey ? def.embeddings![embKey]! : null;
 
   for (const name of keys) {
     const sdef = def.spaces![name] as SpaceDef;
@@ -175,26 +173,17 @@ export async function buildQuerySpaceSegments(
     weights.push(segmentWeights[name] ?? 1);
 
     if (sdef.kind === "text") {
-      if (
-        queryEmbedding &&
-        embDef &&
-        sdef.source === embDef.source &&
-        queryEmbedding.length === sdef.dim
-      ) {
-        segments.push(encodeText(queryEmbedding));
-      } else {
-        try {
-          const vec = await embedService.embedQuery({
-            text: semanticText,
-            model: sdef.model,
-            dim: sdef.dim,
-            taskType: sdef.taskType ?? "RETRIEVAL_QUERY",
-            inputType: "query",
-          });
-          segments.push(encodeText(vec));
-        } catch {
-          segments.push(null);
-        }
+      try {
+        const vec = await embedService.embedQuery({
+          text: semanticText,
+          model: sdef.model,
+          dim: sdef.dim,
+          taskType: sdef.taskType ?? "RETRIEVAL_QUERY",
+          inputType: "query",
+        });
+        segments.push(encodeText(vec));
+      } catch {
+        segments.push(null);
       }
       continue;
     }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { collection, entity, fields, f } from "../../sdk/src/index.ts";
+import { collection, entity, fields, f, gates } from "../../sdk/src/index.ts";
 import { makeCollectionsSchemaGen } from "../src/core/collections-schema-gen.ts";
 import { makeSchemaGen } from "../src/core/schema-gen.ts";
 
@@ -10,7 +10,14 @@ describe("pgvector HNSW dimension validation", () => {
   test("allows valid entity and collection embedding dimensions", () => {
     const product = collection("products", {
       fields: { title: f.text({ searchable: true }) },
-      embeddings: { doc: { source: "$title", model: "ok", dim: 2000 } },
+      indexing: {
+        surfaces: {
+          embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+          fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+        },
+        gate: gates.always,
+      },
+      embeddings: { doc: { model: "ok", dim: 2000 } },
     });
     const customer = entity("customer", {
       fields: { name: fields.text({ required: true }) },
@@ -25,7 +32,14 @@ describe("pgvector HNSW dimension validation", () => {
   test("rejects collection embedding dimensions over the vector HNSW limit before DDL", () => {
     const product = collection("products", {
       fields: { title: f.text({ searchable: true }) },
-      embeddings: { doc: { source: "$title", model: "too-large", dim: 2001 } },
+      indexing: {
+        surfaces: {
+          embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+          fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+        },
+        gate: gates.always,
+      },
+      embeddings: { doc: { model: "too-large", dim: 2001 } },
     });
 
     expect(() => collections.collectionTableDDL("project_bad", product)).toThrow(/products\.embeddings\.doc/);

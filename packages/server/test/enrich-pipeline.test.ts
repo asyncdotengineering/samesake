@@ -2,7 +2,7 @@ import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { collection, f, Channels, pipeline, stage } from "../../sdk/src/index.ts";
+import { collection, f, Channels, pipeline, stage, gates } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed } from "./fixtures.ts";
@@ -36,8 +36,15 @@ describeIf("enrich pipeline", () => {
         model: "default",
       })
     ),
+    indexing: {
+      surfaces: {
+        embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+        fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+      },
+      gate: gates.always,
+    },
     embeddings: {
-      doc: { source: "$title", model: "test-embed", dim: 8 },
+      doc: { model: "test-embed", dim: 8 },
     },
     search: {
       channels: [Channels.fts({ fields: ["title"], weight: 1 })],
@@ -240,5 +247,100 @@ describeIf("enrich pipeline", () => {
     await noGen.apply(slug, { entities: [], collections: [enrichCollection] });
     await expect(noGen.enrich(slug, "products")).rejects.toThrow(/generate.*not configured/i);
     await noGen.close();
+  });
+});
+
+describeIf("test:index-gate enrich pipeline surfaces", () => {
+  const projectSlug = `t_${Math.random().toString(36).slice(2, 10)}`;
+  let schemaName = "";
+  let matcher: ReturnType<typeof createMatcher>;
+
+  const indexingCollection = collection("products", {
+    fields: {
+      title: f.text({ searchable: true }),
+    },
+    enrich: pipeline(
+      stage("classify", {
+        prompt: (ctx) => `classify ${ctx.data.title}`,
+        schema: () => ({ type: "object", properties: { category: { type: "string" } } }),
+      })
+    ),
+    indexing: {
+      surfaces: {
+        embed_doc: {
+          kind: "dense",
+          embedding: "doc",
+          build: ({ data, enriched }) => `${data.title} ${enriched.category ?? ""}`.trim(),
+        },
+        rerank_doc: {
+          kind: "rerank",
+          build: ({ data }) => String(data.title ?? ""),
+        },
+        fts_doc: {
+          kind: "fts",
+          build: ({ data, enriched }) => `${data.title} ${enriched.category ?? ""}`.trim(),
+        },
+      },
+      gate: gates.always,
+    },
+    embeddings: {
+      doc: { model: "test-embed", dim: 8 },
+    },
+    search: {
+      channels: [Channels.fts({ fields: ["title"], weight: 1 })],
+    },
+  });
+
+  beforeAll(async () => {
+    matcher = createMatcher({
+      databaseUrl: databaseUrl!,
+      apiKey: "test-api-key-12345",
+      migrate: "eager",
+      embed: async ({ dim }) => new Array(dim).fill(0),
+      generate: async () => ({ category: "dress" }),
+    });
+    await matcher.migrate();
+    schemaName = (
+      await matcher.apply(projectSlug, { entities: [], collections: [indexingCollection] })
+    ).schema;
+    await matcher.pushDocuments(projectSlug, "products", [
+      { id: "idx1", data: { title: "Silk Midi", content_hash: "idx1" } },
+    ]);
+  });
+
+  afterAll(async () => {
+    if (schemaName) {
+      const { db, close } = createDbFromUrl(databaseUrl!);
+      await db.execute(sql.raw(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`));
+      await close();
+    }
+    if (matcher) await matcher.close();
+  });
+
+  test("test:index-gate persists surfaces and pipeline_status ready", async () => {
+    const r = await matcher.enrich(projectSlug, "products");
+    expect(r.enriched).toBe(1);
+
+    const { db, close } = createDbFromUrl(databaseUrl!);
+    const rows = await db.execute<{
+      doc: string | null;
+      rerank_doc: string | null;
+      fts_src: string | null;
+      pipeline_status: string;
+      gate_reason: string | null;
+      enriched_at: string | null;
+    }>(sql.raw(`
+      SELECT doc, rerank_doc, fts_src, pipeline_status, gate_reason, enriched_at
+      FROM ${schemaName}.c_products WHERE id = 'idx1'
+    `));
+    await close();
+
+    const row = rows[0]!;
+    expect(row.doc).toBe("Silk Midi dress");
+    expect(row.rerank_doc).toBe("Silk Midi");
+    expect(row.fts_src).toBe("Silk Midi dress");
+    expect(row.pipeline_status).toBe("ready");
+    expect(row.gate_reason).toBeNull();
+    expect(row.enriched_at).toBeTruthy();
   });
 });

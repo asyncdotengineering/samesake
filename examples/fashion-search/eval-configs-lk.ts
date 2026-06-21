@@ -24,7 +24,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createFashionMatcher, productsCollection, COLLECTION } from "./samesake.config.ts";
-import { composeEmbedDocs } from "./compose-embed.ts";
 
 const SLUG = process.env.LK_CFG_PROJECT ?? "lk_cfg";
 const SUB = join(import.meta.dir, "datasets", "lk-snapshot-subset");
@@ -88,12 +87,11 @@ async function main() {
   const docs = rawDocs();
   await matcher.pushDocuments(SLUG, COLLECTION, docs);
 
-  // enrich (incremental) -> compose embed_doc -> index (incremental)
+  // enrich (incremental) -> index (incremental)
   for (let pass = 0; pass < 8; pass++) {
     const r = await matcher.enrich(SLUG, COLLECTION, { concurrency: 6, limit: docs.length });
     if (r.enriched === 0) break;
   }
-  await composeEmbedDocs(applied.schema);
   let indexed = 0;
   while (true) {
     const r = await matcher.index(SLUG, COLLECTION, { limit: 100 });

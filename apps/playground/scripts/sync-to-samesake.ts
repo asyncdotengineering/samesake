@@ -12,8 +12,13 @@
  * Run: bun --env-file=.env scripts/sync-to-samesake.ts
  */
 import postgres from "postgres";
+import { createHash } from "node:crypto";
 import { getMatcher, products, PROJECT, COLLECTION } from "../lib/samesake";
-import { composeEmbedDocs } from "../lib/embed-doc";
+
+function contentHash(parts: unknown[]): string {
+  const normalized = parts.map((p) => String(p ?? "").trim().toLowerCase()).join("\u0000");
+  return createHash("sha1").update(normalized).digest("hex");
+}
 
 async function main() {
   const sql = postgres(process.env.DATABASE_URL!, { max: 4 });
@@ -40,16 +45,20 @@ async function main() {
 
   const docs = rows.map((r) => {
     const fields = cf.get(r.id) ?? {};
+    const title = r.title ?? "";
+    const brand = String(r.metadata?.brand ?? "unknown");
+    const imageUrl = fields.imageUrl || "";
     return {
       id: r.slug,
       data: {
-        title: r.title ?? "",
-        brand: String(r.metadata?.brand ?? "unknown"),
+        title,
+        brand,
         // category/color/material are now DERIVED by the fashion enrich pipeline (enriched.*),
         // not carried on the raw doc — only title/brand/price/image_url are needed as inputs.
         price: r.price ?? 0,
         available: true,
-        image_url: fields.imageUrl || "",
+        image_url: imageUrl,
+        content_hash: contentHash([brand, title, imageUrl, r.price ?? 0]),
       },
     };
   });
@@ -72,11 +81,6 @@ async function main() {
     console.log(`  enrich pass ${pass}: enriched=${e.enriched} failed=${e.failed}`);
     if (e.enriched === 0) break;
   }
-
-  // Compose the search doc from the extracted attributes → enriched.embed_doc (what the doc
-  // embedding reads), then index.
-  const composed = await composeEmbedDocs(applied.schema);
-  console.log(`composed embed_doc for ${composed} products`);
 
   const indexed = await matcher.index(PROJECT, COLLECTION);
   console.log(`indexed into samesake:`, indexed);

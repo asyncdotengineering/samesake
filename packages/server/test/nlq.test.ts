@@ -15,7 +15,7 @@ import {
 } from "../src/core/nlq.ts";
 import { buildFilterSql } from "../src/core/search.ts";
 import type { MatcherCtx } from "../src/types.ts";
-import { nlqSchemaFixtureCollection, stubEmbed, testProductsCollection } from "./fixtures.ts";
+import { ftsIndexingByTitle, nlqSchemaFixtureCollection, stubEmbed, testProductsCollection } from "./fixtures.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
@@ -208,6 +208,7 @@ describe("parseNlq", () => {
         title: f.text({ searchable: true }),
         price: f.number({ filterable: true }),
       },
+      indexing: ftsIndexingByTitle,
       search: {
         channels: [Channels.fts({ fields: ["title"], weight: 1 })],
         nlq: {
@@ -350,6 +351,7 @@ describe("implied budget hints (Q1)", () => {
       weight: f.number({ filterable: true }),
       category: f.enum(["dresses", "tops"], { filterable: true }),
     },
+    indexing: ftsIndexingByTitle,
     search: { channels: [Channels.fts({ fields: ["title"], weight: 1 })] },
   });
 
@@ -393,6 +395,7 @@ describeIf("nlq.schema persistence", () => {
     await matcher.migrate();
     const coll = collection("products", {
       fields: { title: f.text({ searchable: true }) },
+      indexing: ftsIndexingByTitle,
       search: {
         channels: [Channels.fts({ fields: ["title"], weight: 1 })],
         nlq: {

@@ -132,7 +132,8 @@ import { collection, Channels, fashion } from "@samesake/core";
 
 const products = collection("products", {
   fields: fashion.fields(),                     // category, colors, occasions, gender, material, fit… (resolve from enriched.*)
-  embeddings: { doc: { source: fashion.embedDocSource, model: "gemini-embedding-2", dim: 1536 } },
+  indexing: fashion.indexing(),
+  embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
   spaces: fashion.spaces(),                      // visual + price + category + freshness
   enrich: fashion.enrichPipeline(),             // classify → extract (BYO generate; image-aware)
   search: {
@@ -141,7 +142,7 @@ const products = collection("products", {
     nlq: { instructions: fashion.nlq.instructions, schema: fashion.nlq.schema() },
   },
 });
-// after enrich, compose the embed doc: fashion.composeEmbedDoc(data, enriched) → enriched.embed_doc
+// indexing surfaces are built during enrich; no manual compose step
 ```
 
 Region-neutral and parametrized (`fashion.enrichPipeline({ titleKey, imageKey, classifyModel, … })`); `examples/fashion-search` consumes it and appends Sri-Lanka-specific NLQ vocab on top.

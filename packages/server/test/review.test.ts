@@ -1,7 +1,7 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels, pipeline, stage } from "@samesake/core";
+import { collection, f, Channels, gates, pipeline, stage } from "@samesake/core";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed } from "./fixtures.ts";
@@ -21,7 +21,14 @@ const reviewCollection = collection("rev", {
       schema: () => ({ type: "OBJECT", properties: { category: { type: "STRING" } } }),
     })
   ),
-  embeddings: { doc: { source: "$title", model: "stub", dim: 8 } },
+  indexing: {
+    surfaces: {
+      embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+      fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+    },
+    gate: gates.always,
+  },
+  embeddings: { doc: { model: "stub", dim: 8 } },
   search: { channels: [Channels.fts({ fields: ["title"], weight: 1 })] },
 });
 

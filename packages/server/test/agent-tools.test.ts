@@ -2,6 +2,7 @@ import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { collection, f, Channels, s } from "../../sdk/src/index.ts";
+import { ftsIndexingByTitle } from "./fixtures.ts";
 import type { EmbedRequest } from "../src/types.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
@@ -51,6 +52,7 @@ const agentCollection = collection("products", {
     intent: s.text({ source: "$title", model: "test-text", dim: 8 }),
     visual: s.image({ source: "$image_url", model: "test-img", dim: 8 }),
   },
+  indexing: ftsIndexingByTitle,
   search: {
     channels: [Channels.fts({ fields: ["title"], weight: 1 }), Channels.spaces({ weight: 1 })],
     defaultSpaceWeights: { intent: 1, visual: 1 },
@@ -120,6 +122,12 @@ describeIf("agent retrieval tools", () => {
         },
       },
     ]);
+    const { db, close } = createDbFromUrl(databaseUrl!);
+    await db.execute(sql.raw(`
+      UPDATE ${schemaName}.c_products
+      SET fts_src = data->>'title', pipeline_status = 'ready'
+    `));
+    await close();
     await matcher.index(projectSlug, "products");
   }, 60_000);
 

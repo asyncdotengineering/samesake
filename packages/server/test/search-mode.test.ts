@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { collection, f, s, Channels } from "@samesake/core";
+import { denseAndFtsIndexingByTitle, ftsIndexingByTitle } from "./fixtures.ts";
 import { parseSearchWeights } from "../src/core/search-query.ts";
 
 const def = collection("products", {
@@ -7,7 +8,8 @@ const def = collection("products", {
     title: f.text({ searchable: true }),
     price: f.number({ filterable: true }),
   },
-  embeddings: { doc: { source: "$title", model: "m", dim: 8 } },
+  indexing: denseAndFtsIndexingByTitle,
+  embeddings: { doc: { model: "m", dim: 8 } },
   spaces: {
     style: s.text({ source: "$title", model: "m", dim: 8 }),
     visual: s.image({ source: "$image_url", model: "m", dim: 8 }),
@@ -65,6 +67,7 @@ describe("parseSearchWeights — mode-aware weighting", () => {
   test("keyword-only collection (no embeddings) keeps fts in intent — nothing else to rank by", () => {
     const ftsOnly = collection("p", {
       fields: { title: f.text({ searchable: true }) },
+      indexing: ftsIndexingByTitle,
       search: { channels: [Channels.fts({ fields: ["title"], weight: 1 })], combiner: "rrf" },
     });
     const w = parseSearchWeights(ftsOnly, undefined, "intent", false);

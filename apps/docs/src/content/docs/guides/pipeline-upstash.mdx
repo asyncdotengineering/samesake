@@ -1,0 +1,148 @@
+---
+title: Upstash Workflow pipeline
+description: Durable push → enrich → index with Upstash Workflow and QStash schedules.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+[Upstash Workflow](https://upstash.com/docs/workflow) wraps each matcher call in a **durable, auto-retried step** via `context.run`. QStash delivers HTTP requests to your workflow endpoint — on a cron schedule for the safety-net loop, or ad hoc for webhooks.
+
+See [Running the enrich pipeline durably](/guides/enrich-pipeline/) for the five-step model.
+
+## Matcher setup
+
+```ts title="lib/matcher.ts"
+import { createMatcher, fashionRerank } from "@samesake/server";
+import { products } from "../catalog.ts";
+import { geminiEmbed, geminiGenerate } from "../gemini.ts";
+
+export const matcher = createMatcher({
+  databaseUrl: process.env.DATABASE_URL!,
+  apiKey: process.env.API_KEY!,
+  embed: geminiEmbed,
+  generate: geminiGenerate,
+  rerank: fashionRerank(geminiGenerate),
+});
+```
+
+## Workflow endpoints
+
+Each loop gets its own route. Steps inside a route are separate durable units.
+
+```ts title="app/api/workflows/sync-catalog/route.ts"
+import { serve } from "@upstash/workflow/nextjs";
+import { matcher } from "@/lib/matcher";
+import { fetchChangedRows } from "@/catalog-source";
+
+const PROJECT = "market";
+const COLLECTION = "products";
+
+export const { POST } = serve(async (context) => {
+  await context.run("push", async () => {
+    const rows = await fetchChangedRows();
+    await matcher.pushDocuments(PROJECT, COLLECTION, rows);
+  });
+  await context.run("enrich", () => matcher.enrich(PROJECT, COLLECTION));
+  await context.run("index", () => matcher.index(PROJECT, COLLECTION));
+});
+```
+
+```ts title="app/api/workflows/maintenance/route.ts"
+import { serve } from "@upstash/workflow/nextjs";
+import { matcher } from "@/lib/matcher";
+
+const PROJECT = "market";
+const COLLECTION = "products";
+
+export const { POST } = serve(async (context) => {
+  await context.run("revalidate-images", () =>
+    matcher.revalidateImages(PROJECT, COLLECTION),
+  );
+  await context.run("retry-failed", () =>
+    matcher.retryFailed(PROJECT, COLLECTION),
+  );
+});
+```
+
+For Hono, Fastify, or other frameworks, swap the import: `@upstash/workflow/hono`, etc.
+
+## Schedule the recurring loop with QStash
+
+Create cron schedules in the [QStash dashboard](https://console.upstash.com/qstash) (Schedules → Create Schedule), or programmatically:
+
+```ts title="scripts/setup-schedules.ts"
+import { Client } from "@upstash/qstash";
+
+const client = new Client({ token: process.env.QSTASH_TOKEN! });
+const baseUrl = process.env.APP_URL!; // your deployed app
+
+await client.schedules.create({
+  scheduleId: "catalog-sync",
+  destination: `${baseUrl}/api/workflows/sync-catalog`,
+  cron: "*/5 * * * *",
+});
+
+await client.schedules.create({
+  scheduleId: "catalog-maintenance",
+  destination: `${baseUrl}/api/workflows/maintenance`,
+  cron: "0 * * * *",
+});
+```
+
+## Trigger manually or from a webhook
+
+Use the Workflow `Client` to start a run with retries, delay, and flow control:
+
+```ts title="app/api/webhooks/store/route.ts"
+import { Client } from "@upstash/workflow";
+import { matcher } from "@/lib/matcher";
+
+const workflow = new Client({ token: process.env.QSTASH_TOKEN! });
+
+export async function POST(request: Request) {
+  const product = await request.json();
+
+  // Fast-path: push one row directly (no workflow needed for a single upsert)
+  await matcher.pushDocuments("market", "products", [product]);
+
+  // Or trigger the full workflow with flow control so bursts don't pile up:
+  await workflow.trigger({
+    url: `${process.env.APP_URL}/api/workflows/sync-catalog`,
+    retries: 3,
+    retryDelay: "(1 + retried) * 1000",
+    flowControl: { key: "catalog-sync", parallelism: 1, rate: 10 },
+  });
+
+  return Response.json({ ok: true });
+}
+```
+
+<Aside type="note">
+`context.requestPayload` holds the POST body when QStash triggers your endpoint — useful if one workflow handles both scheduled runs and webhook-driven syncs with different row sets.
+</Aside>
+
+## Non-retryable failures
+
+When a row is permanently bad (bad config, not a transient model error), stop retrying:
+
+```ts
+import { WorkflowNonRetryableError } from "@upstash/workflow";
+
+if (!process.env.DATABASE_URL) {
+  throw new WorkflowNonRetryableError("DATABASE_URL is not set");
+}
+```
+
+## Why this fits samesake
+
+QStash is HTTP-native — your workflow runs wherever you host the route. samesake still owns batching and incrementality inside each `context.run` step. Separate steps mean a failed `index` retries without re-running `enrich`.
+
+<Aside type="tip">
+Local dev: set `QSTASH_DEV=true` and use the Workflow dev server. See [Upstash local development](https://upstash.com/docs/workflow/howto/local-development).
+</Aside>
+
+## Where to go next
+
+- **Concept and platform picker** — [Running the enrich pipeline durably](/guides/enrich-pipeline/)
+- **Row statuses** — [Pipeline lifecycle](/guides/pipeline-lifecycle/)
+- **Upstash Workflow docs** — [upstash.com/docs/workflow](https://upstash.com/docs/workflow)
