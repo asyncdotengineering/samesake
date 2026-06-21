@@ -26,6 +26,7 @@
 import { Hono } from "hono";
 import type { MatcherConfig, MatcherCtx, ParseFn, GenerateFn } from "./types.ts";
 import { createDbFromUrl } from "./db/client.ts";
+import { PostgresAdapter, type StorageAdapter } from "./db/storage-adapter.ts";
 import { makeSystemTables } from "./db/schema/system.ts";
 import { runSystemMigrations } from "./db/migrations.ts";
 import { makeSchemaGen } from "./core/schema-gen.ts";
@@ -186,6 +187,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
   const built = config.databaseUrl
     ? createDbFromUrl(config.databaseUrl)
     : { db: config.db!, close: async () => { /* consumer owns the handle */ } };
+  const storage: StorageAdapter = new PostgresAdapter(built);
 
   const schema = config.schema ?? "public";
   const projectPrefix = config.projectPrefix ?? "project_";
@@ -205,7 +207,8 @@ export function createMatcher(config: MatcherConfig): Matcher {
   // Build the ctx. ensureMigrations is wired below after we have it.
   let migrationsPromise: Promise<void> | null = null;
   const ctx: MatcherCtx = {
-    db: built.db,
+    db: storage.db,
+    storage,
     schema,
     projectPrefix,
     apiKey: config.apiKey,
@@ -330,6 +333,6 @@ export function createMatcher(config: MatcherConfig): Matcher {
     fetch: app.fetch.bind(app) as (request: Request) => Promise<Response>,
     app,
     migrate,
-    close: built.close,
+    close: () => storage.close(),
   };
 }

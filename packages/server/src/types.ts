@@ -12,6 +12,7 @@
 // `embed` and (optionally) `parse` functions — see EmbedFn / ParseFn below.
 // @samesake/server has zero opinions about which LLM stack you use.
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import type { StorageAdapter } from "./db/storage-adapter.ts";
 import type { Hono } from "hono";
 import type { EntityDef } from "@samesake/core";
 import type { z } from "zod";
@@ -269,6 +270,7 @@ export interface MatcherConfig {
 // ── What the internal modules consume ───────────────────────────────────
 export interface MatcherCtx {
   db: PostgresJsDatabase;
+  storage: StorageAdapter;
   schema: string;            // system schema (always set; default applied)
   projectPrefix: string;     // per-project schema prefix (always set)
   apiKey: string;

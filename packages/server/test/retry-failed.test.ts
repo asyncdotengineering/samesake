@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { collection, f, Channels, gates } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
+import { PostgresAdapter } from "../src/db/storage-adapter.ts";
 import { makeEnrichPipelineService } from "../src/core/enrich-pipeline.ts";
 import { makeProjectsService } from "../src/core/projects.ts";
 import { makeSchemaGen } from "../src/core/schema-gen.ts";
@@ -46,6 +47,7 @@ describeIf("test:retry-failed (REQ-17)", () => {
     const schemaGen = makeSchemaGen({ sys: "public", projectPrefix: "project_" });
     const ctx = {
       db: built.db,
+      storage: new PostgresAdapter(built),
       schema: "public",
       projectPrefix: "project_",
       apiKey: "test-api-key-12345",
