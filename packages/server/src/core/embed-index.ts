@@ -268,14 +268,17 @@ export function makeEmbedIndexService(
     const table = collectionTableName(project.schema_name, collectionName);
     const limit = opts?.limit ?? 100_000;
     const needsEnrich = hasEnrichPipeline(def);
-    const staleClause = needsEnrich
-      ? "pipeline_status = 'ready' AND enriched_at IS NOT NULL AND (indexed_at IS NULL OR indexed_at < enriched_at)"
-      : "indexed_at IS NULL OR (enriched_at IS NOT NULL AND indexed_at < enriched_at)";
     const spaceBackfill = hasSpace ? " OR space_vec IS NULL" : "";
+    // The space-backfill clause must stay INSIDE the `pipeline_status = 'ready'` guard,
+    // otherwise a quarantined row (space_vec NULL) would be indexed and promoted to ready,
+    // defeating the gate.
+    const staleClause = needsEnrich
+      ? `pipeline_status = 'ready' AND enriched_at IS NOT NULL AND (indexed_at IS NULL OR indexed_at < enriched_at${spaceBackfill})`
+      : `indexed_at IS NULL OR (enriched_at IS NOT NULL AND indexed_at < enriched_at)${spaceBackfill}`;
 
     const pending = await getPgClient(ctx.db, "embed-index").unsafe(
       `SELECT id, data, enriched, ingested_at, doc FROM ${table}
-       WHERE (${staleClause}${spaceBackfill})
+       WHERE (${staleClause})
        ORDER BY id LIMIT $1`,
       [limit]
     );
