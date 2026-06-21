@@ -58,6 +58,7 @@ export const products = collection("products", {
       Channels.spaces({ weight: 1 }),                   // visual + price + category + freshness
     ],
     combiner: "rrf", // merge the rankings fairly
+    nlq: { schema: fashion.nlq.schema(), instructions: fashion.nlq.instructions }, // turns "under 15000" into a hard price filter
   },
 });
 ```

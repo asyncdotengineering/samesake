@@ -27,7 +27,7 @@ export const matcher = createMatcher({
 
 ## Inngest client and functions
 
-Each stage is a separate `step.run` — durable, auto-retried (Inngest's default is four attempts per step).
+Each stage is a separate `step.run` — durable, auto-retried (Inngest's default is four retries per step — five attempts total).
 
 ```ts title="inngest/client.ts"
 import { Inngest } from "inngest";

@@ -250,7 +250,7 @@ vercel deploy --prod --yes --scope <your-scope>
 Three gotchas worth knowing:
 
 - **Co-locate functions with the database.** A fresh Vercel project runs in `iad1` (US-East); if your Neon DB is in, say, `ap-southeast-1` (Singapore), every query crosses the Pacific. Pin the function region to match — `vercel.json` `{ "regions": ["sin1"] }` — so Porulle and samesake both talk to Postgres locally.
-- **`@samesake/*` as `workspace:*` won't resolve in a standalone Vercel build.** Reference the published versions (`"@samesake/core": "^1.1.0"`) — in a Bun workspace this still links the local package locally while Vercel pulls from npm.
+- **`@samesake/*` as `workspace:*` won't resolve in a standalone Vercel build.** Reference the published versions (`"@samesake/core": "^2.0.0"`) — in a Bun workspace this still links the local package locally while Vercel pulls from npm.
 - New Vercel projects ship with **Deployment Protection (Vercel Authentication)** on, so the demo returns "Authentication Required". Turn it off for a public demo (Project → Settings → Deployment Protection, or `PATCH /v9/projects/<id>` with `{"ssoProtection": null}`).
 
 ## Enrich attributes from the image (samesake enrich pipeline)
