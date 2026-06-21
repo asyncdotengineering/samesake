@@ -4,7 +4,6 @@ import { mergeBlendedRerank, rerankCandidateText } from "./rerank.ts";
 import { applyRankingPolicy } from "./ranking.ts";
 import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
-import { computeFacets } from "./facets.ts";
 import { buildConstraintTrace, relaxedSoftFields } from "./constraint-trace.ts";
 import { mergeFilters, parseNlq, shouldSkipNlq } from "./nlq.ts";
 import type { ProjectsService, ProjectRow } from "./projects.ts";
@@ -690,14 +689,13 @@ export function makeSearchService(
     let facets: SearchResult["facets"];
     if (opts.facets?.length) {
       const compiled = buildFilterSql(r.mergedFilters, r.def, r.filterOpts, 1);
-      facets = await computeFacets(
-        ctx.db,
-        collectionTableName(r.project.schema_name, r.collectionName),
-        r.def,
-        compiled.where,
-        compiled.params,
-        opts.facets
-      );
+      facets = await ctx.storage.facets({
+        table: collectionTableName(r.project.schema_name, r.collectionName),
+        def: r.def,
+        where: compiled.where,
+        params: compiled.params,
+        facetNames: opts.facets,
+      });
     }
 
     const fieldKeys = Object.keys(r.def.fields);

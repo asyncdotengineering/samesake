@@ -1,4 +1,15 @@
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import type { CollectionDef } from "@samesake/core";
+import { computeFacets, type FacetResult } from "../core/facets.ts";
+
+/** Inputs for a facet aggregation over a collection's filtered candidate set. */
+export interface FacetQuery {
+  table: string;
+  def: CollectionDef;
+  where: string;
+  params: unknown[];
+  facetNames: string[];
+}
 
 /**
  * The database contract the engine depends on. The intent (see issue #59) is for
@@ -14,6 +25,8 @@ export interface StorageAdapter {
   readonly db: PostgresJsDatabase;
   /** Close the connection. No-op when the consumer owns the handle. */
   close(): Promise<void>;
+  /** Facet aggregation over the filtered candidate set. */
+  facets(query: FacetQuery): Promise<Record<string, FacetResult>>;
 }
 
 /**
@@ -30,5 +43,9 @@ export class PostgresAdapter implements StorageAdapter {
 
   close(): Promise<void> {
     return this.handle.close();
+  }
+
+  facets(q: FacetQuery): Promise<Record<string, FacetResult>> {
+    return computeFacets(this.db, q.table, q.def, q.where, q.params, q.facetNames);
   }
 }
