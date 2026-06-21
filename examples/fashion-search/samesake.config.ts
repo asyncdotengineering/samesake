@@ -140,6 +140,9 @@ export const productsCollection = collection("products", {
       ...(spacesEnabled ? [Channels.spaces({ weight: 1 })] : []),
     ],
     combiner: "rrf",
+    // Absolute cosine floor (FTS matches exempt) — calibrated ≈0.5 for gemini-embedding-2;
+    // suppresses no-match padding (queries with no real match return few/no results).
+    relevanceFloor: 0.5,
     ...(spacesEnabled
       ? {
           defaultSpaceWeights: {
