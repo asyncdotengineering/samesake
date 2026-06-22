@@ -1,0 +1,4 @@
+node_modules/
+data/quote-output.*
+data/sample-bom/
+*.log
