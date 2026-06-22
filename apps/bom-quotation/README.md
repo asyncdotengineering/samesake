@@ -68,3 +68,12 @@ number on the quote carries a trace of which rules fired (audit).
 
 Frontend: **TanStack Start** in `./web` — upload, review/override matches with confidence
 badges, live totals, download PDF.
+
+## Going deeper
+
+- [**Getting started**](./docs/getting-started.md) — a plain-language walkthrough of how the
+  app *thinks*, from a parts list to a price. Start here if the README jargon moved too fast.
+- [**Thought process**](./docs/thought-process.md) — the design reasoning, the calibration
+  story (1/16 → 15/16), and the bugs the build phase missed.
+- [**Architecture decisions**](./docs/adr/) — the formal records: entity resolution for
+  matching, the layered pipeline, and config-as-data / rule packs.
