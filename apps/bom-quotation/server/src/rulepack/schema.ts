@@ -40,6 +40,8 @@ export const PricingDef = z.object({
 export const RulePackSchema = z
   .object({
     vertical: z.string(),
+    /** product categories the normalizer may assign (drives the extraction schema) */
+    categories: z.array(z.string()).default([]),
     attributes: z.array(AttributeDef),
     /** group -> { lowercased variant : canonical }. `poles` drives the gate's
      *  canonicalization; the whole map seeds the normalization prompt. */

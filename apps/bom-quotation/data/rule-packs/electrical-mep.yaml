@@ -4,6 +4,9 @@
 # (or store a per-company pack in the DB) to re-target the app — no code change.
 vertical: electrical-mep
 
+# Product categories the normalizer may assign (drives the extraction schema).
+categories: [cable, breaker, conduit, wiring-accessory, lighting, distribution-board, switch-socket, earthing, other]
+
 # The specs the normalizer parses and the matcher can gate on.
 attributes:
   - { key: cores,      type: number, label: "Cores" }

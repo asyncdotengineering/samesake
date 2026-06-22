@@ -4,6 +4,8 @@
 # `bun run quote` with BOM_RULEPACK=electrical-mep-prefix uses this.
 vertical: electrical-mep
 
+categories: [cable, breaker, conduit, wiring-accessory, lighting, distribution-board, switch-socket, earthing, other]
+
 attributes:
   - { key: cores,   type: number, label: "Cores" }
   - { key: csaMm2,  type: number, label: "CSA mm²" }
