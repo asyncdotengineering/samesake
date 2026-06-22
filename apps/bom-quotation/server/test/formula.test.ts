@@ -16,4 +16,10 @@ describe("formula evaluator (safe, no eval)", () => {
     expect(() => evalFormula("1 ; 2", {})).toThrow();
     expect(() => evalFormula("2 ** 8", {})).toThrow();
   });
+  test("bounds nesting depth + length (untrusted DB input can't blow the stack)", () => {
+    const deep = "(".repeat(500) + "1" + ")".repeat(500);
+    expect(() => evalFormula(deep, {})).toThrow(/too long|too deep/i);
+    const deepNoLen = "-".repeat(200) + "1"; // unary-minus chain, under the length cap
+    expect(() => evalFormula(deepNoLen, {})).toThrow(/too deep/i);
+  });
 });

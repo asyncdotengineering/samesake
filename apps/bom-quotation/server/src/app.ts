@@ -5,7 +5,7 @@ import { cors } from "hono/cors";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadEnv, company, rules, catalog, PROJECT, SCOPE, ENTITY_KIND } from "./config.ts";
+import { loadEnv, company, catalog, PROJECT, SCOPE, ENTITY_KIND } from "./config.ts";
 import { makeMatcher, setupCatalog, matchLine, buildCodeIndex, entityIdForCode } from "./catalog.ts";
 import { activePack, setActivePack } from "./rulepack/load.ts";
 import { ensureTable, loadRulePackForCompany, saveRulePack } from "./rulepack/store.ts";
@@ -38,12 +38,18 @@ console.log(`✓ ready (${activePack().pricing.strategy} pricing)`);
 const app = new Hono();
 app.use("/api/*", cors());
 
-app.get("/api/config", (c) => c.json({ company: company(), rules: rules() }));
+// Single source of truth: the active pack's pricing (tiers/taxes/decimals) drives the UI too.
+app.get("/api/config", (c) => c.json({ company: company(), rules: activePack().pricing }));
 app.get("/api/catalog", (c) => c.json(catalog()));
 
 // The active rule pack — read it, or replace it (validated + persisted to the DB).
 app.get("/api/rulepack", (c) => c.json(activePack()));
 app.put("/api/rulepack", async (c) => {
+  // Mutating endpoint — rewrites company pricing. Admin-key gated (deny when unconfigured).
+  const adminKey = process.env.BOM_ADMIN_KEY;
+  if (!adminKey || c.req.header("x-admin-key") !== adminKey) {
+    return c.json({ error: "unauthorized — set BOM_ADMIN_KEY and pass a matching x-admin-key header to change the rule pack" }, 401);
+  }
   const parsed = RulePackSchema.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "invalid rule pack", issues: parsed.error.issues }, 400);
   await saveRulePack(url, PROJECT, parsed.data);

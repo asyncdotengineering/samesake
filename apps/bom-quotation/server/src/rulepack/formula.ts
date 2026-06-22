@@ -20,32 +20,45 @@ function tokenize(s: string): Tok[] {
   return out;
 }
 
+const MAX_LEN = 500;
+const MAX_DEPTH = 100;
+
 export function evalFormula(expr: string, vars: Record<string, number>): number {
+  // Untrusted (DB-sourced) input: bound length + nesting so a hostile pack can't
+  // exhaust memory or blow the stack via a giant or deeply-nested formula.
+  if (expr.length > MAX_LEN) throw new Error(`formula too long (${expr.length} chars, max ${MAX_LEN})`);
   const toks = tokenize(expr);
   let i = 0;
+  let depth = 0;
   const peek = (): Tok | undefined => toks[i];
 
   const factor = (): number => {
-    const tk = peek();
-    if (!tk) throw new Error(`unexpected end of formula '${expr}'`);
-    if (tk.t === "paren" && tk.v === "(") {
-      i++;
-      const v = expr2();
-      const close = peek();
-      if (!close || close.v !== ")") throw new Error(`missing ) in '${expr}'`);
-      i++;
-      return v;
-    }
-    if (tk.t === "op" && tk.v === "-") { i++; return -factor(); }
-    if (tk.t === "num") { i++; return Number(tk.v); }
-    if (tk.t === "id") {
-      i++;
-      if (!(tk.v in vars) || !Number.isFinite(vars[tk.v])) {
-        throw new Error(`formula '${expr}' needs attribute '${tk.v}', which the line doesn't have`);
+    // Both '(' descent and unary-minus chains recurse through factor — guard here.
+    if (++depth > MAX_DEPTH) throw new Error(`formula '${expr}' nested too deeply (max depth ${MAX_DEPTH})`);
+    try {
+      const tk = peek();
+      if (!tk) throw new Error(`unexpected end of formula '${expr}'`);
+      if (tk.t === "paren" && tk.v === "(") {
+        i++;
+        const v = expr2();
+        const close = peek();
+        if (!close || close.v !== ")") throw new Error(`missing ) in '${expr}'`);
+        i++;
+        return v;
       }
-      return vars[tk.v]!;
+      if (tk.t === "op" && tk.v === "-") { i++; return -factor(); }
+      if (tk.t === "num") { i++; return Number(tk.v); }
+      if (tk.t === "id") {
+        i++;
+        if (!(tk.v in vars) || !Number.isFinite(vars[tk.v])) {
+          throw new Error(`formula '${expr}' needs attribute '${tk.v}', which the line doesn't have`);
+        }
+        return vars[tk.v]!;
+      }
+      throw new Error(`unexpected '${tk.v}' in '${expr}'`);
+    } finally {
+      depth--;
     }
-    throw new Error(`unexpected '${tk.v}' in '${expr}'`);
   };
   const term = (): number => {
     let v = factor();
