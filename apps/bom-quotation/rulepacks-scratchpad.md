@@ -21,4 +21,4 @@ catalog mode must stay 15/16 + grand total LKR 284,981.21 on the sample BOM.
 - C4 (next): DB persistence (rule_packs table) + GET/PUT API — the "saved in db" + editable piece.
 
 ## Done
-- (none yet)
+- C1 schema+default pack, C2 catalog-less prefix pricing, C3 canonicalization-from-pack, C4 DB persistence + GET/PUT API. Catalog regression held (15/16). Deferred: normalize-from-pack, strategy-interface unification, docs...

@@ -7,6 +7,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadEnv, company, rules, catalog, PROJECT, SCOPE, ENTITY_KIND } from "./config.ts";
 import { makeMatcher, setupCatalog, matchLine, buildCodeIndex, entityIdForCode } from "./catalog.ts";
+import { activePack, setActivePack } from "./rulepack/load.ts";
+import { ensureTable, loadRulePackForCompany, saveRulePack } from "./rulepack/store.ts";
+import { RulePackSchema } from "./rulepack/schema.ts";
 import { runPipeline } from "./pipeline/index.ts";
 import { assembleQuotation, renderQuotationPdf } from "./pipeline/quote.ts";
 import { priceLine } from "./pipeline/price.ts";
@@ -20,16 +23,33 @@ if (!url || !process.env.GEMINI_API_KEY) {
 }
 
 const matcher = makeMatcher(url);
-console.log("Loading catalog …");
-const { schema } = await setupCatalog(matcher);
-await buildCodeIndex(url, schema);
-console.log("✓ catalog ready");
+// A company's pack (if saved) overrides the bundled default, and decides whether we
+// even need a catalog.
+await ensureTable(url);
+const dbPack = await loadRulePackForCompany(url, PROJECT);
+if (dbPack) setActivePack(dbPack);
+if (activePack().pricing.strategy === "catalog") {
+  console.log("Loading catalog …");
+  const { schema } = await setupCatalog(matcher);
+  await buildCodeIndex(url, schema);
+}
+console.log(`✓ ready (${activePack().pricing.strategy} pricing)`);
 
 const app = new Hono();
 app.use("/api/*", cors());
 
 app.get("/api/config", (c) => c.json({ company: company(), rules: rules() }));
 app.get("/api/catalog", (c) => c.json(catalog()));
+
+// The active rule pack — read it, or replace it (validated + persisted to the DB).
+app.get("/api/rulepack", (c) => c.json(activePack()));
+app.put("/api/rulepack", async (c) => {
+  const parsed = RulePackSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "invalid rule pack", issues: parsed.error.issues }, 400);
+  await saveRulePack(url, PROJECT, parsed.data);
+  setActivePack(parsed.data);
+  return c.json({ ok: true, strategy: parsed.data.pricing.strategy });
+});
 
 // Upload a BOM (multipart "file") → full quote + per-line match detail.
 app.post("/api/quote", async (c) => {

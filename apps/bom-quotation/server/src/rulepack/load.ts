@@ -22,8 +22,16 @@ export function defaultPack(): RulePack {
   return cached;
 }
 
-/** The pack the pipeline runs with: BOM_RULEPACK names a bundled pack, else the default. */
+let override: RulePack | null = null;
+/** Install a pack (e.g. the company's pack loaded from the DB) as the active one. */
+export function setActivePack(pack: RulePack): void {
+  override = pack;
+}
+
+/** The pack the pipeline runs with: a DB/override pack if set, else BOM_RULEPACK names a
+ *  bundled pack, else the default. */
 export function activePack(): RulePack {
+  if (override) return override;
   const name = process.env.BOM_RULEPACK;
   return name ? loadPackFromYaml(name) : defaultPack();
 }
