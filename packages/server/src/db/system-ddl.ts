@@ -13,6 +13,7 @@
  */
 import { tablesToDDL } from "./ddl.ts";
 import { makeSystemTables } from "./schema/system.ts";
+import { indicPhonetic } from "./postgres/phonetic.ts";
 
 export function getSystemDDL(schema: string): string {
   if (!/^[a-z_][a-z0-9_]{0,62}$/i.test(schema)) {
@@ -59,74 +60,8 @@ export function getSystemDDL(schema: string): string {
       );
     $fn$;`,
 
-    // ── samesake_phonetic — Indic-Soundex-style cross-script hash ────────
-    `
-    CREATE OR REPLACE FUNCTION ${s}.samesake_phonetic(input text)
-    RETURNS text LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $fn$
-    DECLARE
-      s text;
-    BEGIN
-      s := lower(coalesce(input, ''));
-
-      -- Aspirate-strip: in Latin transliterations of Indic names, 'h'
-      -- after d/t/k/p/g/b/c/j marks aspiration of the preceding consonant
-      -- and has no separate phonetic class in our alphabet. The native
-      -- script writes a different consonant character (e.g. द vs ध, க has
-      -- no 'kh' counterpart in Tamil), so dropping the 'h' here is what
-      -- makes 'Maaladhi' ≡ 'மாலதி' and 'Mukhesh' ≡ 'मुकेश'. Word-initial
-      -- 'h' and 'sh' digraph are unaffected.
-      s := regexp_replace(s, '([dtkpgbcj])h', '\\1', 'g');
-
-      -- Same 8-letter alphabet across scripts so 'Amma' ≡ 'අම්මා' ≡ 'அம்மா'.
-      -- SINHALA
-      s := translate(s, 'කඛගඝ',     'KKKK');
-      s := translate(s, 'චඡජඣ',     'CCCC');
-      s := translate(s, 'ටඨඩඪතථදධ', 'TTTTTTTT');
-      s := translate(s, 'පඵබභ',     'PPPP');
-      s := translate(s, 'සශෂ',      'SSS');
-      s := translate(s, 'මනණඞඤං',   'NNNNNN');
-      s := translate(s, 'ය',        'Y');
-      s := translate(s, 'ර',        'R');
-      s := translate(s, 'ලළ',       'LL');
-      s := translate(s, 'වහ',       'VV');
-
-      -- TAMIL
-      -- NOTE: Tamil ச maps to S, not C, to align with how it is actually
-      -- pronounced (and transliterated to Latin) in Sri Lankan and modern
-      -- Indian Tamil — e.g. 'சில்' is romanised 'sil-', not 'chil-'. Tamil
-      -- ஜ stays in the C class to align with Latin 'j' (which also → C).
-      -- This is the load-bearing change for Tamil↔Latin same-name parity.
-      s := translate(s, 'க',        'K');
-      s := translate(s, 'ஞஙணநனம',   'NNNNNN');
-      s := translate(s, 'ச',        'S');
-      s := translate(s, 'ஜ',        'C');
-      s := translate(s, 'டத',       'TT');
-      s := translate(s, 'ற',        'R');
-      s := translate(s, 'ப',        'P');
-      s := translate(s, 'ஸஶஷ',      'SSS');
-      s := translate(s, 'ய',        'Y');
-      s := translate(s, 'ர',        'R');
-      s := translate(s, 'லளழ',      'LLL');
-      s := translate(s, 'வஹ',       'VV');
-
-      -- LATIN
-      s := translate(s, 'kgqx',     'KKKK');
-      s := translate(s, 'cj',       'CC');
-      s := translate(s, 'bp',       'PP');
-      s := translate(s, 'dtf',      'TTT');
-      s := translate(s, 'vwh',      'VVV');
-      s := translate(s, 'mn',       'NN');
-      s := translate(s, 'r',        'R');
-      s := translate(s, 'l',        'L');
-      s := translate(s, 'y',        'Y');
-      s := translate(s, 'sz',       'SS');
-
-      s := regexp_replace(s, '[^KCTPSNRLYVH]', '', 'g');
-      s := regexp_replace(s, '(.)\\1+', '\\1', 'g');
-
-      RETURN s;
-    END;
-    $fn$;`,
+    // samesake_phonetic — Indic-Soundex provider (db/postgres/phonetic.ts)
+    indicPhonetic.ddl(s),
 
     // ── units-alias seed data (idempotent via ON CONFLICT) ───────────────
     `
