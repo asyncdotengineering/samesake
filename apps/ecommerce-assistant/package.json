@@ -1,0 +1,25 @@
+{
+  "name": "samesake-ecommerce-assistant",
+  "version": "1.0.0",
+  "description": "Weaviate Query Agent e-commerce assistant recipe, recreated with samesake (retrieval) + Mastra (agent) + MCP.",
+  "type": "module",
+  "private": true,
+  "module": "src/agent.ts",
+  "scripts": {
+    "seed": "bun src/seed.ts",
+    "demo": "bun src/demo.ts",
+    "mcp": "bun src/mcp.ts"
+  },
+  "dependencies": {
+    "@samesake/core": "workspace:*",
+    "@samesake/server": "workspace:*",
+    "@mastra/core": "^1.42.0",
+    "@mastra/mcp": "^1.10.0",
+    "@ai-sdk/openai": "^3.0.71",
+    "ai": "^6.0.184",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.12.19",
+    "postgres": "^3.4.9",
+    "zod": "^4.4.3"
+  }
+}
