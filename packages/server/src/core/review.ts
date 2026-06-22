@@ -5,7 +5,7 @@ import { desc, eq, and } from "drizzle-orm";
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import { searchResultCache } from "./search-cache.ts";
-import { collectionTableName, getPgClient } from "./db-utils.ts";
+import { collectionTableName } from "./db-utils.ts";
 
 export interface ReviewRow {
   id: string;

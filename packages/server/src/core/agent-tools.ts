@@ -11,7 +11,7 @@ import type {
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import type { SearchHit, SearchOpts, SearchService, SearchFilters } from "./search.ts";
-import { collectionTableName, getByPath, getPgClient } from "./db-utils.ts";
+import { collectionTableName, getByPath } from "./db-utils.ts";
 
 type ConstraintMode = "best_effort" | "strict";
 

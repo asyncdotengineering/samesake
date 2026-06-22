@@ -3,7 +3,7 @@ import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import type { EnrichPipelineService } from "./enrich-pipeline.ts";
 import type { EmbedIndexService } from "./embed-index.ts";
-import { collectionTableName, getPgClient } from "./db-utils.ts";
+import { collectionTableName } from "./db-utils.ts";
 import { DEFAULT_MAX_ATTEMPTS, recordPipelineFailure } from "./pipeline-failure.ts";
 
 function isPipeline(def: CollectionDef["enrich"]): def is PipelineDef {

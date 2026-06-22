@@ -6,7 +6,7 @@ import { imageVersionToken } from "../connectors/normalize.ts";
 import { makeStageCacheService } from "../db/stage-cache.ts";
 import { fetchRemoteImageSafe } from "./fetch-image.ts";
 import { callWithRetry } from "./policy.ts";
-import { collectionTableName, getPgClient } from "./db-utils.ts";
+import { collectionTableName } from "./db-utils.ts";
 import {
   assertErrorRateWithinLimit,
   recordPipelineFailure,

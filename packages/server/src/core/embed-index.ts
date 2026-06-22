@@ -7,7 +7,7 @@ import type { ProjectsService } from "./projects.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
 import { fetchRemoteImageSafe } from "./fetch-image.ts";
 import { searchResultCache } from "./search-cache.ts";
-import { collectionTableName, getByPath, getPgClient } from "./db-utils.ts";
+import { collectionTableName, getByPath } from "./db-utils.ts";
 import {
   assertErrorRateWithinLimit,
   recordPipelineFailure,

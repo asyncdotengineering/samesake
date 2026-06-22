@@ -11,7 +11,7 @@ import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import type { SearchHit, SearchService, SearchOpts, SearchFilters } from "./search.ts";
 import type { IngestService } from "./ingest.ts";
-import { collectionTableName, getByPath, getPgClient } from "./db-utils.ts";
+import { collectionTableName, getByPath } from "./db-utils.ts";
 import { applyRankingPolicy } from "./ranking.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
 import { searchResultCache } from "./search-cache.ts";

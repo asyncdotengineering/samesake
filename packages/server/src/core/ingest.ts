@@ -4,7 +4,7 @@ import type { ProjectsService } from "./projects.ts";
 import { computeContentHash } from "../connectors/normalize.ts";
 import { connectorFromDef, type PullConnector } from "../connectors/index.ts";
 import { searchResultCache } from "./search-cache.ts";
-import { collectionTableName, getPgClient } from "./db-utils.ts";
+import { collectionTableName } from "./db-utils.ts";
 
 export interface IngestDocument {
   id: string;

@@ -8,7 +8,7 @@ import { mergeMigrationPlans, planCollectionMigration } from "./collections-migr
 import { assertIdent, assertNoIdentCollisions } from "@samesake/core";
 import { ClientError } from "../errors.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
-import { collectionTableName, getPgClient } from "./db-utils.ts";
+import { collectionTableName } from "./db-utils.ts";
 import { normalizeSchema } from "./schema-input.ts";
 
 function validateProjectConfig(config: ProjectConfig): void {
@@ -120,7 +120,7 @@ export function makeProjectsService(
 
   async function collectionTableExists(schema: string, collectionName: string): Promise<boolean> {
     const table = `c_${sanitiseIdent(collectionName)}`;
-    const rows = await getPgClient(db, "projects migration").unsafe(
+    const rows = await ctx.storage.client("projects migration").unsafe(
       `SELECT 1 FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2 LIMIT 1`,
       [schema, table]
     );
@@ -219,7 +219,7 @@ export function makeProjectsService(
     for (const m of collectionMigrations) {
       if (!m.reindex) continue;
       const table = collectionTableName(projectSchema, m.collection);
-      await getPgClient(db, "projects migration").unsafe(
+      await ctx.storage.client("projects migration").unsafe(
         `UPDATE ${table} SET indexed_at = NULL WHERE indexed_at IS NOT NULL`
       );
     }

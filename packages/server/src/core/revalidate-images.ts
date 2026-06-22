@@ -2,7 +2,7 @@ import type { CollectionDef, PipelineDef } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import { probeRemoteImageSafe } from "./fetch-image.ts";
-import { collectionTableName, getPgClient } from "./db-utils.ts";
+import { collectionTableName } from "./db-utils.ts";
 
 function isPipeline(def: CollectionDef["enrich"]): def is PipelineDef {
   return !!def && typeof def === "object" && Array.isArray((def as PipelineDef).stages);

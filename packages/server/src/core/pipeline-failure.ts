@@ -1,5 +1,4 @@
 import type { MatcherCtx } from "../types.ts";
-import { getPgClient } from "./db-utils.ts";
 
 export const DEFAULT_MAX_ATTEMPTS = 5;
 export const DEFAULT_MAX_ERROR_RATE = 0.5;

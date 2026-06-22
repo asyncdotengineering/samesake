@@ -8,7 +8,7 @@ import { buildConstraintTrace, relaxedSoftFields } from "./constraint-trace.ts";
 import { mergeFilters, parseNlq, shouldSkipNlq } from "./nlq.ts";
 import type { ProjectsService, ProjectRow } from "./projects.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
-import { collectionTableName, getPgClient } from "./db-utils.ts";
+import { collectionTableName } from "./db-utils.ts";
 import { assembleQueryVector, weightedSegmentCosines } from "./spaces.ts";
 import { searchResultCache, type SearchCacheKey } from "./search-cache.ts";
 import { buildFilterSql, type FilterCompileOpts, type SearchFilters } from "./search-filter.ts";
