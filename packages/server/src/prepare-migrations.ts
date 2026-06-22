@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { createDbFromUrl } from "./db/client.ts";
 import { getSystemDDL } from "./db/system-ddl.ts";
+import type { PhoneticProvider } from "./db/postgres/phonetic.ts";
 
 export interface PrepareMigrationsConfig {
   /** Either provide a Drizzle handle directly... */
@@ -13,6 +14,8 @@ export interface PrepareMigrationsConfig {
   databaseUrl?: string;
   /** Postgres schema where samesake's system tables live. Default "public". */
   schema?: string;
+  /** Opt-in phonetic provider (installs `samesake_phonetic`). Default: none. */
+  phonetic?: PhoneticProvider;
 }
 
 const IDENT = /^[a-z_][a-z0-9_]{0,62}$/i;
@@ -51,7 +54,7 @@ export async function prepareMigrations(config: PrepareMigrationsConfig): Promis
     : { db: config.db!, close: async (): Promise<void> => {} };
 
   try {
-    await built.db.execute(sql.raw(getSystemDDL(schema)));
+    await built.db.execute(sql.raw(getSystemDDL(schema, config.phonetic)));
   } finally {
     await built.close();
   }

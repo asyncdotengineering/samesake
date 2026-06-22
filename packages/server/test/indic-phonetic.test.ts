@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
+import { indicPhonetic } from "../src/db/postgres/phonetic.ts";
 import { stubEmbed } from "./fixtures.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -22,6 +23,7 @@ describeIf("indic phonetic (samesake_phonetic)", () => {
       databaseUrl: databaseUrl!,
       apiKey: "test-api-key-12345",
       migrate: "eager",
+      phonetic: indicPhonetic,
       embed: async ({ text, dim }) => stubEmbed(text, dim),
       generate: async () => ({ semantic_query: "test" }),
     });

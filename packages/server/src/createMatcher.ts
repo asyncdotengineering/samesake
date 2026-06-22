@@ -209,6 +209,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
   const ctx: MatcherCtx = {
     storage,
     schema,
+    phonetic: config.phonetic,
     projectPrefix,
     apiKey: config.apiKey,
     embed: config.embed,

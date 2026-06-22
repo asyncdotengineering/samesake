@@ -13,9 +13,9 @@
  */
 import { tablesToDDL } from "./ddl.ts";
 import { makeSystemTables } from "./schema/system.ts";
-import { indicPhonetic } from "./postgres/phonetic.ts";
+import type { PhoneticProvider } from "./postgres/phonetic.ts";
 
-export function getSystemDDL(schema: string): string {
+export function getSystemDDL(schema: string, phonetic?: PhoneticProvider): string {
   if (!/^[a-z_][a-z0-9_]{0,62}$/i.test(schema)) {
     throw new Error(`invalid schema value: ${JSON.stringify(schema)}`);
   }
@@ -60,8 +60,8 @@ export function getSystemDDL(schema: string): string {
       );
     $fn$;`,
 
-    // samesake_phonetic — Indic-Soundex provider (db/postgres/phonetic.ts)
-    indicPhonetic.ddl(s),
+    // samesake_phonetic — installed only when a PhoneticProvider is configured (default: none)
+    ...(phonetic ? [phonetic.ddl(s)] : []),
 
     // ── units-alias seed data (idempotent via ON CONFLICT) ───────────────
     `
