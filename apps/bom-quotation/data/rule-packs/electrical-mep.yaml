@@ -1,0 +1,86 @@
+# Default electrical / MEP rule pack — catalog strategy.
+# This is the current behaviour expressed as data: the attributes, the trade-shorthand
+# canonicalization, the matching gates/weights, and the pricing rules. Edit this file
+# (or store a per-company pack in the DB) to re-target the app — no code change.
+vertical: electrical-mep
+
+# The specs the normalizer parses and the matcher can gate on.
+attributes:
+  - { key: cores,      type: number, label: "Cores" }
+  - { key: csaMm2,     type: number, label: "CSA mm²" }
+  - { key: conductor,  type: enum,   label: "Conductor", values: [copper, aluminium] }
+  - { key: insulation, type: enum,   label: "Insulation", values: [pvc, xlpe, frls] }
+  - { key: ratingA,    type: number, label: "Current rating A" }
+  - { key: poles,      type: enum,   label: "Poles", values: [SP, DP, TP, TPN, 4P] }
+  - { key: curve,      type: enum,   label: "Trip curve", values: [B, C, D] }
+  - { key: breakingKa, type: number, label: "Breaking kA" }
+  - { key: sizeMm,     type: number, label: "Nominal size mm" }
+  - { key: watt,       type: number, label: "Wattage" }
+  - { key: ways,       type: number, label: "DB ways" }
+
+# Trade shorthand -> canonical. Keys are matched after lowercasing + stripping spaces/dashes.
+# `poles` drives the matcher's gate; the whole map also teaches the normalizer.
+synonyms:
+  poles:
+    singlepole: SP
+    "1p": SP
+    "1pole": SP
+    sp: SP
+    doublepole: DP
+    "2p": DP
+    dp: DP
+    triplepole: TP
+    "3p": TP
+    tp: TP
+    triplepoleandneutral: TPN
+    "3pn": TPN
+    tpn: TPN
+    fourpole: "4P"
+    "4pole": "4P"
+    "4p": "4P"
+  conductor:
+    cu: copper
+    al: aluminium
+  insulation:
+    xlpe: xlpe
+    pvc: pvc
+
+# Stated unit -> multiplier to the canonical unit.
+units:
+  coil: 100
+  drum: 500
+
+matching:
+  hard: [ratingA, poles, csaMm2, cores, sizeMm, watt, ways]
+  weights: { cosine: 0.6, trigram: 0.4 }
+  autoLink: 0.55
+  suggest: 0.38
+
+pricing:
+  strategy: catalog
+  tiers:
+    contractor-a: { label: "Contractor — Tier A", discount: 0.18 }
+    contractor-b: { label: "Contractor — Tier B", discount: 0.12 }
+    project:      { label: "Project / Tender",    discount: 0.10 }
+    retail:       { label: "Retail / Walk-in",    discount: 0.0 }
+  categoryMarkup:
+    wiring-accessory: 0.08
+    earthing: 0.05
+  brandMargin:
+    Schneider: 0.0
+    ABB: 0.0
+    Hager: 0.02
+    Kelani: -0.03
+    ACL: -0.02
+    Orange: 0.0
+    Philips: 0.03
+    Generic: 0.0
+  qtyBreaks:
+    - { category: cable,   minQty: 500,  extraDiscount: 0.05 }
+    - { category: cable,   minQty: 1000, extraDiscount: 0.08 }
+    - { category: breaker, minQty: 50,   extraDiscount: 0.04 }
+    - { category: "*",     minQty: 200,  extraDiscount: 0.02 }
+  taxes:
+    - { label: VAT, rate: 0.18 }
+  priceDecimals: 2
+  validityDays: 14
