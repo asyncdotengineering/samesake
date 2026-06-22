@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { sql } from "drizzle-orm";
-import { createMatcher, createDbFromUrl } from "@samesake/server";
+import { createMatcher, createDbFromUrl, indicPhonetic } from "@samesake/server";
 import { contact } from "./samesake.config.ts";
 
 function loadEnv(): void {
@@ -49,6 +49,7 @@ async function main(): Promise<void> {
     databaseUrl,
     apiKey: "quickstart-key",
     migrate: "eager",
+    phonetic: indicPhonetic, // the contact entity uses phoneticEq (cross-script names)
     embed: async ({ text, dim }) => stubEmbed(text, dim),
   });
   await matcher.migrate();
