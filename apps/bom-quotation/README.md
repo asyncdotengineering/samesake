@@ -73,7 +73,10 @@ badges, live totals, download PDF.
 
 - [**Getting started**](./docs/getting-started.md) — a plain-language walkthrough of how the
   app *thinks*, from a parts list to a price. Start here if the README jargon moved too fast.
+- [**Rule packs**](./docs/rule-packs.md) — write your business (attributes, synonyms,
+  matching, pricing) as an editable file; covers both the catalogue and the catalogue-less
+  (price-by-rules) modes and how to save a pack to the DB.
 - [**Thought process**](./docs/thought-process.md) — the design reasoning, the calibration
-  story (1/16 → 15/16), and the bugs the build phase missed.
+  story (1/16 → 15/16), the bugs the build phase missed, and how the rule packs were built.
 - [**Architecture decisions**](./docs/adr/) — the formal records: entity resolution for
-  matching, the layered pipeline, and config-as-data / rule packs.
+  matching, the layered pipeline, config-as-data / rule packs, and the rule-pack implementation.

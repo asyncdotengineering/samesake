@@ -1,8 +1,9 @@
 # ADR-0003: Company config as data; serializable rule packs + catalog-less pricing
 
-**Status:** Partially accepted — JSON config is **Accepted** and shipped; serializable
-DB-stored rule packs and catalog-less pricing are **Proposed**
-([asyncdotengineering/samesake#60](https://github.com/asyncdotengineering/samesake/issues/60)).
+**Status:** Accepted — JSON config shipped, and the serializable DB-stored rule packs +
+catalog-less pricing are now **implemented**
+([asyncdotengineering/samesake#60](https://github.com/asyncdotengineering/samesake/issues/60);
+implementation details in [ADR-0004](./0004-rule-pack-implementation.md)).
 
 ## Context
 

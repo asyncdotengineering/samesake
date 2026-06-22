@@ -107,12 +107,35 @@ forward-looking decisions:
   TypeScript. That's fine for us; it's impossible for the distributor's ops person, who
   shouldn't need a developer and a redeploy to add a synonym or change a margin.
 
-Both point to the same next step: make the domain — attributes, synonyms, gates, and pricing
-— a **serializable "rule pack" stored in the database**, with a *catalogue-less, attribute-rule*
+Both point to the same step: make the domain — attributes, synonyms, gates, and pricing —
+a **serializable "rule pack" stored in the database**, with a *catalogue-less, attribute-rule*
 pricing strategy alongside the catalogue one, and strong defaults shipped so nobody starts
-from a blank page. That's written up as a proper plan
-([asyncdotengineering/samesake#60](https://github.com/asyncdotengineering/samesake/issues/60))
-and [ADR-0003](./adr/0003-lift-and-shift-config-and-rule-packs.md).
+from a blank page. That's now built
+([asyncdotengineering/samesake#60](https://github.com/asyncdotengineering/samesake/issues/60),
+[ADR-0003](./adr/0003-lift-and-shift-config-and-rule-packs.md),
+[ADR-0004](./adr/0004-rule-pack-implementation.md)); the practical guide is
+[rule-packs.md](./rule-packs.md).
+
+## Building the rule packs (and keeping the catalogue safe)
+
+We built it in the order that kept the catalogue path safe the whole way. First the pack
+*schema* and a default pack that was just today's config rewritten as YAML — loaded but
+unused, so nothing could break. Then the new capability, catalogue-less pricing, as a
+*separate* path that never touched the working catalogue code. Only then did we move the
+hardcoded specs and canonicalization into the pack — with a regression test pinning the
+catalogue run to 15/16 and the exact grand total, so any drift would shout immediately.
+
+Two small decisions worth recording. The price formulas are authored as little strings
+(`"30 * cores + csaMm2 * cores * 44"`), and because a pack can come from the database, those
+strings are *untrusted* — so we wrote a tiny parser that evaluates the arithmetic itself and
+never runs them as code. And packs live in the database keyed by company, loaded on boot:
+changing your pricing is a data edit through an API, not a deploy.
+
+What we deliberately left for later, and why: the LLM that reads and normalizes a line still
+carries electrical trade-knowledge in its prompt (matching and pricing already read the pack,
+so this is the last hardcoded corner); and the two pricing paths aren't yet unified behind a
+single interface — kept apart on purpose, precisely so the catalogue regression stayed
+untouched while the new path was built. Both are tracked in the issue rather than rushed.
 
 ## If you take one thing from this
 
