@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typecheck:
+    name: typecheck (no app may drift off the API)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install
+
+      # Build the @samesake packages so consumers (apps/cli) typecheck against the real dist.
+      - name: build packages
+        run: |
+          for p in packages/sdk packages/server packages/cli; do
+            echo "── build: $p ──"
+            (cd "$p" && bun run build)
+          done
+
+      # Every workspace that imports @samesake/* must typecheck. This is the gate that catches
+      # an app silently drifting off a removed/changed API (e.g. the indexing-DSL cutover).
+      - name: typecheck workspaces
+        run: |
+          fail=0
+          for d in packages/sdk packages/server packages/cli apps/bom-quotation apps/ecommerce-assistant; do
+            echo "── tsc: $d ──"
+            (cd "$d" && bunx tsc --noEmit) || { echo "::error::tsc failed in $d"; fail=1; }
+          done
+          exit $fail

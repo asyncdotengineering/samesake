@@ -7,6 +7,7 @@
   "module": "src/agent.ts",
   "scripts": {
     "seed": "bun src/seed.ts",
+    "seed:sql": "bun src/seed-from-sql.ts",
     "demo": "bun src/demo.ts",
     "mcp": "bun src/mcp.ts"
   },
