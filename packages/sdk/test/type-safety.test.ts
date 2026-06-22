@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { collection, entity, f, fields, isCollectionDef, isEntityDef } from "../src/index.ts";
+import { collection, entity, f, fields, gates, isCollectionDef, isEntityDef } from "../src/index.ts";
 
 describe("collection() compile-time safety", () => {
   test("@ts-expect-error catches undeclared embedding reference", () => {
@@ -25,6 +25,10 @@ describe("definition type guards", () => {
     });
     const products = collection("products", {
       fields: { title: f.text() },
+      indexing: {
+        surfaces: { fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "") } },
+        gate: gates.always,
+      },
     });
 
     expect(isEntityDef(account)).toBe(true);
