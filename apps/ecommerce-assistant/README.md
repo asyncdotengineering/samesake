@@ -33,9 +33,16 @@ repo root `.env` and fill in `DATABASE_URL`, `GEMINI_API_KEY`, and `OPENAI_API_K
 
 ```bash
 bun install
-bun run --cwd apps/ecommerce-assistant seed   # apply collections, import ~448 products + 104 brands, build indexes
-bun run --cwd apps/ecommerce-assistant demo    # run the recipe conversation through the agent
+# pick ONE seed:
+bun run --cwd apps/ecommerce-assistant seed:sql  # reproducible — loads data/seed.sql.gz (452 products + 103 brands, pre-embedded). No Hugging Face download, no Gemini calls. Needs `psql`.
+bun run --cwd apps/ecommerce-assistant seed      # from scratch — fetch the weaviate/agents datasets from Hugging Face + embed every row with gemini-embedding-2
+
+bun run --cwd apps/ecommerce-assistant demo      # run the recipe conversation through the agent
 ```
+
+`seed:sql` is the fast/cheap path: the catalog (with its `gemini-embedding-2` vectors and indexed
+state) is committed as a `pg_dump` (`data/seed.sql.gz`), so a fresh clone gets a working,
+pre-indexed assistant in seconds. Query embeddings are still computed live at search time.
 
 ## MCP
 
