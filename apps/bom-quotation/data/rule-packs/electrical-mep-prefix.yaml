@@ -43,8 +43,11 @@ pricing:
   strategy: prefix-rules
   # First matching rule wins. perUnit is a number or a safe formula over the line's attributes.
   rules:
-    - { label: "Cu power cable",  when: { category: cable, conductor: copper },     perUnit: "30 * cores + csaMm2 * cores * 44" }
-    - { label: "Al power cable",  when: { category: cable, conductor: aluminium },  perUnit: "20 * cores + csaMm2 * cores * 18" }
+    # Multi-core first (needs cores); single-core wire falls through to the cores-free rule.
+    - { label: "Cu multi-core cable", when: { category: cable, conductor: copper, cores: [2, 3, 4, 5] }, perUnit: "30 * cores + csaMm2 * cores * 44" }
+    - { label: "Cu single-core wire", when: { category: cable, conductor: copper },                      perUnit: "60 + csaMm2 * 48" }
+    - { label: "Al multi-core cable", when: { category: cable, conductor: aluminium, cores: [2, 3, 4, 5] }, perUnit: "20 * cores + csaMm2 * cores * 18" }
+    - { label: "Al single-core",      when: { category: cable, conductor: aluminium },                    perUnit: "40 + csaMm2 * 20" }
     - { label: "single-pole MCB", when: { category: breaker, poles: SP },           perUnit: "650 + ratingA * 4" }
     - { label: "double-pole MCB", when: { category: breaker, poles: DP },           perUnit: "1400 + ratingA * 12" }
     - { label: "multi-pole MCB",  when: { category: breaker, poles: [TP, TPN, 4P] }, perUnit: "3000 + ratingA * 28" }
