@@ -1,0 +1,106 @@
+// Catalog-less pricing. For distributors with thousands of products and no inventory
+// system: price each BOM line straight from the pack's attribute rules — no catalog,
+// no samesake match. First matching rule wins; perUnit is a number or a safe formula.
+// Self-contained (does not touch the catalog path), so the catalog regression is unaffected.
+import { evalFormula } from "../rulepack/formula.ts";
+import type { RulePack, PrefixRuleT } from "../rulepack/schema.ts";
+import type {
+  NormalizedBomLine, QuoteLine, MatchedLine, Quotation, QuoteTotals, Company, CustomerRef,
+} from "../../../shared/types.ts";
+
+const round = (x: number, d: number): number => {
+  const f = 10 ** d;
+  return Math.round(x * f) / f;
+};
+const pct = (x: number): string => `${Math.round(x * 1000) / 10}%`;
+
+/** Numeric attributes available to a price formula. */
+function formulaVars(line: NormalizedBomLine): Record<string, number> {
+  const v: Record<string, number> = { qty: line.qty };
+  for (const [k, val] of Object.entries(line.specs)) if (typeof val === "number") v[k] = val;
+  return v;
+}
+
+function matchesWhen(line: NormalizedBomLine, when: PrefixRuleT["when"]): boolean {
+  for (const [k, cond] of Object.entries(when)) {
+    const actual = k === "category" ? line.category : (line.specs as Record<string, unknown>)[k];
+    const ok = Array.isArray(cond) ? cond.map(String).includes(String(actual)) : String(cond) === String(actual);
+    if (!ok) return false;
+  }
+  return true;
+}
+
+export function priceLineFromRules(line: NormalizedBomLine, customer: CustomerRef, pack: RulePack): QuoteLine | null {
+  const rule = pack.pricing.rules.find((r) => matchesWhen(line, r.when));
+  if (!rule) return null;
+  let base: number;
+  try {
+    base = typeof rule.perUnit === "number" ? rule.perUnit : evalFormula(rule.perUnit, formulaVars(line));
+  } catch {
+    return null; // a formula that needs an attribute the line lacks → treat as no-match (review)
+  }
+  const trace: string[] = [`rule: ${rule.label ?? line.category}`];
+  const markup = pack.pricing.categoryMarkup[line.category] ?? 0;
+  if (markup) trace.push(`+${pct(markup)} ${line.category} handling`);
+  const tier = pack.pricing.tiers[customer.tier];
+  let discount = tier?.discount ?? 0;
+  if (tier?.discount) trace.push(`-${pct(tier.discount)} ${tier.label}`);
+  const qb = pack.pricing.qtyBreaks
+    .filter((b) => (b.category === "*" || b.category === line.category) && line.qty >= b.minQty)
+    .sort((a, b) => b.extraDiscount - a.extraDiscount)[0];
+  if (qb) {
+    discount += qb.extraDiscount;
+    trace.push(`-${pct(qb.extraDiscount)} qty >= ${qb.minQty}`);
+  }
+  const unitPrice = round(base * (1 + markup) * (1 - discount), pack.pricing.priceDecimals);
+  const lineTotal = round(unitPrice * line.qty, pack.pricing.priceDecimals);
+  return {
+    lineNo: line.lineNo, code: "(rule)", description: line.normalized, brand: "",
+    qty: line.qty, unit: line.unit, listPrice: base, discount, unitPrice, lineTotal,
+    leadDays: 0, priceTrace: trace, status: "matched",
+  };
+}
+
+export function quoteFromRules(
+  lines: NormalizedBomLine[],
+  company: Company,
+  customer: CustomerRef,
+  pack: RulePack,
+  quoteNo: string,
+  today: Date
+): { quotation: Quotation; matched: MatchedLine[] } {
+  const d = pack.pricing.priceDecimals;
+  const priced: QuoteLine[] = [];
+  const matched: MatchedLine[] = [];
+  for (const line of lines) {
+    const ql = priceLineFromRules(line, customer, pack);
+    if (ql) {
+      priced.push(ql);
+      matched.push({
+        line, status: "matched", confirmedByUser: false, alternatives: [],
+        chosen: { code: "(rule)", description: line.normalized, brand: "", confidence: 1, listPrice: ql.listPrice, unit: line.unit },
+      });
+    } else {
+      matched.push({ line, status: "unmatched", chosen: null, alternatives: [], confirmedByUser: false });
+    }
+  }
+
+  const subtotal = round(priced.reduce((s, l) => s + l.lineTotal, 0), d);
+  const listTotal = priced.reduce((s, l) => s + l.listPrice * l.qty, 0);
+  const taxes = pack.pricing.taxes.map((t) => ({ label: t.label, rate: t.rate, amount: round(subtotal * t.rate, d) }));
+  const grandTotal = round(subtotal + taxes.reduce((s, t) => s + t.amount, 0), d);
+  const valid = new Date(today);
+  valid.setDate(valid.getDate() + pack.pricing.validityDays);
+  const unresolved = matched.filter((m) => m.status !== "matched");
+  const totals: QuoteTotals = { subtotal, discountTotal: round(listTotal - subtotal, d), taxes, grandTotal, currency: company.currency };
+  const notes: string[] = [];
+  if (unresolved.length) notes.push(`${unresolved.length} line(s) had no matching price rule — needs review.`);
+
+  return {
+    quotation: {
+      quoteNo, date: today.toISOString().slice(0, 10), validUntil: valid.toISOString().slice(0, 10),
+      company, customer, lines: priced, unresolved, totals, notes,
+    },
+    matched,
+  };
+}

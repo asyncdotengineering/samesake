@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { writeFileSync } from "node:fs";
 import { loadEnv, company, rules } from "./config.ts";
 import { makeMatcher, setupCatalog } from "./catalog.ts";
+import { activePack } from "./rulepack/load.ts";
 import { runPipeline } from "./pipeline/index.ts";
 import { renderQuotationPdf } from "./pipeline/quote.ts";
 import type { CustomerRef } from "../../shared/types.ts";
@@ -19,9 +20,12 @@ const file = process.argv[2] ?? join(import.meta.dir, "../../data/sample-bom/bom
 const customer: CustomerRef = { id: "horizon", name: "Horizon Construction (Pvt) Ltd", tier: "contractor-a" };
 
 const matcher = makeMatcher(url);
-console.log("Loading catalog …");
-await setupCatalog(matcher);
-console.log(`Quoting ${file}\n  customer: ${customer.name} (${customer.tier})\n`);
+const pack = activePack();
+if (pack.pricing.strategy === "catalog") {
+  console.log("Loading catalog …");
+  await setupCatalog(matcher);
+}
+console.log(`Quoting ${file}  (${pack.pricing.strategy} pricing)\n  customer: ${customer.name} (${customer.tier})\n`);
 
 const { quotation, matched } = await runPipeline(matcher, file, customer, company(), rules());
 

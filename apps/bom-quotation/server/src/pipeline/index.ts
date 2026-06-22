@@ -5,6 +5,8 @@ import { extractLines } from "./extract.ts";
 import { normalizeLines } from "./normalize.ts";
 import { gateLine } from "./match.ts";
 import { assembleQuotation } from "./quote.ts";
+import { quoteFromRules } from "./price-rules.ts";
+import { activePack } from "../rulepack/load.ts";
 import type { Matcher } from "../catalog.ts";
 import type { Company, CustomerRef, PricingRules, Quotation, MatchedLine } from "../../../shared/types.ts";
 
@@ -29,9 +31,17 @@ export async function runPipeline(
   const doc = await parseDocument(filePath);
   const raw = await extractLines(doc);
   const normalized = await normalizeLines(raw);
-  // Match concurrently; each gateLine is an independent samesake query + spec gate.
-  const matched = await Promise.all(normalized.map((l) => gateLine(matcher, l, rules)));
   const now = new Date();
-  const quotation = assembleQuotation(matched, company, customer, rules, quoteNumber(now), now);
+  const quoteNo = quoteNumber(now);
+
+  const pack = activePack();
+  if (pack.pricing.strategy === "prefix-rules") {
+    // Catalog-less: price each line straight from attribute rules, no samesake match.
+    return quoteFromRules(normalized, company, customer, pack, quoteNo, now);
+  }
+
+  // Catalog strategy: resolve each line to a catalog part, then price.
+  const matched = await Promise.all(normalized.map((l) => gateLine(matcher, l, rules)));
+  const quotation = assembleQuotation(matched, company, customer, rules, quoteNo, now);
   return { quotation, matched };
 }

@@ -21,3 +21,9 @@ export function defaultPack(): RulePack {
   if (!cached) cached = loadPackFromYaml("electrical-mep");
   return cached;
 }
+
+/** The pack the pipeline runs with: BOM_RULEPACK names a bundled pack, else the default. */
+export function activePack(): RulePack {
+  const name = process.env.BOM_RULEPACK;
+  return name ? loadPackFromYaml(name) : defaultPack();
+}
