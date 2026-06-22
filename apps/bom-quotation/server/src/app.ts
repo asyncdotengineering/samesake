@@ -6,7 +6,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadEnv, company, rules, catalog, PROJECT, SCOPE, ENTITY_KIND } from "./config.ts";
-import { makeMatcher, setupCatalog, matchLine } from "./catalog.ts";
+import { makeMatcher, setupCatalog, matchLine, buildCodeIndex, entityIdForCode } from "./catalog.ts";
 import { runPipeline } from "./pipeline/index.ts";
 import { assembleQuotation, renderQuotationPdf } from "./pipeline/quote.ts";
 import { priceLine } from "./pipeline/price.ts";
@@ -21,7 +21,8 @@ if (!url || !process.env.GEMINI_API_KEY) {
 
 const matcher = makeMatcher(url);
 console.log("Loading catalog …");
-await setupCatalog(matcher);
+const { schema } = await setupCatalog(matcher);
+await buildCodeIndex(url, schema);
 console.log("✓ catalog ready");
 
 const app = new Hono();
@@ -57,12 +58,13 @@ app.post("/api/match", async (c) => {
 // Persist a human decision so future matches learn from it.
 app.post("/api/confirm", async (c) => {
   const { queryText, chosenCode } = await c.req.json<{ queryText: string; chosenCode: string | null }>();
-  if (chosenCode) {
-    await matcher.confirm({ project: PROJECT, kind: ENTITY_KIND, queryText, scope: SCOPE, chosenEntityId: chosenCode });
-  } else {
-    await matcher.decline({ project: PROJECT, kind: ENTITY_KIND, queryText, scope: SCOPE, declinedEntityId: "" });
+  const entityId = chosenCode ? entityIdForCode(chosenCode) : null;
+  if (entityId) {
+    await matcher.confirm({ project: PROJECT, kind: ENTITY_KIND, queryText, scope: SCOPE, chosenEntityId: entityId });
+    return c.json({ ok: true, confirmed: chosenCode });
   }
-  return c.json({ ok: true });
+  // null (declined all) or unknown code — nothing to learn; succeed as a no-op.
+  return c.json({ ok: true, confirmed: null });
 });
 
 // Re-assemble a quote from (possibly user-edited) matched lines and stream a PDF.

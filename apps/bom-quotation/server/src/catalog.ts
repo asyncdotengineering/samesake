@@ -2,8 +2,9 @@
 // entity resolution: cosine over the description embedding + pg_trgm over the
 // normalized name (codes / part numbers / prefix-suffix). This is the piece that
 // makes keyword-ish matching robust where plain FTS is weak.
+import { sql } from "drizzle-orm";
 import { entity, fields, Scorers } from "@samesake/core";
-import { createMatcher } from "@samesake/server";
+import { createMatcher, createDbFromUrl } from "@samesake/server";
 import { geminiEmbed, geminiGenerate, EMB_MODEL, EMB_DIM } from "./gemini.ts";
 import { catalog, PROJECT, SCOPE, ENTITY_KIND } from "./config.ts";
 import type { CatalogPart, MatchCandidate } from "../../shared/types.ts";
@@ -77,6 +78,25 @@ const byDescription = new Map<string, CatalogPart>();
 function partFromCandidateName(name: string): CatalogPart | undefined {
   if (byDescription.size === 0) for (const p of catalog()) byDescription.set(p.description, p);
   return byDescription.get(name);
+}
+
+// samesake's confirm() keys on the internal entity id (a bigint), not our part
+// code — so map code -> entity id once after setup, for the /api/confirm route.
+const codeToEntityId = new Map<string, string>();
+export async function buildCodeIndex(databaseUrl: string, schema: string): Promise<void> {
+  const { db, close } = createDbFromUrl(databaseUrl);
+  try {
+    const rows = await db.execute<{ external_id: string; id: string }>(
+      sql.raw(`SELECT external_id, id::text AS id FROM "${schema}".entity_${ENTITY_KIND}`)
+    );
+    codeToEntityId.clear();
+    for (const r of rows) if (r.external_id) codeToEntityId.set(r.external_id, String(r.id));
+  } finally {
+    await close();
+  }
+}
+export function entityIdForCode(code: string): string | undefined {
+  return codeToEntityId.get(code);
 }
 
 /** Match one normalized BOM line; returns catalog candidates with confidence. */
