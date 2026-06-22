@@ -29,6 +29,8 @@ export interface StorageAdapter {
   client(context?: string): PgUnsafe;
   /** Execute a Drizzle `sql` template; returns the driver result (rows for SELECTs). */
   exec<T = unknown>(query: SQL): Promise<T>;
+  /** Run `fn` inside a single DB transaction — everything commits together or rolls back on throw. */
+  transaction<T>(fn: (tx: PostgresJsDatabase) => Promise<T>): Promise<T>;
   /** Close the connection. No-op when the consumer owns the handle. */
   close(): Promise<void>;
   /** Facet aggregation over the filtered candidate set. */
@@ -63,6 +65,10 @@ export class PostgresAdapter implements StorageAdapter {
 
   client(context = "query"): PgUnsafe {
     return getPgClient(this.handle.db, context);
+  }
+
+  transaction<T>(fn: (tx: PostgresJsDatabase) => Promise<T>): Promise<T> {
+    return this.handle.db.transaction((tx) => fn(tx as unknown as PostgresJsDatabase));
   }
 
   async exec<T = unknown>(query: SQL): Promise<T> {

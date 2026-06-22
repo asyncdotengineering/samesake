@@ -172,7 +172,7 @@ export function makeProjectsService(
       config.entities ?? []
     );
 
-    const collectionMigrations = [];
+    const collectionMigrations: ReturnType<typeof planCollectionMigration>[] = [];
     const createStmts: string[] = [];
 
     for (const c of config.collections ?? []) {
@@ -215,48 +215,50 @@ export function makeProjectsService(
       ),
     ];
 
-    for (const stmt of statements) {
-      try {
-        await db.execute(sql.raw(stmt));
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        throw new Error(`apply failed on stmt:\n${stmt}\n\nerror: ${msg}`);
-      }
-    }
-
-    for (const m of collectionMigrations) {
-      if (!m.reindex) continue;
-      const table = collectionTableName(projectSchema, m.collection);
-      await ctx.storage.client("projects migration").unsafe(
-        `UPDATE ${table} SET indexed_at = NULL WHERE indexed_at IS NOT NULL`
-      );
-    }
-
     const configHash = createHash("sha1").update(JSON.stringify(config)).digest("hex");
     const persisted = serialiseConfig(config);
 
-    for (const c of config.collections ?? []) {
-      if (c.name) liveCollections.set(collectionKey(projectSlug, c.name), c);
-    }
+    // Atomic apply: the DDL, the reindex reset, and the config record commit together —
+    // a mid-apply failure rolls the whole thing back (no partially-applied project schema).
+    await ctx.storage.transaction(async (tx) => {
+      for (const stmt of statements) {
+        try {
+          await tx.execute(sql.raw(stmt));
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          throw new Error(`apply failed on stmt:\n${stmt}\n\nerror: ${msg}`);
+        }
+      }
 
-    await db
-      .insert(projects)
-      .values({
-        slug: projectSlug,
-        schemaName: projectSchema,
-        configHash,
-        configJson: persisted as unknown as unknown[],
-      })
-      .onConflictDoUpdate({
-        target: projects.slug,
-        set: {
+      for (const m of collectionMigrations) {
+        if (!m.reindex) continue;
+        const table = collectionTableName(projectSchema, m.collection);
+        await tx.execute(sql.raw(`UPDATE ${table} SET indexed_at = NULL WHERE indexed_at IS NOT NULL`));
+      }
+
+      await tx
+        .insert(projects)
+        .values({
+          slug: projectSlug,
           schemaName: projectSchema,
           configHash,
           configJson: persisted as unknown as unknown[],
-          updatedAt: sql`now()`,
-        },
-      });
+        })
+        .onConflictDoUpdate({
+          target: projects.slug,
+          set: {
+            schemaName: projectSchema,
+            configHash,
+            configJson: persisted as unknown as unknown[],
+            updatedAt: sql`now()`,
+          },
+        });
+    });
 
+    // Caches update only after the transaction commits.
+    for (const c of config.collections ?? []) {
+      if (c.name) liveCollections.set(collectionKey(projectSlug, c.name), c);
+    }
     projectCache.delete(projectSlug); // config changed; force next read from DB
 
     return {
