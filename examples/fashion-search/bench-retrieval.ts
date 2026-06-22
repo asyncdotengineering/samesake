@@ -9,7 +9,7 @@
  *   bun --env-file=../../.env bench-retrieval.ts                  # soft-OR (AND-first)
  *   SAMESAKE_FTS_STRICT=1 bun --env-file=../../.env bench-retrieval.ts   # strict-AND baseline
  */
-import { collection, f, Channels } from "@samesake/core";
+import { collection, f, Channels, gates, pipeline } from "@samesake/core";
 import { createMatcher } from "@samesake/server";
 import { geminiEmbed, geminiGenerate } from "./gemini.ts";
 
@@ -20,7 +20,15 @@ type Query = { name: string; q: string; kind: string; rel: Record<string, number
 function coll(name: string) {
   return collection(name, {
     fields: { title: f.text({ searchable: true }), description: f.text() },
-    embeddings: { doc: { source: "$title. $description", model: "gemini-embedding-2", dim: 1536, taskType: "RETRIEVAL_DOCUMENT" } },
+    enrich: pipeline(),
+    indexing: {
+      surfaces: {
+        embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => `${data.title}. ${data.description}`.trim() },
+        fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+      },
+      gate: gates.always,
+    },
+    embeddings: { doc: { model: "gemini-embedding-2", dim: 1536, taskType: "RETRIEVAL_DOCUMENT" } },
     search: {
       channels: [Channels.fts({ fields: ["title"], weight: 1 }), Channels.cosine({ embedding: "doc", weight: 1 })],
       combiner: "rrf",
@@ -104,6 +112,7 @@ const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.l
 async function runDomain(matcher: ReturnType<typeof createMatcher>, name: string, docs: Doc[], queries: Query[]): Promise<Record<string, { ndcg: number; recall: number }>> {
   await matcher.apply(SLUG, { entities: [], collections: [coll(name)] });
   await matcher.pushDocuments(SLUG, name, docs.map((d) => ({ id: d.id, data: { title: d.title, description: d.description } })));
+  while ((await matcher.enrich(SLUG, name, { limit: docs.length })).enriched > 0) {}
   while ((await matcher.index(SLUG, name, { limit: 100 })).indexed > 0) {}
 
   console.log(`\n##### DOMAIN: ${name}  (FTS=${process.env.SAMESAKE_FTS_STRICT === "1" ? "strict-AND" : "soft-OR"}) #####`);
