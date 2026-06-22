@@ -41,7 +41,7 @@ export async function runPipeline(
   }
 
   // Catalog strategy: resolve each line to a catalog part, then price.
-  const matched = await Promise.all(normalized.map((l) => gateLine(matcher, l, rules)));
+  const matched = await Promise.all(normalized.map((l) => gateLine(matcher, l, pack)));
   const quotation = assembleQuotation(matched, company, customer, rules, quoteNo, now);
   return { quotation, matched };
 }

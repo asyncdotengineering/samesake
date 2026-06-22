@@ -18,7 +18,7 @@ catalog mode must stay 15/16 + grand total LKR 284,981.21 on the sample BOM.
 12. docs.
 
 ## Doing
-- C1: RulePack schema + default pack.
+- C4 (next): DB persistence (rule_packs table) + GET/PUT API — the "saved in db" + editable piece.
 
 ## Done
 - (none yet)

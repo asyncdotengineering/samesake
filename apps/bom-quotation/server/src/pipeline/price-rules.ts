@@ -3,6 +3,7 @@
 // no samesake match. First matching rule wins; perUnit is a number or a safe formula.
 // Self-contained (does not touch the catalog path), so the catalog regression is unaffected.
 import { evalFormula } from "../rulepack/formula.ts";
+import { canon } from "../rulepack/canon.ts";
 import type { RulePack, PrefixRuleT } from "../rulepack/schema.ts";
 import type {
   NormalizedBomLine, QuoteLine, MatchedLine, Quotation, QuoteTotals, Company, CustomerRef,
@@ -21,17 +22,19 @@ function formulaVars(line: NormalizedBomLine): Record<string, number> {
   return v;
 }
 
-function matchesWhen(line: NormalizedBomLine, when: PrefixRuleT["when"]): boolean {
+function matchesWhen(line: NormalizedBomLine, when: PrefixRuleT["when"], pack: RulePack): boolean {
   for (const [k, cond] of Object.entries(when)) {
-    const actual = k === "category" ? line.category : (line.specs as Record<string, unknown>)[k];
-    const ok = Array.isArray(cond) ? cond.map(String).includes(String(actual)) : String(cond) === String(actual);
+    const actual = canon(pack, k, k === "category" ? line.category : (line.specs as Record<string, unknown>)[k]);
+    const ok = Array.isArray(cond)
+      ? cond.map((c) => canon(pack, k, c)).includes(actual)
+      : canon(pack, k, cond) === actual;
     if (!ok) return false;
   }
   return true;
 }
 
 export function priceLineFromRules(line: NormalizedBomLine, customer: CustomerRef, pack: RulePack): QuoteLine | null {
-  const rule = pack.pricing.rules.find((r) => matchesWhen(line, r.when));
+  const rule = pack.pricing.rules.find((r) => matchesWhen(line, r.when, pack));
   if (!rule) return null;
   let base: number;
   try {
