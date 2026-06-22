@@ -109,11 +109,7 @@ export function makeRevalidateImagesService(ctx: MatcherCtx, projectsService: Pr
     collectionName: string,
     opts?: { limit?: number }
   ): Promise<RevalidateImagesResult> {
-    return ctx.jobs.run(
-      `revalidate-images:${projectSlug}:${collectionName}`,
-      { projectSlug, collectionName, ...opts },
-      () => runRevalidateImages(projectSlug, collectionName, opts)
-    );
+    return runRevalidateImages(projectSlug, collectionName, opts);
   }
 
   return { revalidateImages };

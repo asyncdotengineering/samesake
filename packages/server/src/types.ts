@@ -128,10 +128,6 @@ export interface GroundImageResult {
 }
 export type GroundImageFn = (req: GroundImageRequest) => Promise<GroundImageResult | null>;
 
-export interface JobRunner {
-  run<T>(name: string, payload: unknown, fn: () => Promise<T>): Promise<T>;
-}
-
 export interface MigrationPlan {
   additions: string[];
   reindexRequired: string[];
@@ -260,8 +256,6 @@ export interface MatcherConfig {
    */
   groundImage?: GroundImageFn;
 
-  jobs?: JobRunner;
-
   logger?: LoggerFn;
 
   policy?: PolicyConfig;
@@ -288,7 +282,6 @@ export interface MatcherCtx {
   generateConfigured: boolean;
   rerank?: RerankFn;
   groundImage?: GroundImageFn;
-  jobs: JobRunner;
   observability: Observability;
   policy: Required<PolicyConfig>;
   systemTables: ReturnType<typeof makeSystemTables>;

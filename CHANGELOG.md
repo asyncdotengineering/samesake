@@ -14,7 +14,7 @@ All notable changes to samesake. Format roughly follows [Keep a Changelog](https
 
 ### Removed
 
-- **`@samesake/jobs-pgboss`** (breaking) — the optional pg-boss `JobRunner` adapter is removed. It held job closures in an in-memory map and only enqueued an id, so a separate worker process (or any restart) silently dropped jobs — it never worked cross-process, defeating the point of a queue. `JobRunner` is a one-method BYO interface (like `embed`/`generate`): implement it against your own queue/worker. Cross-process durability needs a handler-registry redesign of the contract (resolve named handlers from the payload instead of a closure) — tracked in [#44](https://github.com/asyncdotengineering/samesake/issues/44). `inProcessRunner` remains the default.
+- **Background-jobs seam removed** (breaking) — both `@samesake/jobs-pgboss` *and* the internal `JobRunner` (`MatcherConfig.jobs`, `MatcherCtx.jobs`, `inProcessRunner`) are gone. The pg-boss adapter held job closures in an in-memory map and silently dropped anything cross-process (or post-restart); the `JobRunner` itself was a no-op pass-through (the default just ran the work inline), used by nobody, whose only real purpose — cross-process offload — can't work with a closure-based contract anyway. `enrich`/`index`/`ingest` now run inline and resolve when done; to run them durably, wrap the calls in your platform's durable step (Inngest/Upstash/Cloudflare/Vercel — see the pipeline guides). A samesake-internal cross-process runner would need a handler-registry contract redesign — deferred to [#66](https://github.com/asyncdotengineering/samesake/issues/66).
 
 ### Fixed
 

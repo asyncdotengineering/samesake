@@ -92,11 +92,7 @@ export function makeIngestService(ctx: MatcherCtx, projectsService: ProjectsServ
     collectionName: string,
     opts?: { connectors?: PullConnector[] }
   ): Promise<IngestResult> {
-    return ctx.jobs.run(
-      `ingest:${projectSlug}:${collectionName}`,
-      { projectSlug, collectionName },
-      () => runIngestCollection(projectSlug, collectionName, opts)
-    );
+    return runIngestCollection(projectSlug, collectionName, opts);
   }
 
   async function runIngestCollection(

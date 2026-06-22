@@ -239,11 +239,7 @@ export function makeEmbedIndexService(
     collectionName: string,
     opts?: { limit?: number } & ErrorRateOpts
   ): Promise<{ indexed: number }> {
-    return ctx.jobs.run(
-      `index:${projectSlug}:${collectionName}`,
-      { projectSlug, collectionName, limit: opts?.limit },
-      () => runIndexCollection(projectSlug, collectionName, opts)
-    );
+    return runIndexCollection(projectSlug, collectionName, opts);
   }
 
   async function runIndexCollection(

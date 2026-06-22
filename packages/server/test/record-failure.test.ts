@@ -11,7 +11,6 @@ import { makeProjectsService } from "../src/core/projects.ts";
 import { makeSchemaGen } from "../src/core/schema-gen.ts";
 import { createObservability } from "../src/core/observability.ts";
 import { resolvePolicy } from "../src/core/policy.ts";
-import { inProcessRunner } from "../src/jobs/in-process.ts";
 import { makeSystemTables } from "../src/db/schema/system.ts";
 import { runSystemMigrations } from "../src/db/migrations.ts";
 import { collectionTableName } from "../src/core/db-utils.ts";
@@ -56,7 +55,6 @@ describeIf("test:record-failure-backoff (REQ-16)", () => {
       parse: async () => ({}),
       generate: async () => ({}),
       generateConfigured: false,
-      jobs: inProcessRunner,
       observability: createObservability(),
       policy: resolvePolicy({}),
       systemTables: makeSystemTables("public"),

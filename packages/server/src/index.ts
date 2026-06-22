@@ -30,7 +30,6 @@ export type {
   GroundImageFn,
   GroundImageRequest,
   GroundImageResult,
-  JobRunner,
   MigrationPlan,
   ApplyOptions,
   LoggerFn,
@@ -77,7 +76,6 @@ export {
   agentFindProductsResponseSchema,
 } from "./core/agent-tools.ts";
 export type { FashionCatalogSyncEvent } from "./core/fashion-search.ts";
-export { inProcessRunner } from "./jobs/in-process.ts";
 
 // Parse schema + default prompt — exported so consumers can:
 //   1. Type their parse function's return value against ParsedProduct

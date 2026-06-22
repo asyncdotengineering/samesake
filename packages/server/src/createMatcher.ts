@@ -51,7 +51,6 @@ import { makeExplainService } from "./core/explain.ts";
 import { makeVariantsService } from "./core/variants.ts";
 import { makeUpsertService } from "./core/upsert.ts";
 import { buildApp } from "./app-builder.ts";
-import { inProcessRunner } from "./jobs/in-process.ts";
 import { createObservability } from "./core/observability.ts";
 import type { MetricsSnapshot } from "./core/observability.ts";
 import { resolvePolicy } from "./core/policy.ts";
@@ -218,7 +217,6 @@ export function createMatcher(config: MatcherConfig): Matcher {
     generateConfigured: typeof config.generate === "function",
     rerank: config.rerank,
     groundImage: config.groundImage,
-    jobs: config.jobs ?? inProcessRunner,
     observability,
     policy: resolvePolicy(config.policy),
     systemTables: makeSystemTables(schema),

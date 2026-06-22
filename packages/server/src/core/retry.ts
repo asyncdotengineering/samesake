@@ -26,11 +26,7 @@ export function makeRetryService(
     collectionName: string,
     opts?: RetryFailedOpts
   ): Promise<{ retried: number; dead: number }> {
-    return ctx.jobs.run(
-      `retry:${projectSlug}:${collectionName}`,
-      { projectSlug, collectionName, ...opts },
-      () => runRetryFailed(projectSlug, collectionName, opts)
-    );
+    return runRetryFailed(projectSlug, collectionName, opts);
   }
 
   async function runRetryFailed(

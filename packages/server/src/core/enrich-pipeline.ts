@@ -273,11 +273,7 @@ export function makeEnrichPipelineService(
     collectionName: string,
     opts?: { concurrency?: number; limit?: number } & ErrorRateOpts
   ): Promise<{ enriched: number; skipped: number; failed: number }> {
-    return ctx.jobs.run(
-      `enrich:${projectSlug}:${collectionName}`,
-      { projectSlug, collectionName, ...opts },
-      () => runEnrichCollection(projectSlug, collectionName, opts)
-    );
+    return runEnrichCollection(projectSlug, collectionName, opts);
   }
 
   async function runEnrichCollection(
