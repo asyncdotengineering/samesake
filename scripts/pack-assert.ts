@@ -19,7 +19,6 @@ const packages: { dir: string; requireTypes: boolean }[] = [
   { dir: "packages/sdk", requireTypes: true },
   { dir: "packages/server", requireTypes: true },
   { dir: "packages/cli", requireTypes: false },
-  { dir: "packages/jobs-pgboss", requireTypes: true },
 ];
 
 let failed = false;
@@ -129,7 +128,7 @@ try {
     );
     writeFileSync(
       join(installDir, "smoke.mjs"),
-      `import "@samesake/core";\nimport "@samesake/server";\nimport "@samesake/jobs-pgboss";\n`
+      `import "@samesake/core";\nimport "@samesake/server";\n`
     );
     execSync("npm install --ignore-scripts", { cwd: installDir, stdio: "inherit" });
     execSync("node smoke.mjs", { cwd: installDir, stdio: "inherit" });

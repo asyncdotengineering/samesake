@@ -26,7 +26,7 @@ export function makeUpsertService(
   parseService: ParseService,
   schemaGen: SchemaGen
 ) {
-  const { db } = ctx;
+  const db = ctx.storage.db;
   const SYS = ctx.schema;
 
   async function upsertOne(
@@ -84,9 +84,10 @@ export function makeUpsertService(
       });
     }
 
+    const mergedData = parsed ? { ...item.data, ...parsed } : item.data;
+
     const embedValues: Record<string, number[]> = {};
     if (uctx.entity.embeddings) {
-      const mergedData = parsed ? { ...item.data, ...parsed } : item.data;
       for (const [name, def] of Object.entries(uctx.entity.embeddings)) {
         const sourceText = resolveSource(def.source, mergedData);
         if (sourceText && sourceText.trim()) {
@@ -104,9 +105,10 @@ export function makeUpsertService(
 
     const phonValues: Record<string, string> = {};
     if (uctx.entity.phonetic) {
-      for (const [name] of Object.entries(uctx.entity.phonetic)) {
+      for (const [name, def] of Object.entries(uctx.entity.phonetic)) {
+        const text = resolveSource(def.source, mergedData);
         const r = await db.execute<{ h: string }>(
-          sql`SELECT ${sql.identifier(SYS)}.samesake_phonetic(${nameValue}) AS h`
+          sql`SELECT ${sql.identifier(SYS)}.samesake_phonetic(${text}) AS h`
         );
         if (r[0]) phonValues[name] = r[0].h;
       }

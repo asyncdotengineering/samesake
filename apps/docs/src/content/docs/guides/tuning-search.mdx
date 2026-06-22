@@ -156,22 +156,20 @@ need both clean attributes **and** a catalog big enough to disambiguate.
 
 ## Running enrichment in the background
 
-`enrich`, `index`, and `ingest` route their work through a `JobRunner` (`ctx.jobs.run`). The
-default runs inline; pass `jobs: createPgBossRunner({ connectionString })` from
-[`@samesake/jobs-pgboss`](https://www.npmjs.com/package/@samesake/jobs-pgboss) to back them with a
-pg-boss queue for durability and concurrency control:
+`enrich`, `index`, and `ingest` do their work inline and resolve when it's finished — there is no
+internal job queue or runner. To run them **durably or off the request path**, that's the caller's
+job: wrap each call in your platform's durable step, or call them from your own concurrency-bounded
+loop.
 
 ```ts
-import { createPgBossRunner } from "@samesake/jobs-pgboss";
-const matcher = createMatcher({ /* ... */, jobs: await createPgBossRunner({ connectionString: process.env.DATABASE_URL! }) });
+// inside an Inngest step — the platform owns durability, retries, and scheduling:
+await step.run("enrich", () => matcher.enrich(project, "products"));
+await step.run("index", () => matcher.index(project, "products"));
 ```
 
-<Aside type="note">
-The current pg-boss adapter runs the job function in the **enqueuing process** (it holds the
-closure in memory), so it provides durable scheduling + concurrency, not yet cross-process worker
-dynos. For a separate-worker topology the job payload needs to be self-describing so a worker can
-reconstruct the work. A worked example is [tracked upstream](https://github.com/asyncdotengineering/samesake/issues/44).
-</Aside>
+See the [pipeline guides](/guides/enrich-pipeline/) for Inngest / Upstash / Cloudflare Workflows /
+Vercel Workflows recipes. To bound how many run at once in a single process, limit at the call site
+(a `p-limit` or a worker pool) — samesake imposes no runner of its own.
 
 ## The loop, in one line
 

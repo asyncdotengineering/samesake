@@ -19,8 +19,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "paths": {
-      "@/*": ["./src/*"],
-      "@samesake/jobs-pgboss": ["./packages/jobs-pgboss/src/index.ts"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["packages/**/*"],

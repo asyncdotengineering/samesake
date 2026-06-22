@@ -1,0 +1,87 @@
+---
+title: From an idea to a working agent
+description: You have an idea for something that searches your data and answers questions about it. This is the plain-language walk-through of how to think about building it with Mastra and samesake — the concepts, in order, before any code.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+So you've got an idea. *"I want a thing where someone can ask my catalog questions in plain English and get good answers."* A shopping helper. A support bot over your docs. An internal assistant that knows your inventory. Whatever it is, it has the same shape: **someone asks, something finds, something answers.**
+
+Let's build up what that actually takes — slowly, no jargon you haven't met yet — and by the end you'll know exactly which piece does what. Then you can jump to the [build guide](/guides/mastra-ecommerce-assistant/) and write the real thing.
+
+## What is an "agent," really?
+
+Strip away the hype and an agent is just this: **a language model that's allowed to call functions.**
+
+That's it. Normally an LLM can only produce text. An agent is the same LLM, except you've handed it a little menu of functions — "here's `searchProducts`, here's `averagePrice`" — and you've told it: *when answering, you may call these.* The model reads the user's question, decides "I should call `searchProducts` with `query: vintage jacket, max_price: 200`", you run that function, you hand the result back, and it writes the final answer.
+
+The model isn't magic. It's a planner that's good at picking the right function and the right arguments. **Everything interesting your agent can do, it does through the functions you give it.** Give it weak functions and it's a weak agent. Give it one good function that finds the right things, and it feels brilliant.
+
+So the real question isn't "how smart is the model." It's **"how good are the functions?"**
+
+## The hard part is finding things
+
+Say your one function is "search the catalog." How hard can that be? Harder than it looks, because people don't search the way databases work.
+
+Someone types *"comfy something for a beach wedding under 5k."* There's no column called `comfy`. There's no `beach_wedding` flag. But "under 5k" is a hard rule you must not break — show them a 9k dress and you've failed. So a good search has to do two different things at once:
+
+- **Understand the fuzzy part** — "comfy", "beach wedding vibe" — which is about *meaning*, not exact words.
+- **Obey the strict part** — "under 5k", "in stock", "size M" — which must be *exact*, every time.
+
+Most tools are good at one or the other. Keyword search nails the exact stuff and misses the meaning. Pure vector/"semantic" search gets the vibe but treats "under 5k" as a gentle suggestion. You want both, working together, with the strict rules staying strict.
+
+**That combined search is the function your agent leans on. Getting it right is most of the work — and it's the part you don't want to hand-build.**
+
+## Where samesake fits
+
+samesake is that search function, done properly, so you don't build it from scratch.
+
+You describe your data in TypeScript — *"here are my products, these fields are searchable, price is a number you can filter and people will say budget words about it, here's an image"* — and samesake turns that into a Postgres-backed search layer. One `search()` call blends the fuzzy understanding (vector embeddings) with the strict rules (real filters) and hands back ranked results.
+
+The mental shortcut: **samesake is the part that finds the right things; you just declare what your things are.**
+
+<Aside type="note">
+Under the hood it's full-text search + vector similarity combined and re-ranked, with your hard filters applied as actual SQL `WHERE` clauses. You don't have to think about any of that to use it — but it's why "under 5k" stays honest.
+</Aside>
+
+## Where Mastra fits
+
+Mastra is the part that makes the agent an agent.
+
+It's the framework that holds the language model, lets you define your functions (it calls them **tools**), and runs the loop: read the question → pick a tool → call it → read the result → maybe pick another → write the answer. It also remembers the conversation, so *"same budget as before"* actually works.
+
+You write a tool with three things: an **id** (its name), a **description** (so the model knows when to reach for it), and an **execute** function (what it actually does — usually "call samesake"). You hand the tools to a Mastra `Agent`, and you're done. The model figures out the rest at runtime.
+
+The mental shortcut: **Mastra is the part that decides; samesake is the part that finds.**
+
+## A tiny but important lesson about tools
+
+The model takes your tool descriptions *very* literally, and it's a little too eager. If you give a tool an optional `category` field, it'll often fill it in even when nobody asked — and quietly answer the wrong question. We hit exactly this: an "average price for this brand" tool kept restricting itself to one category on its own.
+
+The lesson is worth carrying into your own build: **shape the tool so the wrong move isn't possible, instead of writing instructions begging the model to behave.** If a field gets abused, remove the field. Make a second, narrower tool. The model can only misuse what you give it.
+
+## And what is MCP?
+
+You'll see "MCP" everywhere. Here's the whole idea: **it's a standard plug for your tools.**
+
+Once your tools exist, you might want to use them from more than your own app — from Claude Desktop, from Cursor, from someone else's assistant. Instead of rebuilding the integration for each, you wrap your tools in an **MCP server**. Now anything that "speaks MCP" can plug in and use them. You build the capability once; everyone borrows it.
+
+It's optional. You can ship an agent with no MCP at all. But it's a few lines, and it turns "my tools" into "tools anything can use." The mental shortcut: **MCP is the universal plug so other apps can use what you built.**
+
+## Putting the whole shape together
+
+Read this top to bottom and you've got the architecture of basically any "ask my data" product:
+
+1. **You have data** — a catalog, docs, records.
+2. **samesake makes it findable** — you declare it; it compiles to a search layer that handles fuzzy meaning *and* strict rules.
+3. **You write tools** — small functions, mostly "call samesake," each with a clear name and description.
+4. **Mastra gives a model those tools** — now it's an agent that plans, calls, and answers, with memory.
+5. **MCP (optional) exposes the tools** — so other apps can use them too.
+
+Someone asks → the agent finds (via your tools → samesake) → the agent answers. The same five pieces, whether you're building a shopping helper or an internal knowledge bot.
+
+## Now go build it
+
+That's the whole mental model. When you want the real code — collections, tools, the agent, the MCP server, seeding data, and the gotchas we hit — work through the **[Shopping agent with Mastra + samesake](/guides/mastra-ecommerce-assistant/)** guide. It's the same five pieces, made concrete.
+
+A good way to check you've actually got it: before you open the build guide, try to say out loud what each of the five pieces would be *for your own idea*. What's your data? What would `search()` need to understand vs. obey? What tools would your agent need? If you can answer that, the code is just typing.

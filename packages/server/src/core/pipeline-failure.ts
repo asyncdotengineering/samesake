@@ -1,5 +1,4 @@
 import type { MatcherCtx } from "../types.ts";
-import { getPgClient } from "./db-utils.ts";
 
 export const DEFAULT_MAX_ATTEMPTS = 5;
 export const DEFAULT_MAX_ERROR_RATE = 0.5;
@@ -34,14 +33,5 @@ export async function recordPipelineFailure(
   error: unknown
 ): Promise<void> {
   const msg = (error instanceof Error ? error.message : String(error)).slice(0, 500);
-  await getPgClient(ctx.db, "pipeline-failure").unsafe(
-    `UPDATE ${table}
-     SET attempt_count = attempt_count + 1,
-         last_error = $1,
-         pipeline_status = 'failed',
-         next_attempt_at = now() + make_interval(secs => LEAST(3600, power(2, LEAST(attempt_count, 12))::int)),
-         updated_at = now()
-     WHERE id = $2`,
-    [msg, rowId]
-  );
+  await ctx.storage.recordFailure(table, rowId, msg);
 }

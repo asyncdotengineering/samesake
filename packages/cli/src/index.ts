@@ -5,8 +5,15 @@
 // step BEFORE the matcher service is up.
 // Shebang is added by tsup at build time (banner: { js: "#!/usr/bin/env node" })
 // so it lives only in dist/ — not duplicated when running from source.
-import { createMatcher, prepareMigrations } from "@samesake/server";
+import { createMatcher, prepareMigrations, indicPhonetic } from "@samesake/server";
 import type { EmbedFn } from "@samesake/server";
+
+/** Built-in phonetic provider when a config declares phonetic entities (dev/serve convenience). */
+function phoneticOpt(project: { entities?: ReadonlyArray<{ phonetic?: Record<string, unknown> }> }): { phonetic?: typeof indicPhonetic } {
+  return (project.entities ?? []).some((e) => e.phonetic && Object.keys(e.phonetic).length > 0)
+    ? { phonetic: indicPhonetic }
+    : {};
+}
 import type { CollectionDef, EntityDef, ProjectConfig } from "@samesake/core";
 import { loadProjectConfig } from "./config-loader.ts";
 import { readFileSync, existsSync, writeFileSync, watch } from "node:fs";
@@ -686,15 +693,16 @@ async function cmdDev(flags: Record<string, string>): Promise<void> {
 
   const configAbs = resolve(configPath);
   const embed = await resolveDevEmbed(configPath);
+  const config = await loadProjectConfig(configPath);
   const matcher = createMatcher({
     databaseUrl,
     apiKey: flags["api-key"] ?? KEY,
     embed,
     migrate: "eager",
+    ...phoneticOpt(config.project),
   });
 
   await matcher.migrate();
-  const config = await loadProjectConfig(configPath);
   await applyDevConfig(matcher, project, config.project, "boot");
 
   const server = Bun.serve({
@@ -799,6 +807,7 @@ async function cmdMigrate(flags: Record<string, string>): Promise<void> {
       apiKey: flags["api-key"] ?? KEY,
       migrate: "eager",
       embed: async () => [0],
+      ...phoneticOpt(config.project),
     });
     await matcher.migrate();
     const r = await matcher.apply(project!, config.project, {

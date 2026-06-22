@@ -4,13 +4,13 @@ import { sql } from "drizzle-orm";
 import { collection, f, Channels, gates } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
+import { PostgresAdapter } from "../src/db/storage-adapter.ts";
 import { makeEnrichPipelineService } from "../src/core/enrich-pipeline.ts";
 import { makeProjectsService } from "../src/core/projects.ts";
 import { makeSchemaGen } from "../src/core/schema-gen.ts";
 import { makeCollectionsSchemaGen } from "../src/core/collections-schema-gen.ts";
 import { createObservability } from "../src/core/observability.ts";
 import { resolvePolicy } from "../src/core/policy.ts";
-import { inProcessRunner } from "../src/jobs/in-process.ts";
 import { makeSystemTables } from "../src/db/schema/system.ts";
 import { runSystemMigrations } from "../src/db/migrations.ts";
 import { collectionTableName } from "../src/core/db-utils.ts";
@@ -46,6 +46,7 @@ describeIf("test:retry-failed (REQ-17)", () => {
     const schemaGen = makeSchemaGen({ sys: "public", projectPrefix: "project_" });
     const ctx = {
       db: built.db,
+      storage: new PostgresAdapter(built),
       schema: "public",
       projectPrefix: "project_",
       apiKey: "test-api-key-12345",
@@ -53,7 +54,6 @@ describeIf("test:retry-failed (REQ-17)", () => {
       parse: async () => ({}),
       generate: async () => ({}),
       generateConfigured: false,
-      jobs: inProcessRunner,
       observability: createObservability(),
       policy: resolvePolicy({}),
       systemTables: makeSystemTables("public"),

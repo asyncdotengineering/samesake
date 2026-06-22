@@ -4,7 +4,7 @@ Honest, reproducible quality numbers for the samesake search framework. No marke
 
 ## Unbiased multi-domain benchmark — the standing gate for ranking changes
 
-**Lesson learned (post-mortem):** the LK parity eval below (and `examples/fashion-search/eval-configs-lk.ts`) uses *keyword-snapshot relevance labels* — the items a keyword search already returned. Those labels **reward keyword behavior**, so they misjudge ranking changes: when soft-OR FTS was added, this biased metric showed a fake intent "regression" (0.67→0.63) that did not exist on real relevance. Judge ranking changes on **unbiased** relevance, not word-overlap.
+**Lesson learned (post-mortem):** the LK parity eval below used *keyword-snapshot relevance labels* — the items a keyword search already returned. Those labels **reward keyword behavior**, so they misjudge ranking changes: when soft-OR FTS was added, this biased metric showed a fake intent "regression" (0.67→0.63) that did not exist on real relevance. Judge ranking changes on **unbiased** relevance, not word-overlap.
 
 The fix is institutional: `examples/fashion-search/bench-retrieval.ts` (`bun run bench`) — **hand-assigned graded relevance** across **fashion + electronics (out-of-domain)**, real `gemini-embedding-2`, with an acceptance gate that fails the run on regression. nDCG@5, soft-OR (default) vs strict-AND:
 

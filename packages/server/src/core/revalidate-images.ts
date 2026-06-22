@@ -2,7 +2,7 @@ import type { CollectionDef, PipelineDef } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import { probeRemoteImageSafe } from "./fetch-image.ts";
-import { collectionTableName, getPgClient } from "./db-utils.ts";
+import { collectionTableName } from "./db-utils.ts";
 
 function isPipeline(def: CollectionDef["enrich"]): def is PipelineDef {
   return !!def && typeof def === "object" && Array.isArray((def as PipelineDef).stages);
@@ -35,7 +35,7 @@ export function makeRevalidateImagesService(ctx: MatcherCtx, projectsService: Pr
     const limit = opts?.limit ?? 100_000;
     const consumesImages = enrichConsumesImages(def);
 
-    const rows = await getPgClient(ctx.db, "revalidate-images").unsafe(
+    const rows = await ctx.storage.client("revalidate-images").unsafe(
       `SELECT id, data, image_etag
        FROM ${table}
        WHERE data->>'image_url' IS NOT NULL AND data->>'image_url' <> ''
@@ -78,7 +78,7 @@ export function makeRevalidateImagesService(ctx: MatcherCtx, projectsService: Pr
 
       if (imageChanged) {
         changed++;
-        await getPgClient(ctx.db, "revalidate-images").unsafe(
+        await ctx.storage.client("revalidate-images").unsafe(
           `UPDATE ${table}
            SET indexed_at = NULL,
                enriched_at = CASE WHEN $1 THEN NULL ELSE enriched_at END,
@@ -90,7 +90,7 @@ export function makeRevalidateImagesService(ctx: MatcherCtx, projectsService: Pr
         );
       } else {
         unchanged++;
-        await getPgClient(ctx.db, "revalidate-images").unsafe(
+        await ctx.storage.client("revalidate-images").unsafe(
           `UPDATE ${table}
            SET image_etag = $1,
                image_checked_at = now(),
@@ -109,11 +109,7 @@ export function makeRevalidateImagesService(ctx: MatcherCtx, projectsService: Pr
     collectionName: string,
     opts?: { limit?: number }
   ): Promise<RevalidateImagesResult> {
-    return ctx.jobs.run(
-      `revalidate-images:${projectSlug}:${collectionName}`,
-      { projectSlug, collectionName, ...opts },
-      () => runRevalidateImages(projectSlug, collectionName, opts)
-    );
+    return runRevalidateImages(projectSlug, collectionName, opts);
   }
 
   return { revalidateImages };

@@ -12,6 +12,10 @@ All notable changes to samesake. Format roughly follows [Keep a Changelog](https
 
 - **NLQ extraction reshaped to a structured-output pattern** — `fashionNlqSchema` constraint fields are now `.nullable()` (forcing the model to emit each one, value or null) with operational descriptions, and `FASHION_NLQ_INSTRUCTIONS` carries few-shot `<examples>`. Fixes inconsistent `semantic_query` cleaning so price/colour words no longer leak into the embedded query (and therefore the relevance floor's signal).
 
+### Removed
+
+- **Background-jobs seam removed** (breaking) — both `@samesake/jobs-pgboss` *and* the internal `JobRunner` (`MatcherConfig.jobs`, `MatcherCtx.jobs`, `inProcessRunner`) are gone. The pg-boss adapter held job closures in an in-memory map and silently dropped anything cross-process (or post-restart); the `JobRunner` itself was a no-op pass-through (the default just ran the work inline), used by nobody, whose only real purpose — cross-process offload — can't work with a closure-based contract anyway. `enrich`/`index`/`ingest` now run inline and resolve when done; to run them durably, wrap the calls in your platform's durable step (Inngest/Upstash/Cloudflare/Vercel — see the pipeline guides). A samesake-internal cross-process runner would need a handler-registry contract redesign — deferred to [#66](https://github.com/asyncdotengineering/samesake/issues/66).
+
 ### Fixed
 
 - `searchExplain` no longer errors (`could not determine data type of parameter`) when `relevanceFloor` is set — the floor parameter is bound only on the query path that uses it.

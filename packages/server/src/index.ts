@@ -9,6 +9,8 @@
 // zero opinions about which LLM stack the consumer uses — bring your own
 // embed/parse functions via createMatcher's config.
 export { createMatcher, type Matcher } from "./createMatcher.ts";
+// Opt-in phonetic matching: pass `phonetic: indicPhonetic` (or your own PhoneticProvider).
+export { indicPhonetic, type PhoneticProvider } from "./db/postgres/phonetic.ts";
 export type {
   MatcherConfig,
   MatcherCtx,
@@ -28,7 +30,6 @@ export type {
   GroundImageFn,
   GroundImageRequest,
   GroundImageResult,
-  JobRunner,
   MigrationPlan,
   ApplyOptions,
   LoggerFn,
@@ -75,7 +76,6 @@ export {
   agentFindProductsResponseSchema,
 } from "./core/agent-tools.ts";
 export type { FashionCatalogSyncEvent } from "./core/fashion-search.ts";
-export { inProcessRunner } from "./jobs/in-process.ts";
 
 // Parse schema + default prompt — exported so consumers can:
 //   1. Type their parse function's return value against ParsedProduct

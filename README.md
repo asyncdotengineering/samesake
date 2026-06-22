@@ -106,7 +106,7 @@ await matcher.search("shop", "products", { q: "flowy black cocktail dress", mode
 await matcher.search("shop", "products", { image: { url: screenshotUrl } }); // mode auto = "similar"
 ```
 
-Why a mode and not one global weighting: with flat `fts = cosine`, a keyword-only match gets a guaranteed top seat in RRF, so word-decoys outrank genuinely similar items ("similar" collapses into keyword matching). Dropping keyword entirely instead regresses intent exactness ("linen shirt **men**"). `mode` resolves the tension — keyword is a tiebreaker for intent and off for similarity. Explicit `weights` still override the mode. See [`examples/fashion-search/repro-similar.ts`](./examples/fashion-search/repro-similar.ts), [`repro-visual.ts`](./examples/fashion-search/repro-visual.ts), and [`eval-configs-lk.ts`](./examples/fashion-search/eval-configs-lk.ts) for the live evidence.
+Why a mode and not one global weighting: with flat `fts = cosine`, a keyword-only match gets a guaranteed top seat in RRF, so word-decoys outrank genuinely similar items ("similar" collapses into keyword matching). Dropping keyword entirely instead regresses intent exactness ("linen shirt **men**"). `mode` resolves the tension — keyword is a tiebreaker for intent and off for similarity. Explicit `weights` still override the mode. See [`examples/fashion-search/bench-retrieval.ts`](./examples/fashion-search/bench-retrieval.ts) (`bun run bench`) for the live evidence — hand-labeled nDCG@5 across fashion + electronics on real `gemini-embedding-2`.
 
 ### Retrieval defaults & seams (zero-config by default)
 
@@ -322,7 +322,9 @@ Deploy: see [`deploy/`](./deploy/) (Fly.io, Cloudflare Workers, local `bun run d
 | [`quickstart`](./examples/quickstart/) | Runnable | `bun examples/quickstart/run.ts` |
 | [`fashion-search`](./examples/fashion-search/) | External dataset required | Set `FASHION_DATASET_DIR` — see README |
 
-`@samesake/jobs-pgboss` is **experimental** — optional pg-boss adapter; not part of the core 1.0 gate.
+Background jobs (`enrich`/`index`/`ingest`) run **inline** and resolve when done — there's no
+internal job runner. To run them durably, the caller wraps the calls in a platform's durable step
+(Inngest/Upstash/Cloudflare/Vercel) — see the [pipeline guides](./apps/docs/src/content/docs/guides/enrich-pipeline.mdx).
 
 ## Status & naming
 

@@ -3,7 +3,7 @@ import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import type { EnrichPipelineService } from "./enrich-pipeline.ts";
 import type { EmbedIndexService } from "./embed-index.ts";
-import { collectionTableName, getPgClient } from "./db-utils.ts";
+import { collectionTableName } from "./db-utils.ts";
 import { DEFAULT_MAX_ATTEMPTS, recordPipelineFailure } from "./pipeline-failure.ts";
 
 function isPipeline(def: CollectionDef["enrich"]): def is PipelineDef {
@@ -26,11 +26,7 @@ export function makeRetryService(
     collectionName: string,
     opts?: RetryFailedOpts
   ): Promise<{ retried: number; dead: number }> {
-    return ctx.jobs.run(
-      `retry:${projectSlug}:${collectionName}`,
-      { projectSlug, collectionName, ...opts },
-      () => runRetryFailed(projectSlug, collectionName, opts)
-    );
+    return runRetryFailed(projectSlug, collectionName, opts);
   }
 
   async function runRetryFailed(
@@ -48,25 +44,9 @@ export function makeRetryService(
     const table = collectionTableName(project.schema_name, collectionName);
     const hasEnrich = isPipeline(def.enrich);
 
-    const deadRows = await getPgClient(ctx.db, "retry").unsafe(
-      `UPDATE ${table}
-       SET pipeline_status = 'dead', updated_at = now()
-       WHERE pipeline_status = 'failed' AND attempt_count >= $1
-       RETURNING id`,
-      [maxAttempts]
-    );
-    const dead = deadRows.length;
+    const dead = await ctx.storage.markDead(table, maxAttempts);
 
-    const retryable = await getPgClient(ctx.db, "retry").unsafe(
-      `SELECT id, data, enriched, image_etag, enriched_at
-       FROM ${table}
-       WHERE pipeline_status = 'failed'
-         AND next_attempt_at <= now()
-         AND attempt_count < $1
-       ORDER BY id
-       LIMIT $2`,
-      [maxAttempts, limit]
-    );
+    const retryable = await ctx.storage.retryableRows(table, maxAttempts, limit);
 
     let retried = 0;
     for (const row of retryable) {

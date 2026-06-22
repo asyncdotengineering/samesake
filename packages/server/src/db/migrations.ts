@@ -8,5 +8,5 @@ import type { MatcherCtx } from "../types.ts";
  * Targets ctx.schema (consumer's choice, defaults to `public`).
  */
 export async function runSystemMigrations(ctx: MatcherCtx): Promise<void> {
-  await ctx.db.execute(sql.raw(getSystemDDL(ctx.schema)));
+  await ctx.storage.exec(sql.raw(getSystemDDL(ctx.schema, ctx.phonetic)));
 }

@@ -12,12 +12,14 @@
 // `embed` and (optionally) `parse` functions — see EmbedFn / ParseFn below.
 // @samesake/server has zero opinions about which LLM stack you use.
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import type { StorageAdapter } from "./db/storage-adapter.ts";
 import type { Hono } from "hono";
 import type { EntityDef } from "@samesake/core";
 import type { z } from "zod";
 import type { makeSystemTables } from "./db/schema/system.ts";
 import type { LoggerFn, Observability } from "./core/observability.ts";
 import type { PolicyConfig } from "./core/policy.ts";
+import type { PhoneticProvider } from "./db/postgres/phonetic.ts";
 
 export type { LoggerFn, LoggerEvent, MetricsSnapshot } from "./core/observability.ts";
 export type { PolicyConfig, PolicySlot } from "./core/policy.ts";
@@ -126,10 +128,6 @@ export interface GroundImageResult {
 }
 export type GroundImageFn = (req: GroundImageRequest) => Promise<GroundImageResult | null>;
 
-export interface JobRunner {
-  run<T>(name: string, payload: unknown, fn: () => Promise<T>): Promise<T>;
-}
-
 export interface MigrationPlan {
   additions: string[];
   reindexRequired: string[];
@@ -170,9 +168,16 @@ export interface MatcherConfig {
   /**
    * Postgres schema where the matcher's system tables + utility functions
    * live (samesake_projects, samesake_embed_cache, samesake_parse_cache,
-   * samesake_normalise(), samesake_phonetic(), samesake_unit()). Default `public`.
+   * samesake_normalise(), samesake_unit()). Default `public`.
    */
   schema?: string;
+
+  /**
+   * Opt-in phonetic provider supplying the `samesake_phonetic` function. Without it the
+   * function is not installed and `phoneticEq` scorers are unavailable. Use the built-in
+   * `indicPhonetic` (Sinhala/Tamil/Latin) or supply your own scheme.
+   */
+  phonetic?: PhoneticProvider;
 
   /**
    * Prefix for per-project Postgres schemas. Default `project_` →
@@ -251,8 +256,6 @@ export interface MatcherConfig {
    */
   groundImage?: GroundImageFn;
 
-  jobs?: JobRunner;
-
   logger?: LoggerFn;
 
   policy?: PolicyConfig;
@@ -268,8 +271,9 @@ export interface MatcherConfig {
 
 // ── What the internal modules consume ───────────────────────────────────
 export interface MatcherCtx {
-  db: PostgresJsDatabase;
+  storage: StorageAdapter;
   schema: string;            // system schema (always set; default applied)
+  phonetic?: PhoneticProvider; // opt-in samesake_phonetic provider (default: none)
   projectPrefix: string;     // per-project schema prefix (always set)
   apiKey: string;
   embed: EmbedFn;
@@ -278,7 +282,6 @@ export interface MatcherCtx {
   generateConfigured: boolean;
   rerank?: RerankFn;
   groundImage?: GroundImageFn;
-  jobs: JobRunner;
   observability: Observability;
   policy: Required<PolicyConfig>;
   systemTables: ReturnType<typeof makeSystemTables>;

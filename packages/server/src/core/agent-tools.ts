@@ -11,7 +11,7 @@ import type {
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import type { SearchHit, SearchOpts, SearchService, SearchFilters } from "./search.ts";
-import { collectionTableName, getByPath, getPgClient } from "./db-utils.ts";
+import { collectionTableName, getByPath } from "./db-utils.ts";
 
 type ConstraintMode = "best_effort" | "strict";
 
@@ -330,11 +330,7 @@ export function makeAgentToolsService(
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
     const table = collectionTableName(project.schema_name, collectionName);
-    const rows = await getPgClient(ctx.db, "agent-tools").unsafe(
-      `SELECT data FROM ${table} WHERE id = $1 LIMIT 1`,
-      [req.image.productId]
-    );
-    const data = rows[0]?.data as Record<string, unknown> | undefined;
+    const data = await ctx.storage.rowData(table, req.image.productId);
     const field = req.image.imageField ?? "image_url";
     const url = data ? String(getByPath(data, field) ?? data.imageUrl ?? data.image ?? "") : "";
     if (!url) throw new Error(`product "${req.image.productId}" has no ${field}`);
@@ -350,10 +346,7 @@ export function makeAgentToolsService(
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
     const table = collectionTableName(project.schema_name, collectionName);
-    const rows = await getPgClient(ctx.db, "agent-tools").unsafe(
-      `SELECT id, indexed_at, updated_at FROM ${table} WHERE id = ANY($1::text[])`,
-      [ids]
-    );
+    const rows = await ctx.storage.indexStatus(table, ids);
     const out: Record<string, { indexedAt?: string; sourceUpdatedAt?: string }> = {};
     for (const row of rows) {
       out[String(row.id)] = {

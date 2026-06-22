@@ -6,7 +6,7 @@ import { imageVersionToken } from "../connectors/normalize.ts";
 import { makeStageCacheService } from "../db/stage-cache.ts";
 import { fetchRemoteImageSafe } from "./fetch-image.ts";
 import { callWithRetry } from "./policy.ts";
-import { collectionTableName, getPgClient } from "./db-utils.ts";
+import { collectionTableName } from "./db-utils.ts";
 import {
   assertErrorRateWithinLimit,
   recordPipelineFailure,
@@ -231,7 +231,7 @@ export function makeEnrichPipelineService(
         const derivedCtx: DerivedDocContext = { data, enriched };
         const surfaces = persistIndexingSurfaces(def.indexing, derivedCtx);
 
-        await getPgClient(ctx.db, "enrich").unsafe(
+        await ctx.storage.client("enrich").unsafe(
           `UPDATE ${table}
            SET enriched = $1::jsonb,
                enriched_at = now(),
@@ -253,7 +253,7 @@ export function makeEnrichPipelineService(
           ]
         );
       } else {
-        await getPgClient(ctx.db, "enrich").unsafe(
+        await ctx.storage.client("enrich").unsafe(
           `UPDATE ${table}
            SET enriched = $1::jsonb, enriched_at = now(), updated_at = now()
            WHERE id = $2`,
@@ -273,11 +273,7 @@ export function makeEnrichPipelineService(
     collectionName: string,
     opts?: { concurrency?: number; limit?: number } & ErrorRateOpts
   ): Promise<{ enriched: number; skipped: number; failed: number }> {
-    return ctx.jobs.run(
-      `enrich:${projectSlug}:${collectionName}`,
-      { projectSlug, collectionName, ...opts },
-      () => runEnrichCollection(projectSlug, collectionName, opts)
-    );
+    return runEnrichCollection(projectSlug, collectionName, opts);
   }
 
   async function runEnrichCollection(
@@ -343,7 +339,7 @@ export function makeEnrichPipelineService(
       // corrections table may not exist on older deployments; few-shot is best-effort
     }
 
-    const pending = await getPgClient(ctx.db, "enrich").unsafe(
+    const pending = await ctx.storage.client("enrich").unsafe(
       `SELECT id, data, image_etag FROM ${table}
        WHERE enriched_at IS NULL
        ORDER BY id

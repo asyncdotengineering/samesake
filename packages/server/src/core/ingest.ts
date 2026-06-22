@@ -4,7 +4,7 @@ import type { ProjectsService } from "./projects.ts";
 import { computeContentHash } from "../connectors/normalize.ts";
 import { connectorFromDef, type PullConnector } from "../connectors/index.ts";
 import { searchResultCache } from "./search-cache.ts";
-import { collectionTableName, getPgClient } from "./db-utils.ts";
+import { collectionTableName } from "./db-utils.ts";
 
 export interface IngestDocument {
   id: string;
@@ -36,30 +36,7 @@ export function makeIngestService(ctx: MatcherCtx, projectsService: ProjectsServ
         (data.content_hash as string | undefined) ?? computeContentHash(data);
       data.content_hash = contentHash;
 
-      await getPgClient(ctx.db, "ingest").unsafe(
-        `INSERT INTO ${table} (id, data, content_hash, ingested_at, updated_at)
-         VALUES ($1, $2::jsonb, $3, now(), now())
-         ON CONFLICT (id) DO UPDATE SET
-           data = EXCLUDED.data,
-           content_hash = EXCLUDED.content_hash,
-           updated_at = CASE
-             WHEN ${table}.content_hash <> EXCLUDED.content_hash THEN now()
-             ELSE ${table}.updated_at
-           END,
-           enriched_at = CASE
-             WHEN ${table}.content_hash <> EXCLUDED.content_hash THEN NULL
-             ELSE ${table}.enriched_at
-           END,
-           indexed_at = CASE
-             WHEN ${table}.content_hash <> EXCLUDED.content_hash THEN NULL
-             ELSE ${table}.indexed_at
-           END,
-           enriched = CASE
-             WHEN ${table}.content_hash <> EXCLUDED.content_hash THEN NULL
-             ELSE ${table}.enriched
-           END`,
-        [doc.id, JSON.stringify(data), contentHash]
-      );
+      await ctx.storage.upsertDocument(table, doc.id, JSON.stringify(data), contentHash);
       upserted++;
     }
 
@@ -82,11 +59,7 @@ export function makeIngestService(ctx: MatcherCtx, projectsService: ProjectsServ
     if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
 
     const table = collectionTableName(project.schema_name, collectionName);
-    const result = await getPgClient(ctx.db, "ingest").unsafe(
-      `DELETE FROM ${table} WHERE id = ANY($1)`,
-      [ids]
-    );
-    const removed = (result as { count?: number }).count ?? 0;
+    const removed = await ctx.storage.deleteDocuments(table, ids);
 
     if (removed > 0) {
       searchResultCache.invalidateProjectCollection(projectSlug, collectionName);
@@ -119,11 +92,7 @@ export function makeIngestService(ctx: MatcherCtx, projectsService: ProjectsServ
     collectionName: string,
     opts?: { connectors?: PullConnector[] }
   ): Promise<IngestResult> {
-    return ctx.jobs.run(
-      `ingest:${projectSlug}:${collectionName}`,
-      { projectSlug, collectionName },
-      () => runIngestCollection(projectSlug, collectionName, opts)
-    );
+    return runIngestCollection(projectSlug, collectionName, opts);
   }
 
   async function runIngestCollection(

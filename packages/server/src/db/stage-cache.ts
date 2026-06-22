@@ -2,7 +2,8 @@ import { eq, and, gt, sql } from "drizzle-orm";
 import type { MatcherCtx } from "../types.ts";
 
 export function makeStageCacheService(ctx: MatcherCtx) {
-  const { db, systemTables } = ctx;
+  const { systemTables } = ctx;
+  const db = ctx.storage.db;
   const t = systemTables.samesakeStageCache;
 
   return {

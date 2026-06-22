@@ -51,7 +51,7 @@ export function makeVariantsService(
   projectsService: ProjectsService,
   schemaGen: SchemaGen
 ) {
-  const { db } = ctx;
+  const db = ctx.storage.db;
 
   return {
     async runVariants(input: VariantInput): Promise<{ suggestions: VariantSuggestion[] }> {

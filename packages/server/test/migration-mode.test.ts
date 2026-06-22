@@ -17,7 +17,7 @@ function makeApp(runMigrationsOnRequest: boolean) {
         histograms: {},
       }),
     } as never,
-    db: {} as never,
+    storage: {} as never,
     services: {
       projects: {
         listProjects: async () => [],

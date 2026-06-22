@@ -26,6 +26,7 @@
 import { Hono } from "hono";
 import type { MatcherConfig, MatcherCtx, ParseFn, GenerateFn } from "./types.ts";
 import { createDbFromUrl } from "./db/client.ts";
+import { PostgresAdapter, type StorageAdapter } from "./db/storage-adapter.ts";
 import { makeSystemTables } from "./db/schema/system.ts";
 import { runSystemMigrations } from "./db/migrations.ts";
 import { makeSchemaGen } from "./core/schema-gen.ts";
@@ -50,7 +51,6 @@ import { makeExplainService } from "./core/explain.ts";
 import { makeVariantsService } from "./core/variants.ts";
 import { makeUpsertService } from "./core/upsert.ts";
 import { buildApp } from "./app-builder.ts";
-import { inProcessRunner } from "./jobs/in-process.ts";
 import { createObservability } from "./core/observability.ts";
 import type { MetricsSnapshot } from "./core/observability.ts";
 import { resolvePolicy } from "./core/policy.ts";
@@ -186,6 +186,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
   const built = config.databaseUrl
     ? createDbFromUrl(config.databaseUrl)
     : { db: config.db!, close: async () => { /* consumer owns the handle */ } };
+  const storage: StorageAdapter = new PostgresAdapter(built);
 
   const schema = config.schema ?? "public";
   const projectPrefix = config.projectPrefix ?? "project_";
@@ -205,8 +206,9 @@ export function createMatcher(config: MatcherConfig): Matcher {
   // Build the ctx. ensureMigrations is wired below after we have it.
   let migrationsPromise: Promise<void> | null = null;
   const ctx: MatcherCtx = {
-    db: built.db,
+    storage,
     schema,
+    phonetic: config.phonetic,
     projectPrefix,
     apiKey: config.apiKey,
     embed: config.embed,
@@ -215,7 +217,6 @@ export function createMatcher(config: MatcherConfig): Matcher {
     generateConfigured: typeof config.generate === "function",
     rerank: config.rerank,
     groundImage: config.groundImage,
-    jobs: config.jobs ?? inProcessRunner,
     observability,
     policy: resolvePolicy(config.policy),
     systemTables: makeSystemTables(schema),
@@ -275,7 +276,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
       upsert: upsertService,
       projects: projectsService,
     },
-    db: built.db,
+    storage,
   });
 
   // migrate() respects the config.migrate mode.
@@ -330,6 +331,6 @@ export function createMatcher(config: MatcherConfig): Matcher {
     fetch: app.fetch.bind(app) as (request: Request) => Promise<Response>,
     app,
     migrate,
-    close: built.close,
+    close: () => storage.close(),
   };
 }

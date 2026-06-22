@@ -1,0 +1,73 @@
+# Catalog-less electrical / MEP pack — prices straight from attribute rules, no catalog.
+# For a distributor with thousands of products and no inventory system: they don't match
+# a part, they price by the attributes the normalizer parses out of each line.
+# `bun run quote` with BOM_RULEPACK=electrical-mep-prefix uses this.
+vertical: electrical-mep
+
+categories: [cable, breaker, conduit, wiring-accessory, lighting, distribution-board, switch-socket, earthing, other]
+
+attributes:
+  - { key: cores,   type: number, label: "Cores" }
+  - { key: csaMm2,  type: number, label: "CSA mm²" }
+  - { key: conductor, type: enum, label: "Conductor", values: [copper, aluminium] }
+  - { key: ratingA, type: number, label: "Current rating A" }
+  - { key: poles,   type: enum,   label: "Poles", values: [SP, DP, TP, TPN, 4P] }
+  - { key: sizeMm,  type: number, label: "Nominal size mm" }
+  - { key: watt,    type: number, label: "Wattage" }
+  - { key: ways,    type: number, label: "DB ways" }
+
+synonyms:
+  poles:
+    singlepole: SP
+    sp: SP
+    doublepole: DP
+    dp: DP
+    triplepole: TP
+    tp: TP
+    triplepoleandneutral: TPN
+    tpn: TPN
+    fourpole: "4P"
+    "4p": "4P"
+  conductor: { cu: copper, al: aluminium }
+
+units: { coil: 100, drum: 500 }
+
+# Unused in prefix-rules mode (no matching), but the schema keeps it for consistency.
+matching:
+  hard: [ratingA, poles, csaMm2, cores, sizeMm, watt, ways]
+  weights: { cosine: 0.6, trigram: 0.4 }
+  autoLink: 0.55
+  suggest: 0.38
+
+pricing:
+  strategy: prefix-rules
+  # First matching rule wins. perUnit is a number or a safe formula over the line's attributes.
+  rules:
+    # Multi-core first (needs cores); single-core wire falls through to the cores-free rule.
+    - { label: "Cu multi-core cable", when: { category: cable, conductor: copper, cores: [2, 3, 4, 5] }, perUnit: "30 * cores + csaMm2 * cores * 44" }
+    - { label: "Cu single-core wire", when: { category: cable, conductor: copper },                      perUnit: "60 + csaMm2 * 48" }
+    - { label: "Al multi-core cable", when: { category: cable, conductor: aluminium, cores: [2, 3, 4, 5] }, perUnit: "20 * cores + csaMm2 * cores * 18" }
+    - { label: "Al single-core",      when: { category: cable, conductor: aluminium },                    perUnit: "40 + csaMm2 * 20" }
+    - { label: "single-pole MCB", when: { category: breaker, poles: SP },           perUnit: "650 + ratingA * 4" }
+    - { label: "double-pole MCB", when: { category: breaker, poles: DP },           perUnit: "1400 + ratingA * 12" }
+    - { label: "multi-pole MCB",  when: { category: breaker, poles: [TP, TPN, 4P] }, perUnit: "3000 + ratingA * 28" }
+    - { label: "PVC conduit",     when: { category: conduit },                      perUnit: "50 + sizeMm * 2" }
+    - { label: "LED luminaire",   when: { category: lighting },                     perUnit: "30 + watt * 75" }
+    - { label: "distribution board", when: { category: distribution-board },        perUnit: "300 + ways * 600" }
+    - { label: "switch / socket", when: { category: switch-socket },                perUnit: 380 }
+    - { label: "wiring accessory", when: { category: wiring-accessory },            perUnit: 120 }
+    - { label: "earthing",        when: { category: earthing },                     perUnit: 1900 }
+  tiers:
+    contractor-a: { label: "Contractor — Tier A", discount: 0.15 }
+    contractor-b: { label: "Contractor — Tier B", discount: 0.10 }
+    project:      { label: "Project / Tender",    discount: 0.08 }
+    retail:       { label: "Retail / Walk-in",    discount: 0.0 }
+  categoryMarkup:
+    wiring-accessory: 0.08
+  qtyBreaks:
+    - { category: cable, minQty: 500, extraDiscount: 0.05 }
+    - { category: "*",   minQty: 200, extraDiscount: 0.02 }
+  taxes:
+    - { label: VAT, rate: 0.18 }
+  priceDecimals: 2
+  validityDays: 14
