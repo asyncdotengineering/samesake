@@ -33,14 +33,5 @@ export async function recordPipelineFailure(
   error: unknown
 ): Promise<void> {
   const msg = (error instanceof Error ? error.message : String(error)).slice(0, 500);
-  await ctx.storage.client("pipeline-failure").unsafe(
-    `UPDATE ${table}
-     SET attempt_count = attempt_count + 1,
-         last_error = $1,
-         pipeline_status = 'failed',
-         next_attempt_at = now() + make_interval(secs => LEAST(3600, power(2, LEAST(attempt_count, 12))::int)),
-         updated_at = now()
-     WHERE id = $2`,
-    [msg, rowId]
-  );
+  await ctx.storage.recordFailure(table, rowId, msg);
 }

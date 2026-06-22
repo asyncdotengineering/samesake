@@ -33,6 +33,8 @@ export interface StorageAdapter {
   close(): Promise<void>;
   /** Facet aggregation over the filtered candidate set. */
   facets(query: FacetQuery): Promise<Record<string, FacetResult>>;
+  /** Mark a pipeline row failed: bump attempt count, store the error, set exponential backoff. */
+  recordFailure(table: string, rowId: string, message: string): Promise<void>;
 }
 
 /**
@@ -61,5 +63,18 @@ export class PostgresAdapter implements StorageAdapter {
 
   facets(q: FacetQuery): Promise<Record<string, FacetResult>> {
     return computeFacets(this.db, q.table, q.def, q.where, q.params, q.facetNames);
+  }
+
+  async recordFailure(table: string, rowId: string, message: string): Promise<void> {
+    await getPgClient(this.handle.db, "pipeline-failure").unsafe(
+      `UPDATE ${table}
+       SET attempt_count = attempt_count + 1,
+           last_error = $1,
+           pipeline_status = 'failed',
+           next_attempt_at = now() + make_interval(secs => LEAST(3600, power(2, LEAST(attempt_count, 12))::int)),
+           updated_at = now()
+       WHERE id = $2`,
+      [message, rowId]
+    );
   }
 }
