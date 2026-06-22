@@ -45,6 +45,15 @@ bun run quote data/sample-bom/bom.pdf   # …or quote the PDF
 bun run serve       # Hono API on :3001  (frontend lives in ./web)
 ```
 
+### Scanned / image-only PDFs
+
+Text-based PDFs and spreadsheets parse exactly. **Image-only / scanned PDFs are OCR'd**
+(liteparse bundles Tesseract) — verified end to end: descriptions extract cleanly and still
+match (15/16 on a rasterised sample). The known limit: a scanned *table* loses its column
+structure under OCR, so **quantities from a scan are unreliable and should be reviewed**
+before sending the quote. For accurate quantities, prefer the original spreadsheet or a
+text PDF.
+
 ## The lift-and-shift surface
 
 | File | What it controls |
