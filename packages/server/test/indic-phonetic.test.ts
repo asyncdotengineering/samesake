@@ -57,4 +57,30 @@ describeIf("indic phonetic (samesake_phonetic)", () => {
   test("distinct names hash differently", async () => {
     expect(await phon("Amma")).not.toBe(await phon("Rajan"));
   });
+
+  test("apply rejects a phonetic entity when no provider is configured", async () => {
+    const m = createMatcher({
+      databaseUrl: databaseUrl!,
+      apiKey: "test-api-key-12345",
+      migrate: "eager",
+      embed: async ({ text, dim }) => stubEmbed(text, dim),
+      generate: async () => ({ semantic_query: "test" }),
+      // no phonetic provider
+    });
+    await m.migrate();
+    const slug = `t_${Math.random().toString(36).slice(2, 10)}`;
+    await expect(
+      m.apply(slug, {
+        entities: [
+          {
+            name: "contact",
+            fields: { name: { type: "string" } },
+            phonetic: { name_phon: { source: "name", algorithm: "indic-soundex" } },
+          },
+        ],
+        collections: [],
+      } as unknown as Parameters<typeof m.apply>[1])
+    ).rejects.toThrow(/phonetic provider/i);
+    await m.close();
+  });
 });

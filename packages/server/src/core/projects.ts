@@ -149,6 +149,14 @@ export function makeProjectsService(
       }
       throw e;
     }
+    if (!ctx.phonetic && (config.entities ?? []).some((e) => e.phonetic && Object.keys(e.phonetic).length > 0)) {
+      throw new ClientError(
+        "missing_phonetic_provider",
+        "An entity declares a `phonetic` block but no phonetic provider is configured. " +
+          "Pass one to createMatcher, e.g. `phonetic: indicPhonetic`."
+      );
+    }
+
     const dryRun = opts?.dryRun ?? false;
     const allowDestructive = opts?.allowDestructive ?? false;
 
