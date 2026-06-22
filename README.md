@@ -106,7 +106,7 @@ await matcher.search("shop", "products", { q: "flowy black cocktail dress", mode
 await matcher.search("shop", "products", { image: { url: screenshotUrl } }); // mode auto = "similar"
 ```
 
-Why a mode and not one global weighting: with flat `fts = cosine`, a keyword-only match gets a guaranteed top seat in RRF, so word-decoys outrank genuinely similar items ("similar" collapses into keyword matching). Dropping keyword entirely instead regresses intent exactness ("linen shirt **men**"). `mode` resolves the tension — keyword is a tiebreaker for intent and off for similarity. Explicit `weights` still override the mode. See [`examples/fashion-search/repro-similar.ts`](./examples/fashion-search/repro-similar.ts), [`repro-visual.ts`](./examples/fashion-search/repro-visual.ts), and [`eval-configs-lk.ts`](./examples/fashion-search/eval-configs-lk.ts) for the live evidence.
+Why a mode and not one global weighting: with flat `fts = cosine`, a keyword-only match gets a guaranteed top seat in RRF, so word-decoys outrank genuinely similar items ("similar" collapses into keyword matching). Dropping keyword entirely instead regresses intent exactness ("linen shirt **men**"). `mode` resolves the tension — keyword is a tiebreaker for intent and off for similarity. Explicit `weights` still override the mode. See [`examples/fashion-search/bench-retrieval.ts`](./examples/fashion-search/bench-retrieval.ts) (`bun run bench`) for the live evidence — hand-labeled nDCG@5 across fashion + electronics on real `gemini-embedding-2`.
 
 ### Retrieval defaults & seams (zero-config by default)
 

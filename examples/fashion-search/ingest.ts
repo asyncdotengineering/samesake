@@ -12,11 +12,12 @@ import {
   ensureProject,
 } from "./samesake.config.ts";
 
-const RAW_DIR = process.env.FASHION_DATASET_DIR;
-if (!RAW_DIR) {
+const RAW_DIR_ENV = process.env.FASHION_DATASET_DIR;
+if (!RAW_DIR_ENV) {
   console.error("FASHION_DATASET_DIR is required — path to raw Shopify/Woo JSON snapshots");
   process.exit(1);
 }
+const RAW_DIR: string = RAW_DIR_ENV;
 
 function snapshotConnectors(): PullConnector[] {
   const byStore = new Map<

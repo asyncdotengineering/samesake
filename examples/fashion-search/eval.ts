@@ -152,9 +152,10 @@ function passesFilters(p: Product, filters: Record<string, unknown> = {}): boole
       if (typeof op.$lt === "number" && !(typeof raw === "number" && raw < op.$lt)) return false;
       if (typeof op.$gte === "number" && !(typeof raw === "number" && raw >= op.$gte)) return false;
       if (typeof op.$gt === "number" && !(typeof raw === "number" && raw > op.$gt)) return false;
-      if (Array.isArray(op.$nin)) {
-        if (Array.isArray(raw) && raw.some((v) => op.$nin!.includes(v))) return false;
-        if (!Array.isArray(raw) && op.$nin.includes(raw)) return false;
+      const nin = op.$nin;
+      if (Array.isArray(nin)) {
+        if (Array.isArray(raw) && raw.some((v) => nin.includes(v))) return false;
+        if (!Array.isArray(raw) && nin.includes(raw)) return false;
       }
       continue;
     }
@@ -268,7 +269,17 @@ function relevanceAtK(ids: string[], relevant: string[], k: number): number {
 async function main() {
   const started = Date.now();
   const corpus = await loadCorpus();
-  const rows = [];
+  const rows: Array<{
+    name: string;
+    q: string;
+    topIds: string[];
+    relevanceAt3: number;
+    constraintCompliance: number;
+    constraintMetrics: Record<string, number>;
+    zeroResult: boolean;
+    relaxed: boolean;
+    latencyMs: number;
+  }> = [];
   for (const query of corpus.queries) {
     const run = await remoteSearch(corpus.products, query);
     const hits = run.hits;
