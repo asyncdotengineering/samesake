@@ -2,7 +2,7 @@
 //   bun server/src/run.ts [path-to-bom.xlsx|.pdf]
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
-import { loadEnv, company, rules } from "./config.ts";
+import { loadEnv, company } from "./config.ts";
 import { makeMatcher, setupCatalog } from "./catalog.ts";
 import { activePack } from "./rulepack/load.ts";
 import { runPipeline } from "./pipeline/index.ts";
@@ -27,7 +27,7 @@ if (pack.pricing.strategy === "catalog") {
 }
 console.log(`Quoting ${file}  (${pack.pricing.strategy} pricing)\n  customer: ${customer.name} (${customer.tier})\n`);
 
-const { quotation, matched } = await runPipeline(matcher, file, customer, company(), rules());
+const { quotation, matched } = await runPipeline(matcher, file, customer, company());
 
 for (const m of matched) {
   const tag = m.status === "matched" ? "✓" : m.status === "review" ? "?" : "✗";

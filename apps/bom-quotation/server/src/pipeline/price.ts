@@ -2,7 +2,8 @@
 // number on the quote traces to a rule in data/pricing-rules.json. Lift-and-shift
 // is "edit that JSON"; this engine never changes.
 import { catalog } from "../config.ts";
-import type { MatchedLine, QuoteLine, PricingRules, CustomerRef } from "../../../shared/types.ts";
+import type { MatchedLine, QuoteLine, CustomerRef } from "../../../shared/types.ts";
+import type { RulePack } from "../rulepack/schema.ts";
 
 const partByCode = new Map(catalog().map((p) => [p.code, p]));
 
@@ -13,7 +14,7 @@ const round = (x: number, d: number): number => {
 };
 
 /** Price a single matched line. Requires `m.chosen` (caller filters matched lines). */
-export function priceLine(m: MatchedLine, customer: CustomerRef, rules: PricingRules): QuoteLine {
+export function priceLine(m: MatchedLine, customer: CustomerRef, rules: RulePack["pricing"]): QuoteLine {
   const chosen = m.chosen!;
   const part = partByCode.get(chosen.code)!;
   const trace: string[] = [];

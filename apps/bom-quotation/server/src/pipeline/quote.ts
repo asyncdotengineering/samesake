@@ -1,8 +1,7 @@
 // Layer 6 — assemble the quotation and render the PDF.
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
-import { priceLine } from "./price.ts";
 import type {
-  MatchedLine, Quotation, QuoteLine, QuoteTotals, Company, CustomerRef, PricingRules,
+  MatchedLine, Quotation, QuoteLine, QuoteTotals, Company, CustomerRef,
 } from "../../../shared/types.ts";
 
 const round = (x: number, d: number): number => {
@@ -10,25 +9,32 @@ const round = (x: number, d: number): number => {
   return Math.round(x * f) / f;
 };
 
-export function assembleQuotation(
-  matched: MatchedLine[],
+/** Totals config — the common subset both legacy PricingRules and a pack's PricingDef satisfy. */
+export interface QuotePricing {
+  taxes: Array<{ label: string; rate: number }>;
+  priceDecimals: number;
+  validityDays: number;
+}
+
+/** Assemble a quotation from already-priced lines (strategy-agnostic). */
+export function buildQuotation(
+  priced: QuoteLine[],
+  unresolved: MatchedLine[],
   company: Company,
   customer: CustomerRef,
-  rules: PricingRules,
+  pricing: QuotePricing,
   quoteNo: string,
   today: Date
 ): Quotation {
-  const priced = matched.filter((m) => m.status === "matched" && m.chosen).map((m) => priceLine(m, customer, rules));
-  const unresolved = matched.filter((m) => m.status !== "matched");
-
-  const subtotal = round(priced.reduce((s, l) => s + l.lineTotal, 0), rules.priceDecimals);
+  const d = pricing.priceDecimals;
+  const subtotal = round(priced.reduce((s, l) => s + l.lineTotal, 0), d);
   const listTotal = priced.reduce((s, l) => s + l.listPrice * l.qty, 0);
-  const discountTotal = round(listTotal - subtotal, rules.priceDecimals);
-  const taxes = rules.taxes.map((t) => ({ label: t.label, rate: t.rate, amount: round(subtotal * t.rate, rules.priceDecimals) }));
-  const grandTotal = round(subtotal + taxes.reduce((s, t) => s + t.amount, 0), rules.priceDecimals);
+  const discountTotal = round(listTotal - subtotal, d);
+  const taxes = pricing.taxes.map((t) => ({ label: t.label, rate: t.rate, amount: round(subtotal * t.rate, d) }));
+  const grandTotal = round(subtotal + taxes.reduce((s, t) => s + t.amount, 0), d);
 
   const valid = new Date(today);
-  valid.setDate(valid.getDate() + rules.validityDays);
+  valid.setDate(valid.getDate() + pricing.validityDays);
 
   const totals: QuoteTotals = { subtotal, discountTotal, taxes, grandTotal, currency: company.currency };
   const notes: string[] = [];

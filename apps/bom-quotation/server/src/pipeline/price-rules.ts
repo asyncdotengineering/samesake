@@ -6,7 +6,7 @@ import { evalFormula } from "../rulepack/formula.ts";
 import { canon } from "../rulepack/canon.ts";
 import type { RulePack, PrefixRuleT } from "../rulepack/schema.ts";
 import type {
-  NormalizedBomLine, QuoteLine, MatchedLine, Quotation, QuoteTotals, Company, CustomerRef,
+  NormalizedBomLine, QuoteLine, CustomerRef,
 } from "../../../shared/types.ts";
 
 const round = (x: number, d: number): number => {
@@ -61,49 +61,5 @@ export function priceLineFromRules(line: NormalizedBomLine, customer: CustomerRe
     lineNo: line.lineNo, code: "(rule)", description: line.normalized, brand: "",
     qty: line.qty, unit: line.unit, listPrice: base, discount, unitPrice, lineTotal,
     leadDays: 0, priceTrace: trace, status: "matched",
-  };
-}
-
-export function quoteFromRules(
-  lines: NormalizedBomLine[],
-  company: Company,
-  customer: CustomerRef,
-  pack: RulePack,
-  quoteNo: string,
-  today: Date
-): { quotation: Quotation; matched: MatchedLine[] } {
-  const d = pack.pricing.priceDecimals;
-  const priced: QuoteLine[] = [];
-  const matched: MatchedLine[] = [];
-  for (const line of lines) {
-    const ql = priceLineFromRules(line, customer, pack);
-    if (ql) {
-      priced.push(ql);
-      matched.push({
-        line, status: "matched", confirmedByUser: false, alternatives: [],
-        chosen: { code: "(rule)", description: line.normalized, brand: "", confidence: 1, listPrice: ql.listPrice, unit: line.unit },
-      });
-    } else {
-      matched.push({ line, status: "unmatched", chosen: null, alternatives: [], confirmedByUser: false });
-    }
-  }
-
-  const subtotal = round(priced.reduce((s, l) => s + l.lineTotal, 0), d);
-  const listTotal = priced.reduce((s, l) => s + l.listPrice * l.qty, 0);
-  const taxes = pack.pricing.taxes.map((t) => ({ label: t.label, rate: t.rate, amount: round(subtotal * t.rate, d) }));
-  const grandTotal = round(subtotal + taxes.reduce((s, t) => s + t.amount, 0), d);
-  const valid = new Date(today);
-  valid.setDate(valid.getDate() + pack.pricing.validityDays);
-  const unresolved = matched.filter((m) => m.status !== "matched");
-  const totals: QuoteTotals = { subtotal, discountTotal: round(listTotal - subtotal, d), taxes, grandTotal, currency: company.currency };
-  const notes: string[] = [];
-  if (unresolved.length) notes.push(`${unresolved.length} line(s) had no matching price rule — needs review.`);
-
-  return {
-    quotation: {
-      quoteNo, date: today.toISOString().slice(0, 10), validUntil: valid.toISOString().slice(0, 10),
-      company, customer, lines: priced, unresolved, totals, notes,
-    },
-    matched,
   };
 }

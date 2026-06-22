@@ -11,7 +11,7 @@ import { activePack, setActivePack } from "./rulepack/load.ts";
 import { ensureTable, loadRulePackForCompany, saveRulePack } from "./rulepack/store.ts";
 import { RulePackSchema } from "./rulepack/schema.ts";
 import { runPipeline } from "./pipeline/index.ts";
-import { assembleQuotation, renderQuotationPdf } from "./pipeline/quote.ts";
+import { buildQuotation, renderQuotationPdf } from "./pipeline/quote.ts";
 import { priceLine } from "./pipeline/price.ts";
 import type { CustomerRef, MatchedLine, Quotation } from "../../shared/types.ts";
 
@@ -65,7 +65,7 @@ app.post("/api/quote", async (c) => {
   writeFileSync(path, Buffer.from(await file.arrayBuffer()));
 
   const customer: CustomerRef = { id: customerName.toLowerCase().replace(/\s+/g, "-"), name: customerName, tier };
-  const { quotation, matched } = await runPipeline(matcher, path, customer, company(), rules());
+  const { quotation, matched } = await runPipeline(matcher, path, customer, company());
   return c.json({ quotation, matched });
 });
 
@@ -97,7 +97,10 @@ app.post("/api/quote/pdf", async (c) => {
   const cust: CustomerRef = { id: customer.toLowerCase().replace(/\s+/g, "-"), name: customer, tier };
   const now = new Date();
   const quoteNo = `Q-${now.toISOString().slice(0, 10).replace(/-/g, "")}-${(now.getTime() % 9000) + 1000}`;
-  const quotation: Quotation = assembleQuotation(matched, company(), cust, rules(), quoteNo, now);
+  const pr = activePack().pricing;
+  const priced = matched.filter((m) => m.status === "matched" && m.chosen).map((m) => priceLine(m, cust, pr));
+  const unresolved = matched.filter((m) => m.status !== "matched");
+  const quotation: Quotation = buildQuotation(priced, unresolved, company(), cust, pr, quoteNo, now);
   const pdf = await renderQuotationPdf(quotation);
   return new Response(Buffer.from(pdf), {
     headers: {
@@ -111,7 +114,7 @@ app.post("/api/quote/pdf", async (c) => {
 app.post("/api/price", async (c) => {
   const { line, tier, customer } = await c.req.json<{ line: MatchedLine; tier: string; customer: string }>();
   const cust: CustomerRef = { id: customer, name: customer, tier };
-  return c.json({ quoteLine: line.chosen ? priceLine(line, cust, rules()) : null });
+  return c.json({ quoteLine: line.chosen ? priceLine(line, cust, activePack().pricing) : null });
 });
 
 const port = Number(process.env.PORT ?? 3001);
