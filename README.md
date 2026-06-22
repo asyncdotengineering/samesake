@@ -322,7 +322,9 @@ Deploy: see [`deploy/`](./deploy/) (Fly.io, Cloudflare Workers, local `bun run d
 | [`quickstart`](./examples/quickstart/) | Runnable | `bun examples/quickstart/run.ts` |
 | [`fashion-search`](./examples/fashion-search/) | External dataset required | Set `FASHION_DATASET_DIR` — see README |
 
-`@samesake/jobs-pgboss` is **experimental** — optional pg-boss adapter; not part of the core 1.0 gate.
+Background jobs (`enrich`/`index`/`ingest`) run through a one-method `JobRunner` — inline by
+default. Bring your own (a worker pool, your queue) like the `embed`/`generate` providers; there is
+no shipped queue adapter. See [Running enrichment in the background](./apps/docs/src/content/docs/guides/tuning-search.mdx).
 
 ## Status & naming
 

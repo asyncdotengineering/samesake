@@ -12,6 +12,10 @@ All notable changes to samesake. Format roughly follows [Keep a Changelog](https
 
 - **NLQ extraction reshaped to a structured-output pattern** — `fashionNlqSchema` constraint fields are now `.nullable()` (forcing the model to emit each one, value or null) with operational descriptions, and `FASHION_NLQ_INSTRUCTIONS` carries few-shot `<examples>`. Fixes inconsistent `semantic_query` cleaning so price/colour words no longer leak into the embedded query (and therefore the relevance floor's signal).
 
+### Removed
+
+- **`@samesake/jobs-pgboss`** (breaking) — the optional pg-boss `JobRunner` adapter is removed. It held job closures in an in-memory map and only enqueued an id, so a separate worker process (or any restart) silently dropped jobs — it never worked cross-process, defeating the point of a queue. `JobRunner` is a one-method BYO interface (like `embed`/`generate`): implement it against your own queue/worker. Cross-process durability needs a handler-registry redesign of the contract (resolve named handlers from the payload instead of a closure) — tracked in [#44](https://github.com/asyncdotengineering/samesake/issues/44). `inProcessRunner` remains the default.
+
 ### Fixed
 
 - `searchExplain` no longer errors (`could not determine data type of parameter`) when `relevanceFloor` is set — the floor parameter is bound only on the query path that uses it.

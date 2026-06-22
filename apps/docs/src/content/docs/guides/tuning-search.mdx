@@ -157,20 +157,28 @@ need both clean attributes **and** a catalog big enough to disambiguate.
 ## Running enrichment in the background
 
 `enrich`, `index`, and `ingest` route their work through a `JobRunner` (`ctx.jobs.run`). The
-default runs inline; pass `jobs: createPgBossRunner({ connectionString })` from
-[`@samesake/jobs-pgboss`](https://www.npmjs.com/package/@samesake/jobs-pgboss) to back them with a
-pg-boss queue for durability and concurrency control:
+default (`inProcessRunner`) runs inline. To offload or bound concurrency, **bring your own**
+`JobRunner` — it's a one-method interface, the same pattern as the `embed`/`generate` providers:
 
 ```ts
-import { createPgBossRunner } from "@samesake/jobs-pgboss";
-const matcher = createMatcher({ /* ... */, jobs: await createPgBossRunner({ connectionString: process.env.DATABASE_URL! }) });
+const matcher = createMatcher({
+  /* ... */
+  jobs: {
+    run: async (name, payload, fn) => {
+      // enqueue/limit however you like (a worker pool, p-limit, your own queue) then run it
+      return fn();
+    },
+  },
+});
 ```
 
 <Aside type="note">
-The current pg-boss adapter runs the job function in the **enqueuing process** (it holds the
-closure in memory), so it provides durable scheduling + concurrency, not yet cross-process worker
-dynos. For a separate-worker topology the job payload needs to be self-describing so a worker can
-reconstruct the work. A worked example is [tracked upstream](https://github.com/asyncdotengineering/samesake/issues/44).
+samesake ships no queue adapter — a durable runner is app-specific glue (your own worker process
+imports samesake and drains the queue). Note the contract passes a **closure** (`fn`), so a
+*cross-process* worker can't run it as-is: that needs a handler-registry redesign of `JobRunner`
+(named handlers resolved from the payload), tracked in
+[#44](https://github.com/asyncdotengineering/samesake/issues/44). Until then, `JobRunner` is for
+in-process concurrency control, not separate worker dynos.
 </Aside>
 
 ## The loop, in one line
