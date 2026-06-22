@@ -1,7 +1,7 @@
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { CollectionDef, CollectionFieldDef } from "@samesake/core";
-import { sanitiseIdent } from "./schema-gen.ts";
-import { getPgClient } from "./db-utils.ts";
+import { sanitiseIdent } from "../../core/schema-gen.ts";
+import { getPgClient } from "../../core/db-utils.ts";
 
 const FACET_VALUE_CAP = 25;
 const RANGE_BUCKETS = 6;

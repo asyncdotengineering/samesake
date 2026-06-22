@@ -57,7 +57,7 @@ export interface SearchResult {
   nlq_degraded?: boolean;
   relaxed: boolean;
   took_ms: number;
-  facets?: Record<string, import("./facets.ts").FacetResult>;
+  facets?: Record<string, import("../db/postgres/facets.ts").FacetResult>;
   total_candidates?: number;
   /** true when served from the in-process result cache */
   cached?: boolean;

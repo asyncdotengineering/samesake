@@ -1,7 +1,7 @@
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { SQL } from "drizzle-orm";
 import type { CollectionDef } from "@samesake/core";
-import { computeFacets, type FacetResult } from "../core/facets.ts";
+import { computeFacets, type FacetResult } from "./postgres/facets.ts";
 import { getPgClient, type PgUnsafe } from "../core/db-utils.ts";
 
 /** Inputs for a facet aggregation over a collection's filtered candidate set. */
