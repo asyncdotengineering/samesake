@@ -343,6 +343,9 @@ function ReviewRow({
   const [showSearch, setShowSearch] = useState(false);
 
   const needsOverride = row.status === "review" || row.status === "unmatched";
+  // Flagged rows show the override controls inline; a confident match keeps them tucked
+  // behind a "Change part" link, so any line can still be corrected.
+  const [showOverride, setShowOverride] = useState(needsOverride);
 
   const runSearch = async () => {
     if (!search.trim()) return;
@@ -386,7 +389,18 @@ function ReviewRow({
           <span className="part-brand">No match</span>
         )}
 
-        {needsOverride && (
+        {chosen && !showOverride && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ marginTop: 6, padding: "3px 9px", fontSize: "0.72rem" }}
+            onClick={() => setShowOverride(true)}
+          >
+            Change part
+          </button>
+        )}
+
+        {showOverride && (
           <>
             <select
               className="override-select"
