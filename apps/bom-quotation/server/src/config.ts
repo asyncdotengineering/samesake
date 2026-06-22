@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Company, PricingRules, CatalogPart } from "../../shared/types.ts";
+import type { Company, CatalogPart } from "../../shared/types.ts";
 
 const ROOT = join(import.meta.dir, "../..");
 const REPO_ROOT = join(ROOT, "../..");
@@ -29,7 +29,6 @@ function load<T>(rel: string): T {
 }
 
 export const company = (): Company => load<Company>("company.json");
-export const rules = (): PricingRules => load<PricingRules>("pricing-rules.json");
 export const catalog = (): CatalogPart[] => load<CatalogPart[]>("catalog.json");
 
 /** Fixed project + scope for this single-tenant deployment. Swap per company. */

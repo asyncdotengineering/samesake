@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { defaultPack, parsePack } from "../src/rulepack/load.ts";
-import { rules as legacyRules } from "../src/config.ts";
 
 describe("rule pack — default electrical-mep", () => {
   test("loads + validates", () => {
@@ -16,14 +15,14 @@ describe("rule pack — default electrical-mep", () => {
     expect(p.matching.suggest).toBe(0.38);
   });
 
-  test("pricing matches the legacy pricing-rules.json (no behaviour drift)", () => {
+  test("pricing values (regression anchor — the pack is the single source)", () => {
     const p = defaultPack();
-    const r = legacyRules();
-    expect(p.pricing.tiers).toEqual(r.tiers);
-    expect(p.pricing.taxes).toEqual(r.taxes);
-    expect(p.pricing.qtyBreaks).toEqual(r.qtyBreaks);
-    expect(p.pricing.brandMargin).toEqual(r.brandMargin);
-    expect(p.matching.autoLink).toBe(r.matching.autoLink);
+    expect(p.pricing.tiers["contractor-a"]!.discount).toBe(0.18);
+    expect(p.pricing.tiers["retail"]!.discount).toBe(0);
+    expect(p.pricing.taxes).toEqual([{ label: "VAT", rate: 0.18 }]);
+    expect(p.pricing.priceDecimals).toBe(2);
+    expect(p.pricing.validityDays).toBe(14);
+    expect(p.pricing.qtyBreaks).toContainEqual({ category: "cable", minQty: 500, extraDiscount: 0.05 });
   });
 
   test("rejects a prefix-rules pack with no rules", () => {

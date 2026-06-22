@@ -1,6 +1,6 @@
-// Layer 5 — the company pricing-rules engine. Deterministic + auditable: every
-// number on the quote traces to a rule in data/pricing-rules.json. Lift-and-shift
-// is "edit that JSON"; this engine never changes.
+// Layer 5 — the company pricing engine. Deterministic + auditable: every number on
+// the quote traces to a rule in the active rule pack (pack.pricing). Lift-and-shift
+// is "edit the pack"; this engine never changes.
 import { catalog } from "../config.ts";
 import type { MatchedLine, QuoteLine, CustomerRef } from "../../../shared/types.ts";
 import type { RulePack } from "../rulepack/schema.ts";
