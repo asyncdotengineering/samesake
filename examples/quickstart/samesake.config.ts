@@ -10,7 +10,7 @@ export const contact = entity("contact", {
     name_emb: { source: "name", model: "gemini-embedding-001", dim: 768 },
   },
   phonetic: {
-    name_phon: { source: "name", algorithm: "indic-soundex" },
+    name_phon: { source: "name" },
   },
   scoring: {
     channels: [

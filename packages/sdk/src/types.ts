@@ -53,8 +53,9 @@ export interface EmbeddingDef {
 }
 
 export interface PhoneticDef {
+  /** Field name or source expression whose value is phonetically hashed. The algorithm
+   *  is chosen by the PhoneticProvider on createMatcher (e.g. indicPhonetic), not here. */
   source: string;
-  algorithm: "indic-soundex" | "soundex" | "metaphone";
 }
 
 /**

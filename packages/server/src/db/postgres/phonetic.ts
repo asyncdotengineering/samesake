@@ -21,13 +21,13 @@ export const indicPhonetic: PhoneticProvider = {
     BEGIN
       s := lower(coalesce(input, ''));
 
-      -- Aspirate-strip: in Latin transliterations of Indic names, 'h'
-      -- after d/t/k/p/g/b/c/j marks aspiration of the preceding consonant
-      -- and has no separate phonetic class in our alphabet. The native
-      -- script writes a different consonant character (e.g. द vs ध, க has
-      -- no 'kh' counterpart in Tamil), so dropping the 'h' here is what
-      -- makes 'Maaladhi' ≡ 'மாலதி' and 'Mukhesh' ≡ 'मुकेश'. Word-initial
-      -- 'h' and 'sh' digraph are unaffected.
+      -- Aspirate-strip: in Latin transliterations of Sinhala/Tamil names, 'h'
+      -- after d/t/k/p/g/b/c/j marks aspiration of the preceding consonant and
+      -- has no separate phonetic class here (Tamil க has no 'kh' counterpart).
+      -- Dropping it makes 'Maaladhi' ≡ 'Maaladi' so the Latin form lines up with
+      -- the native Tamil/Sinhala spelling (e.g. 'மாலதி'). Word-initial 'h' and
+      -- the 'sh' digraph are unaffected. (Scope: Sinhala/Tamil/Latin only — there
+      -- is no Devanagari/other-Indic-script coverage despite the "Indic" name.)
       s := regexp_replace(s, '([dtkpgbcj])h', '\\1', 'g');
 
       -- Same 8-letter alphabet across scripts so 'Amma' ≡ 'අම්මා' ≡ 'அம்மா'.

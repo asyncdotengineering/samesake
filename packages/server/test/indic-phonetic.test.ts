@@ -75,7 +75,7 @@ describeIf("indic phonetic (samesake_phonetic)", () => {
           {
             name: "contact",
             fields: { name: { type: "string" } },
-            phonetic: { name_phon: { source: "name", algorithm: "indic-soundex" } },
+            phonetic: { name_phon: { source: "name" } },
           },
         ],
         collections: [],
