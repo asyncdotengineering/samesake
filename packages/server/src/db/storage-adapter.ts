@@ -35,6 +35,18 @@ export interface StorageAdapter {
   facets(query: FacetQuery): Promise<Record<string, FacetResult>>;
   /** Mark a pipeline row failed: bump attempt count, store the error, set exponential backoff. */
   recordFailure(table: string, rowId: string, message: string): Promise<void>;
+  /** A single row's `data` column by id (agent image lookup). */
+  rowData(table: string, id: string): Promise<Record<string, unknown> | undefined>;
+  /** `indexed_at` / `updated_at` for a set of ids (staleness check). */
+  indexStatus(table: string, ids: string[]): Promise<Array<Record<string, unknown>>>;
+  /** Mark failed rows past max attempts as dead; returns how many. */
+  markDead(table: string, maxAttempts: number): Promise<number>;
+  /** Failed rows due for retry (under max attempts). */
+  retryableRows(table: string, maxAttempts: number, limit: number): Promise<Array<Record<string, unknown>>>;
+  /** Upsert a source document (content-hash-aware `updated_at`). */
+  upsertDocument(table: string, id: string, dataJson: string, contentHash: string): Promise<void>;
+  /** Delete documents by id; returns how many were removed. */
+  deleteDocuments(table: string, ids: string[]): Promise<number>;
 }
 
 /**
@@ -76,5 +88,76 @@ export class PostgresAdapter implements StorageAdapter {
        WHERE id = $2`,
       [message, rowId]
     );
+  }
+
+  async rowData(table: string, id: string): Promise<Record<string, unknown> | undefined> {
+    const rows = await getPgClient(this.handle.db, "agent-tools").unsafe(
+      `SELECT data FROM ${table} WHERE id = $1 LIMIT 1`,
+      [id]
+    );
+    return rows[0]?.data as Record<string, unknown> | undefined;
+  }
+
+  indexStatus(table: string, ids: string[]): Promise<Array<Record<string, unknown>>> {
+    return getPgClient(this.handle.db, "agent-tools").unsafe(
+      `SELECT id, indexed_at, updated_at FROM ${table} WHERE id = ANY($1::text[])`,
+      [ids]
+    );
+  }
+
+  async markDead(table: string, maxAttempts: number): Promise<number> {
+    const rows = await getPgClient(this.handle.db, "retry").unsafe(
+      `UPDATE ${table}
+       SET pipeline_status = 'dead', updated_at = now()
+       WHERE pipeline_status = 'failed' AND attempt_count >= $1
+       RETURNING id`,
+      [maxAttempts]
+    );
+    return rows.length;
+  }
+
+  retryableRows(table: string, maxAttempts: number, limit: number): Promise<Array<Record<string, unknown>>> {
+    return getPgClient(this.handle.db, "retry").unsafe(
+      `SELECT id, data, enriched, image_etag, enriched_at
+       FROM ${table}
+       WHERE pipeline_status = 'failed'
+         AND next_attempt_at <= now()
+         AND attempt_count < $1
+       ORDER BY id
+       LIMIT $2`,
+      [maxAttempts, limit]
+    );
+  }
+
+  async upsertDocument(table: string, id: string, dataJson: string, contentHash: string): Promise<void> {
+    await getPgClient(this.handle.db, "ingest").unsafe(
+      `INSERT INTO ${table} (id, data, content_hash, ingested_at, updated_at)
+       VALUES ($1, $2::jsonb, $3, now(), now())
+       ON CONFLICT (id) DO UPDATE SET
+         data = EXCLUDED.data,
+         content_hash = EXCLUDED.content_hash,
+         updated_at = CASE
+           WHEN ${table}.content_hash <> EXCLUDED.content_hash THEN now()
+           ELSE ${table}.updated_at
+         END,
+         enriched_at = CASE
+           WHEN ${table}.content_hash <> EXCLUDED.content_hash THEN NULL
+           ELSE ${table}.enriched_at
+         END,
+         indexed_at = CASE
+           WHEN ${table}.content_hash <> EXCLUDED.content_hash THEN NULL
+           ELSE ${table}.indexed_at
+         END,
+         enriched = CASE
+           WHEN ${table}.content_hash <> EXCLUDED.content_hash THEN NULL
+           ELSE ${table}.enriched
+         END`,
+      [id, dataJson, contentHash]
+    );
+  }
+
+  async deleteDocuments(table: string, ids: string[]): Promise<number> {
+    const result = await getPgClient(this.handle.db, "ingest").unsafe(`DELETE FROM ${table} WHERE id = ANY($1)`, [ids]);
+    return (result as { count?: number }).count ?? 0;
   }
 }

@@ -48,25 +48,9 @@ export function makeRetryService(
     const table = collectionTableName(project.schema_name, collectionName);
     const hasEnrich = isPipeline(def.enrich);
 
-    const deadRows = await ctx.storage.client("retry").unsafe(
-      `UPDATE ${table}
-       SET pipeline_status = 'dead', updated_at = now()
-       WHERE pipeline_status = 'failed' AND attempt_count >= $1
-       RETURNING id`,
-      [maxAttempts]
-    );
-    const dead = deadRows.length;
+    const dead = await ctx.storage.markDead(table, maxAttempts);
 
-    const retryable = await ctx.storage.client("retry").unsafe(
-      `SELECT id, data, enriched, image_etag, enriched_at
-       FROM ${table}
-       WHERE pipeline_status = 'failed'
-         AND next_attempt_at <= now()
-         AND attempt_count < $1
-       ORDER BY id
-       LIMIT $2`,
-      [maxAttempts, limit]
-    );
+    const retryable = await ctx.storage.retryableRows(table, maxAttempts, limit);
 
     let retried = 0;
     for (const row of retryable) {
