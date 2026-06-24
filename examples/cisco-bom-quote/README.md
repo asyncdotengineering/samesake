@@ -50,6 +50,26 @@ The rules recover Cisco's own classification **22/22** — validated against the
 bucket each line lands in (from the estimate's `Total` formulas). The buckets reproduce the
 estimate totals to the cent, then your per-kind margin produces the customer quote.
 
+## Read a real export
+
+`run.ts` uses a frozen copy of the data; to quote straight from a CCW `.xlsx`:
+
+```bash
+bun run src/run-from-file.ts /path/to/Cisco_Estimate.xlsx
+```
+
+`src/parse-export.ts` finds the priced sheet, locates the `Part Number` header, and keeps only
+real line items (dropping group headers, deployment sub-headers, `Initial Term …` annotations and
+subtotals). On the real Micro Solutions export that's **57 lines**, reproducing the same
+$55,860.16 net. Two things to note in the output:
+
+- **Discount agrees with the file 57/57** — the export carries Cisco's own `Disc(%)`, so the run
+  self-validates the classification (no hand-labelled truth needed).
+- **11 lines trip the review gate** — the long-tail `$0` bundled SKUs (`L-DNA-T0-5M`,
+  `SDWAN-CLOUD-PF`, IOS images…) whose prefixes the rules don't cover. They don't affect the
+  total, but they're flagged rather than guessed — which is the honest behaviour, and exactly the
+  set samesake's enrichment would classify from the description.
+
 ## Where samesake fits
 
 The rules are the reliable core. samesake adds two things on top:

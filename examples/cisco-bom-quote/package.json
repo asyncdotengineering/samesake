@@ -4,10 +4,12 @@
   "type": "module",
   "scripts": {
     "start": "bun src/run.ts",
+    "quote": "bun src/run-from-file.ts",
     "samesake": "bun src/samesake.ts"
   },
   "dependencies": {
     "@samesake/core": "workspace:*",
-    "@samesake/server": "workspace:*"
+    "@samesake/server": "workspace:*",
+    "xlsx": "^0.18.5"
   }
 }
