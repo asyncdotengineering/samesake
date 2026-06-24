@@ -13,8 +13,8 @@ It's the [Weaviate Query Agent e-commerce recipe](https://docs.weaviate.io/agent
 Mastra Agent (gpt-4.1-mini)
 ├── searchProducts        →  samesake.search  (hybrid: FTS + vector, NLQ budget parsing)
 ├── searchBrands          →  samesake.search  (brand hierarchy / country / rating)
-├── countProductsByBrand  →  SQL GROUP BY      (which brand lists the most shoes)
-└── averagePrice          →  SQL AVG           (avg price for a brand)
+├── countProductsByBrand  →  samesake.facets   (terms facet on brand — count per brand)
+└── averagePrice          →  samesake.facets   (range facet on price — count + avg)
         │
         ▼
   Postgres + pgvector
@@ -31,7 +31,7 @@ Three pieces, three jobs:
 - **Mastra** is the *agent*. An LLM that you hand a set of tools (functions). It decides which tool to call, with what arguments, and turns the results into an answer. It also keeps conversation history.
 - **MCP** is the *plug*. Wrap your tools in an MCP server and any MCP-speaking client can drive them — you build the capability once.
 
-The agent never talks to Postgres directly. It calls tools; the tools call samesake (or SQL). That separation is the whole design.
+The agent never talks to Postgres directly. It calls tools; the tools call samesake — search *and* aggregation. That separation is the whole design.
 
 ## 1. Scaffold + dependencies
 
@@ -45,7 +45,6 @@ A standalone Bun app — no framework needed.
 "@mastra/mcp": "^1.10.0",
 "@ai-sdk/openai": "^3.0.71",
 "ai": "^6.0.184",
-"postgres": "^3.4.9",
 "zod": "^4.4.3"
 ```
 
@@ -142,7 +141,7 @@ Bulk indexing makes one embedding call per document. Depending on your key/tier,
 
 ## 4. The tools
 
-Two search tools, two aggregation tools. The split that matters: **search vs. aggregate**.
+Two search tools, two aggregation tools — all four through samesake. The split that matters: **search vs. aggregate**.
 
 ```ts
 // src/tools.ts (search — abridged)
@@ -166,8 +165,8 @@ export const searchProducts = createTool({
 });
 ```
 
-<Aside type="tip" title="samesake.search() needs a query — aggregations don't go through it">
-`search()` requires a non-empty `q` (or image) — it's a retrieval call, not a browse-and-group call, and it can't express a `GROUP BY`. So *"which brand lists the most shoes"* and *"average price for brand X"* run as **direct SQL** against the compiled collection table (`project_qa_ecommerce.c_products`), exactly like the recipe's agent running an aggregation in the database.
+<Aside type="tip" title="search() needs a query — aggregations use facets() instead">
+`search()` requires a non-empty `q` (or image) — it's a retrieval call, it can't express a `GROUP BY`. So *"which brand lists the most shoes"* and *"average price for brand X"* go through [`matcher.facets()`](/guides/faceted-search/#aggregations-without-a-search-query) — samesake's query-free aggregation. A terms facet on `brand` *is* a count-per-brand `GROUP BY`; a range facet on `price` carries `count` + `avg`. No raw SQL, no coupling to samesake's internal table.
 </Aside>
 
 ```ts
@@ -177,11 +176,12 @@ export const countProductsByBrand = createTool({
   description: "Count items per brand, ranked. Pass `category` (e.g. shoes -> Footwear) or omit for the whole catalog.",
   inputSchema: z.object({ category: z.enum(PRODUCT_CATEGORIES).optional() }),
   execute: async ({ category }) => {
-    const rows = await sql()`
-      SELECT brand, count(*)::int AS count FROM ${sql().unsafe(PRODUCTS_TABLE)}
-      WHERE ${category ? sql()`category = ${category}` : sql()`true`}
-      GROUP BY brand ORDER BY count DESC`;
-    return { top: rows[0] ?? null, by_brand: rows };
+    const f = await getMatcher().facets(PROJECT, PRODUCTS, {
+      filters: category ? { category } : {},
+      facets: ["brand"],
+    });
+    const by_brand = "values" in f.brand ? f.brand.values : [];
+    return { top: by_brand[0] ?? null, by_brand };
   },
 });
 
@@ -189,7 +189,11 @@ export const averagePrice = createTool({
   id: "average_price",
   description: "Average price (USD) and item count for a brand across the whole catalog.",
   inputSchema: z.object({ brand: z.string() }),
-  execute: async ({ brand }) => { /* SELECT count(*), avg(price) WHERE brand = $1 */ },
+  execute: async ({ brand }) => {
+    const f = await getMatcher().facets(PROJECT, PRODUCTS, { filters: { brand }, facets: ["price"] });
+    const p = "avg" in f.price ? f.price : null;
+    return { brand, item_count: p?.count ?? 0, average_price_usd: p?.avg ?? null };
+  },
 });
 
 export const tools = { searchProducts, searchBrands, countProductsByBrand, averagePrice };
