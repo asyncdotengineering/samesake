@@ -76,6 +76,7 @@ export interface Matcher {
   getEntityDef: ReturnType<typeof makeProjectsService>["getEntityDef"];
   getCollectionDef: ReturnType<typeof makeProjectsService>["getCollectionDef"];
   search: ReturnType<typeof makeSearchService>["search"];
+  facets: ReturnType<typeof makeSearchService>["facets"];
   evaluateSearch: ReturnType<typeof makeCalibrateSearchService>["evaluateSearch"];
   calibrateSearch: ReturnType<typeof makeCalibrateSearchService>["calibrateSearch"];
   findProducts: ReturnType<typeof makeAgentToolsService>["findProducts"];
@@ -306,6 +307,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
     getEntityDef: projectsService.getEntityDef,
     getCollectionDef: projectsService.getCollectionDef,
     search: searchService.search,
+    facets: searchService.facets,
     evaluateSearch: calibrateSearchService.evaluateSearch,
     calibrateSearch: calibrateSearchService.calibrateSearch,
     findProducts: agentToolsService.findProducts,
