@@ -67,7 +67,7 @@ export const products = collection("products", {
 });
 ```
 
-`facet: "range"` on a number field gives you histogram buckets (min, max, and a handful of lo/hi bands). Everything else with `facet: true` returns value → count pairs.
+`facet: "range"` on a number field gives you numeric stats — count, min, max, avg — plus a handful of lo/hi histogram bands. Everything else with `facet: true` returns value → count pairs.
 
 ## Index it, keep it fresh
 
@@ -125,8 +125,10 @@ Range facets (`f.number({ facet: "range" })`):
 ```ts
 result.facets.price
 // {
+//   count: 80,
 //   min: 1200,
 //   max: 48000,
+//   avg: 14250,
 //   buckets: [
 //     { lo: 1200, hi: 9000, count: 31 },
 //     { lo: 9000, hi: 16800, count: 18 },
@@ -150,6 +152,34 @@ Counts and hits both respect the same `q` + `filters`. That's what makes "14" ne
 
 <Aside type="tip">
 Request only the facets you render. Each name in `facets: [...]` is a grouped SQL aggregate — keep the list to what the sidebar actually shows.
+</Aside>
+
+## Aggregations without a search query
+
+Facets above ride on `search()`, which needs a query (or image). But some questions are pure aggregation — *"how many products does each brand list?"*, *"what's the average price for Loom & Aura?"* — with no search at all. Reaching for raw SQL against samesake's compiled table couples you to its internal schema. Use **`matcher.facets()`** instead: the same facet/stats engine, no query required.
+
+```ts title="Pure aggregation — no query"
+// Count per brand across the catalog (optionally scoped by a filter)
+const brands = await matcher.facets("shop", "products", {
+  facets: ["brand"],
+  filters: { category: "Footwear" }, // optional
+});
+brands.brand;
+// { values: [{ value: "Nike", count: 32 }, { value: "Adidas", count: 21 }, … ] }
+
+// Average + count for one brand — range facets carry numeric stats
+const price = await matcher.facets("shop", "products", {
+  filters: { brand: "Loom & Aura" },
+  facets: ["price"],
+});
+price.price;
+// { count: 18, min: 4200, max: 28000, avg: 11910, buckets: [ … ] }
+```
+
+`facets()` takes only `filters` + the facet field names — no `q`. It returns the same `FacetResult` shapes as `result.facets`: text/enum/boolean fields give `{ values: [{ value, count }] }`; range fields give `{ count, min, max, avg, buckets }`. This is the primitive for "count per X" and "average Y" — the [Mastra e-commerce assistant](/guides/mastra-ecommerce-assistant/) uses it for its `count_products_by_brand` and `average_price` tools.
+
+<Aside type="tip">
+Everything stays in your Postgres, so a one-off `GROUP BY` you don't want to model as a facet is always a plain SQL query away. But for the counts and averages an agent or dashboard asks repeatedly, `facets()` keeps you on a stable API instead of samesake's internal table names.
 </Aside>
 
 ## Ranking you still control

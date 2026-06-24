@@ -2,6 +2,18 @@
 
 All notable changes to samesake. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.2.0]
+
+### Added
+
+- **`matcher.facets(project, collection, { filters?, facets })`** — query-free aggregation over a collection's facetable fields. Unlike `search()` (which requires a query), this is a pure `GROUP BY` / numeric-stats over the filtered rows — the primitive for "count per brand" / "average price" without dropping to raw SQL against the compiled collection table (and coupling to its internal schema/name). Returns the same `FacetResult` shapes as `search()`'s `result.facets`. Inspired by Upstash Redis Search's query-free `count()`/`aggregate()`.
+- **`count` + `avg` on range facets** — `FacetRangeResult` now carries `count` and `avg` alongside `min`/`max`/`buckets` (one extra aggregate in the same stats query), so a numeric field's average is a first-class facet result.
+- **Facet result types exported** — `FacetResult`, `FacetCountResult`, `FacetRangeResult`, `FacetBucket` are now public from `@samesake/server` for consumers working with `facets()` / `result.facets`.
+
+### Changed
+
+- **`apps/ecommerce-assistant`** — `count_products_by_brand` and `average_price` now route through `matcher.facets()` instead of issuing raw SQL against `project_*.c_products`; the `postgres` client dependency and the internal-table coupling are gone.
+
 ## [2.1.0]
 
 ### Added
