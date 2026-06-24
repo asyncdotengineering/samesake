@@ -5,6 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { loadPackFromYaml } from "../src/rulepack/load.ts";
 import { priceLineFromRules } from "../src/pipeline/price-rules.ts";
+import { priceLine } from "../src/pipeline/price.ts";
 import { buildQuotation, type QuotePricing } from "../src/pipeline/quote.ts";
 import { strategyFor } from "../src/pipeline/strategy.ts";
 import type { NormalizedBomLine, CustomerRef, Company, QuoteLine, MatchedLine } from "../../shared/types.ts";
@@ -71,5 +72,24 @@ describe("buildQuotation totals (deterministic)", () => {
     const q = buildQuotation([ql(100)], unresolved, company, customer, pricing, "Q-2", day);
     expect(q.unresolved.length).toBe(1);
     expect(q.notes.some((n) => /confirm/i.test(n))).toBe(true);
+  });
+});
+
+describe("catalog pricing — priceLine (deterministic)", () => {
+  const pack = loadPackFromYaml("electrical-mep");
+
+  test("tier discount applied to the catalog list price", () => {
+    // SCH-MCB-6-SP-C → catalog list 720; Schneider margin 0, breaker no markup; contractor-a 0.18;
+    // qty 10 is below every qtyBreak (breaker ≥50, * ≥200).
+    const m: MatchedLine = {
+      line: line({ lineNo: 1, qty: 10, category: "breaker", specs: { ratingA: 6, poles: "SP" } }),
+      status: "matched",
+      chosen: { code: "SCH-MCB-6-SP-C", description: "6A MCB", brand: "Schneider", confidence: 0.9, listPrice: 720, unit: "nos" },
+      alternatives: [], confirmedByUser: false,
+    };
+    const ql = priceLine(m, customer, pack.pricing);
+    expect(ql.listPrice).toBe(720);
+    expect(ql.unitPrice).toBe(590.4); // 720 × (1 − 0.18)
+    expect(ql.lineTotal).toBe(5904); // 590.4 × 10
   });
 });
