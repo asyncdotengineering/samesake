@@ -13,8 +13,10 @@ export interface FacetBucket {
 }
 
 export interface FacetRangeResult {
+  count: number;
   min: number | null;
   max: number | null;
+  avg: number | null;
   buckets: FacetBucket[];
 }
 
@@ -172,7 +174,7 @@ async function computeRangeFacet(
   params: unknown[]
 ): Promise<FacetRangeResult> {
   const stats = await getPgClient(db, "facet query").unsafe(
-    `SELECT min(${col})::float AS lo, max(${col})::float AS hi, count(*)::int AS n
+    `SELECT min(${col})::float AS lo, max(${col})::float AS hi, avg(${col})::float AS mean, count(*)::int AS n
      FROM ${table}
      WHERE ${where} AND ${col} IS NOT NULL`,
     params
@@ -180,16 +182,19 @@ async function computeRangeFacet(
 
   const lo = stats[0]?.lo != null ? Number(stats[0].lo) : null;
   const hi = stats[0]?.hi != null ? Number(stats[0].hi) : null;
+  const avg = stats[0]?.mean != null ? Number(stats[0].mean) : null;
   const n = Number(stats[0]?.n ?? 0);
 
   if (n === 0 || lo == null || hi == null) {
-    return { min: lo, max: hi, buckets: [] };
+    return { count: n, min: lo, max: hi, avg, buckets: [] };
   }
 
   if (lo === hi) {
     return {
+      count: n,
       min: lo,
       max: hi,
+      avg,
       buckets: [{ lo, hi, count: n }],
     };
   }
@@ -222,5 +227,5 @@ async function computeRangeFacet(
     });
   }
 
-  return { min: lo, max: hi, buckets };
+  return { count: n, min: lo, max: hi, avg, buckets };
 }

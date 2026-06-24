@@ -39,6 +39,7 @@ export type {
   PolicySlot,
 } from "./types.ts";
 export type { SearchExplainResult, ExplainDocBreakdown, SearchOpts } from "./core/search.ts";
+export type { FacetResult, FacetCountResult, FacetRangeResult, FacetBucket } from "./db/postgres/facets.ts";
 export type {
   SearchEvalQuery,
   SearchEvalConfig,

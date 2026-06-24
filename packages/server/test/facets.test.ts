@@ -130,6 +130,28 @@ describeIf("facets and pagination", () => {
     expect(priceFacet.buckets.reduce((s, b) => s + b.count, 0)).toBe(2);
   });
 
+  test("query-free facets(): terms counts + numeric avg, no search query", async () => {
+    const f = await matcher.facets(projectSlug, "products", { facets: ["category", "price"] });
+    const cat = f.category;
+    const cats = cat && "values" in cat ? cat.values : [];
+    expect(cats.find((c) => c.value === "shoes")?.count).toBe(2);
+    expect(cats.find((c) => c.value === "accessories")?.count).toBe(2);
+    const price = f.price;
+    const stats = price && "avg" in price ? price : null;
+    expect(stats?.count).toBe(5);
+    expect(stats?.min).toBe(20);
+    expect(stats?.max).toBe(120);
+    expect(stats?.avg).toBeCloseTo(67, 5); // (120+90+25+80+20)/5
+  });
+
+  test("facets() honours filters (avg within a category)", async () => {
+    const f = await matcher.facets(projectSlug, "products", { filters: { category: "shoes" }, facets: ["price"] });
+    const price = f.price;
+    const stats = price && "avg" in price ? price : null;
+    expect(stats?.count).toBe(2); // shoes: 120 + 90
+    expect(stats?.avg).toBeCloseTo(105, 5);
+  });
+
   test("offset pagination and total_candidates", async () => {
     const page0 = await matcher.search(projectSlug, "products", {
       q: "red",

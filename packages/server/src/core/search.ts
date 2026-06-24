@@ -946,7 +946,33 @@ export function makeSearchService(
     return { result, explain };
   }
 
-  return { search, searchExplain, searchWithExplain, indexDocuments, getCollectionDef };
+  /**
+   * Query-free aggregation over a collection's facetable fields. Unlike search(), this needs
+   * no query — it's a pure GROUP BY / numeric-stats over the filtered rows. The primitive
+   * consumers reach for to answer "count per brand" / "average price" without dropping to raw
+   * SQL against the physical table (and coupling to its internal schema/name).
+   */
+  async function facets(
+    projectSlug: string,
+    collectionName: string,
+    opts: { filters?: SearchFilters; facets: string[] }
+  ): Promise<Record<string, import("../db/postgres/facets.ts").FacetResult>> {
+    if (!opts.facets?.length) return {};
+    const project = await projectsService.getProject(projectSlug);
+    if (!project) throw new Error(`project "${projectSlug}" not found`);
+    const def = await getCollectionDef(projectSlug, collectionName);
+    if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
+    const compiled = buildFilterSql(opts.filters ?? {}, def, { soft: false }, 1);
+    return ctx.storage.facets({
+      table: collectionTableName(project.schema_name, collectionName),
+      def,
+      where: compiled.where,
+      params: compiled.params,
+      facetNames: opts.facets,
+    });
+  }
+
+  return { search, searchExplain, searchWithExplain, indexDocuments, getCollectionDef, facets };
 }
 
 export type SearchService = ReturnType<typeof makeSearchService>;
