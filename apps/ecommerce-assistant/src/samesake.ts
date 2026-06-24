@@ -10,11 +10,10 @@ export const PROJECT = "qa-ecommerce";
 export const PRODUCTS = "products";
 export const BRANDS = "brands";
 
-// Physical Postgres location samesake compiles the products collection to. Aggregations
-// (COUNT/AVG) query this table directly — samesake's search() is retrieval-only and needs a
-// query, so it can't express a GROUP BY. Mirrors the recipe's Query Agent running aggregations.
+// The physical schema samesake compiles this project into. Aggregations (count-by-brand,
+// average-price) now go through matcher.facets(), not raw SQL — so only the SQL seed loader
+// (seed-from-sql.ts) needs this, to TRUNCATE the tables before restoring data/seed.sql.gz.
 export const SCHEMA = "project_qa_ecommerce";
-export const PRODUCTS_TABLE = `${SCHEMA}.c_${PRODUCTS}`;
 
 // ECommerce: clothing items, their brands, prices, reviews, etc.
 // Field descriptions matter the same way they do in the Weaviate recipe — they steer the

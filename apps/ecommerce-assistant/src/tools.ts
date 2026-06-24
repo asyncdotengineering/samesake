@@ -1,13 +1,6 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import postgres from "postgres";
-import { getMatcher, PROJECT, PRODUCTS, BRANDS, PRODUCTS_TABLE } from "./samesake.ts";
-
-let _sql: ReturnType<typeof postgres> | null = null;
-function sql() {
-  if (!_sql) _sql = postgres(process.env.DATABASE_URL!, { ssl: "require" });
-  return _sql;
-}
+import { getMatcher, PROJECT, PRODUCTS, BRANDS } from "./samesake.ts";
 
 // The Query Agent decides on its own whether to run a semantic search, a filtered search,
 // or an aggregation, and against which collection. We give a Mastra agent the same reach by
@@ -94,14 +87,13 @@ export const countProductsByBrand = createTool({
     category: z.enum(PRODUCT_CATEGORIES).optional().describe("e.g. 'shoes' -> Footwear; omit for all categories"),
   }),
   execute: async ({ category }) => {
-    const db = sql();
-    const rows = await db<{ brand: string; count: number }[]>`
-      SELECT brand, count(*)::int AS count
-      FROM ${db.unsafe(PRODUCTS_TABLE)}
-      WHERE ${category ? db`category = ${category}` : db`true`}
-      GROUP BY brand
-      ORDER BY count DESC, brand ASC`;
-    const by_brand = rows.map((r) => ({ value: r.brand, count: r.count }));
+    // A terms facet on `brand` — samesake's GROUP BY brand + COUNT, scoped by the category filter.
+    const f = await getMatcher().facets(PROJECT, PRODUCTS, {
+      filters: category ? { category } : {},
+      facets: ["brand"],
+    });
+    const brand = f.brand;
+    const by_brand = brand && "values" in brand ? brand.values : [];
     return { category: category ?? null, by_brand, top: by_brand[0] ?? null };
   },
 });
@@ -115,15 +107,14 @@ export const averagePrice = createTool({
     brand: z.string().describe("the brand to average over, e.g. 'Loom & Aura'"),
   }),
   execute: async ({ brand }) => {
-    const db = sql();
-    const [agg] = await db<{ n: number; avg: number | null }[]>`
-      SELECT count(*)::int AS n, avg(price)::float AS avg
-      FROM ${db.unsafe(PRODUCTS_TABLE)}
-      WHERE brand = ${brand}`;
+    // A range facet on `price`, filtered to the brand — samesake returns count + avg + min/max.
+    const f = await getMatcher().facets(PROJECT, PRODUCTS, { filters: { brand }, facets: ["price"] });
+    const price = f.price;
+    const stats = price && "avg" in price ? price : null;
     return {
       brand,
-      item_count: agg?.n ?? 0,
-      average_price_usd: agg?.avg == null ? null : Math.round(agg.avg * 100) / 100,
+      item_count: stats?.count ?? 0,
+      average_price_usd: stats?.avg == null ? null : Math.round(stats.avg * 100) / 100,
     };
   },
 });
