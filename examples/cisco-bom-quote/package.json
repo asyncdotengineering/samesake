@@ -1,0 +1,13 @@
+{
+  "name": "cisco-bom-quote",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun src/run.ts",
+    "samesake": "bun src/samesake.ts"
+  },
+  "dependencies": {
+    "@samesake/core": "workspace:*",
+    "@samesake/server": "workspace:*"
+  }
+}
