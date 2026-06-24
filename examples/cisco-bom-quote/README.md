@@ -70,6 +70,16 @@ $55,860.16 net. Two things to note in the output:
   total, but they're flagged rather than guessed — which is the honest behaviour, and exactly the
   set samesake's enrichment would classify from the description.
 
+### If Cisco changes the format
+
+The parser is coupled to the export layout — so it matches columns by **alias** (case-insensitive)
+and **fails loud** if a required column (part number / qty / net) is missing, rather than silently
+quoting `$0`. A rename it doesn't know throws *"Unrecognised Cisco export — missing required
+column(s)…"*. For a vendor-agnostic ingest with no alias list, route the file through the LLM
+`extract` step (the bom-quotation pipeline reads any layout into the same shape — slower, costs a
+call). Either way the coupling is isolated to **this one layer**: classification (`rules.ts`) and
+pricing never touch the file format.
+
 ## Where samesake fits
 
 The rules are the reliable core. samesake adds two things on top:
