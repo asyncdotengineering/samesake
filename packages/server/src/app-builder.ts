@@ -457,6 +457,39 @@ export function buildApp(deps: AppDeps): Hono {
     }
   );
 
+  // Read a single document by id (agent "read" primitive). offset/maxChars page the text.
+  app.get("/v1/projects/:project/collections/:collection/documents/:id", async (c) => {
+    const { project, collection, id } = c.req.param();
+    await requireProjectKey(c, project);
+    const offset = c.req.query("offset");
+    const maxChars = c.req.query("maxChars");
+    const doc = await services.search.getDocument(project, collection, id, {
+      offset: offset ? Number(offset) : undefined,
+      maxChars: maxChars ? Number(maxChars) : undefined,
+    });
+    if (!doc) return c.json({ detail: `document "${id}" not found` }, 404);
+    return c.json(doc);
+  });
+
+  // Regex-grep a single document's text (agent "grep" primitive). Matches travel, not the doc.
+  const GrepBody = z.object({
+    pattern: z.string(),
+    context: z.number().optional(),
+    maxMatches: z.number().optional(),
+  });
+  app.post(
+    "/v1/projects/:project/collections/:collection/documents/:id/grep",
+    zValidator("json", GrepBody),
+    async (c) => {
+      const { project, collection, id } = c.req.param();
+      await requireProjectKey(c, project);
+      const body = c.req.valid("json");
+      const res = await services.search.grepDocument(project, collection, id, body);
+      if (!res) return c.json({ detail: `document "${id}" not found` }, 404);
+      return c.json(res);
+    }
+  );
+
   app.get("/v1/agent-tools/tools.json", async (c) => {
     requireMasterKey(c);
     return c.json({ tools: services.agentTools.toolDescriptors() });

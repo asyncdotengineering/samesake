@@ -13,6 +13,8 @@ just a deployment URL and a project key. Point it at a matcher and go.
 | `samesake_search` | Hybrid (keyword + semantic) search with structured filters + facet counts; `mode:"similar"` for nearest-neighbour |
 | `samesake_find_products` | Grounded, purchasable product candidates for a shopper intent (stops before checkout) |
 | `samesake_find_similar` | Products similar to a reference `productId` or `imageUrl` |
+| `samesake_read` | Read a single document by id — full data + indexed text (offset/maxChars page long text) |
+| `samesake_grep` | Regex-grep a document's text, returning matches with surrounding context |
 
 All tools are read-only. `project` / `collection` default to env and can be overridden per call.
 

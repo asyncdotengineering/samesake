@@ -51,6 +51,13 @@ async function callSamesake<T = unknown>(path: string, body: Record<string, unkn
   return (await res.json()) as T;
 }
 
+/** GET a samesake /v1 endpoint with bearer auth (read/document routes). */
+async function getSamesake<T = unknown>(path: string): Promise<T> {
+  const res = await fetch(`${SAMESAKE_URL}${path}`, { method: "GET", headers: { Authorization: `Bearer ${API_KEY}` } });
+  if (!res.ok) throw new SamesakeError(res.status, await res.text().catch(() => ""));
+  return (await res.json()) as T;
+}
+
 /** Drop undefined keys so optional args don't become explicit nulls in the request body. */
 function prune(obj: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
@@ -75,7 +82,7 @@ function fail(err: unknown): ToolResult {
       err.status === 401
         ? "Error 401: bad SAMESAKE_API_KEY (needs a project key for this project)."
         : err.status === 404
-          ? "Error 404: project or collection not found — check the project/collection names."
+          ? "Error 404: not found — check the document id, project, and collection."
           : `Error ${err.status}: ${err.body.slice(0, 300)}`;
   } else {
     text = `Error: ${err instanceof Error ? err.message : String(err)}`;
@@ -182,6 +189,67 @@ server.registerTool(
         image: imageUrl ? { url: imageUrl } : undefined,
         constraints,
         limit,
+      });
+      return ok(data);
+    } catch (err) {
+      return fail(err);
+    }
+  },
+);
+
+server.registerTool(
+  "samesake_read",
+  {
+    title: "Read a document",
+    description:
+      "Read a single document by id — its full structured data plus the indexed text. Use after a " +
+      "search/find hit to get the complete document. offset/maxChars page long text. Read-only.",
+    inputSchema: {
+      id: z.string().describe("Document id (from a search or find hit)"),
+      ...target,
+      offset: z.number().int().min(0).optional().describe("Start offset into the document text"),
+      maxChars: z.number().int().min(1).optional().describe("Max characters of text to return"),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  },
+  async ({ id, project, collection, offset, maxChars }) => {
+    try {
+      const { project: p, collection: c } = resolveTarget(project, collection);
+      const qs = new URLSearchParams();
+      if (offset != null) qs.set("offset", String(offset));
+      if (maxChars != null) qs.set("maxChars", String(maxChars));
+      const q = qs.toString();
+      const data = await getSamesake(`/v1/projects/${p}/collections/${c}/documents/${encodeURIComponent(id)}${q ? `?${q}` : ""}`);
+      return ok(data);
+    } catch (err) {
+      return fail(err);
+    }
+  },
+);
+
+server.registerTool(
+  "samesake_grep",
+  {
+    title: "Grep a document",
+    description:
+      "Regex-search within a single document's text, returning matches with surrounding context — drill " +
+      "into a document without reading all of it. Pattern is JavaScript regex syntax. Read-only.",
+    inputSchema: {
+      id: z.string().describe("Document id"),
+      pattern: z.string().describe("Regex pattern (JS syntax), e.g. \"waterproof|gore-?tex\""),
+      ...target,
+      context: z.number().int().min(0).optional().describe("Characters of context around each match (default 60)"),
+      maxMatches: z.number().int().min(1).optional().describe("Max matches to return (default 50)"),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  },
+  async ({ id, pattern, project, collection, context, maxMatches }) => {
+    try {
+      const { project: p, collection: c } = resolveTarget(project, collection);
+      const data = await callSamesake(`/v1/projects/${p}/collections/${c}/documents/${encodeURIComponent(id)}/grep`, {
+        pattern,
+        context,
+        maxMatches,
       });
       return ok(data);
     } catch (err) {
