@@ -346,10 +346,12 @@ export function fashionNlqSchema(): z.ZodType {
     colors: z.array(zEnum(fashionEnums.colors)).nullable().describe("Colors the shopper explicitly wants, e.g. 'red dress' -> ['red']; else null."),
     exclude_colors: z.array(zEnum(fashionEnums.colors)).nullable().describe("Colors explicitly excluded, e.g. 'not black' -> ['black']; else null."),
     occasions: z.array(zEnum(fashionEnums.occasions)).nullable().describe("Occasions/use explicitly stated, e.g. 'for a wedding'; else null."),
+    styles: z.array(zEnum(fashionEnums.styles)).nullable().describe("Style / aesthetic. Map cultural & mood references to the closest styles: 'quiet luxury'->['minimalist','classic']; 'old money'->['classic','preppy']; 'y2k'->['y2k']; 'cottagecore'->['romantic','bohemian']; 'clean girl'/'coastal grandmother'->['minimalist','classic']; 'boho'->['bohemian']; 'streetwear'->['streetwear']. else null."),
     exclude_patterns: z.array(zEnum(fashionEnums.pattern)).nullable().describe("Patterns excluded, e.g. 'no prints'; else null."),
     exclude_terms: z.array(z.string()).nullable().describe("Negated attributes/styles, e.g. ['bodycon','skinny']; else null."),
     max_price: z.number().nullable().describe("Upper price bound as a plain number; strip currency + commas. Map 'under/below/less than/up to N' -> N. null if no upper bound."),
     min_price: z.number().nullable().describe("Lower price bound as a plain number. Map 'over/above/more than/at least/from N' -> N. 'between A and B' sets min=A and max=B. null if no lower bound."),
+    price_budget_hint: zEnum(["cheap", "premium"]).nullable().describe("Vague budget words with NO number: 'cheap/affordable/budget'->'cheap'; 'luxury/high-end/premium'->'premium'. An explicit price number always wins. null for an AESTHETIC like 'quiet luxury' (that's a style, not a price)."),
     semantic_query: z.string().describe("The remaining descriptive intent, STRIPPED of every constraint mapped above (price, color, gender, negation), rewritten as a rich product-description fragment. Never empty; never echoes price/constraint words. e.g. 'red shoes under 3000' -> 'shoes'."),
   });
 }
@@ -359,6 +361,7 @@ export const FASHION_NLQ_INSTRUCTIONS = `Parse a fashion shopper's search query 
 - Map EXPLICIT constraints to filters only when clearly stated: price bounds, colors, gender, occasion, negations ("not bodycon", "no prints"). Do NOT invent filters the shopper didn't state. Set category only when unambiguous.
 - Price: "under/below/less than/up to N" -> max_price=N; "over/above/at least/from N" -> min_price=N; "between A and B" -> min_price=A and max_price=B. Strip currency symbols and commas.
 - Budget words without a number ("cheap", "affordable", "budget") -> price_budget_hint=cheap; ("luxury", "high-end", "premium") -> premium. An explicit number always wins.
+- styles/aesthetics: when the query names a fashion AESTHETIC or cultural reference ("quiet luxury", "old money", "y2k", "cottagecore", "coastal grandmother", "clean girl", "streetwear", "boho"), set styles to the closest values AND expand semantic_query into the concrete look (silhouette, palette, materials) it implies — never leave a known aesthetic only as raw words. Note: "quiet luxury" is an aesthetic (styles), not a price signal.
 - semantic_query: the remaining descriptive intent, STRIPPED of every constraint mapped above (price, color, gender, negation), rewritten as a rich product-description fragment. Never empty; never echo the price/constraint words.
 
 <examples>
@@ -366,6 +369,8 @@ export const FASHION_NLQ_INSTRUCTIONS = `Parse a fashion shopper's search query 
 <example><input>silver watch over 6000</input><output>{"min_price":6000,"max_price":null,"colors":["silver"],"semantic_query":"wristwatch"}</output></example>
 <example><input>red dress for a wedding under 5000</input><output>{"colors":["red"],"occasions":["wedding"],"max_price":5000,"semantic_query":"dress for a wedding"}</output></example>
 <example><input>office wear for women, nothing bodycon</input><output>{"gender":"women","exclude_terms":["bodycon"],"semantic_query":"professional tailored office workwear for women"}</output></example>
+<example><input>quiet luxury</input><output>{"styles":["minimalist","classic"],"semantic_query":"understated tailored minimalist clothing in neutral tones and premium materials, no logos"}</output></example>
+<example><input>old money aesthetic</input><output>{"styles":["classic","preppy"],"semantic_query":"timeless preppy tailored heritage pieces in navy, beige and cream"}</output></example>
 </examples>`;
 
 // Standard fashion search fields. Declared attributes resolve from enriched.* (filled by the
@@ -385,7 +390,7 @@ export function fashionSearchFields(opts: { brandPath?: string } = {}): Record<s
     gender: enumF(fashionEnums.gender, { filterable: true, alsoMatch: ["unisex"], path: "enriched.gender" } as Partial<CollectionFieldDef>),
     colors: arrEnumF(fashionEnums.colors, { filterable: true, soft: true, facet: true, path: "enriched.colors" }),
     occasions: arrEnumF(fashionEnums.occasions, { filterable: true, soft: true, path: "enriched.occasions" }),
-    styles: arrEnumF(fashionEnums.styles, { filterable: true, path: "enriched.styles" }),
+    styles: arrEnumF(fashionEnums.styles, { filterable: true, soft: true, path: "enriched.styles" }),
     pattern: enumF(fashionEnums.pattern, { filterable: true, path: "enriched.pattern" }),
     material: enumF(fashionEnums.materials, { filterable: true, path: "enriched.material" }),
     fit: enumF(fashionEnums.fit, { filterable: true, path: "enriched.fit" }),
