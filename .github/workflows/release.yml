@@ -24,7 +24,8 @@ jobs:
         with:
           bun-version: latest
       - name: Configure npm auth
-        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
+        # Write to $HOME, never the repo tree — otherwise the changesets commit would add it.
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > "$HOME/.npmrc"
       - run: bun install
       - name: Version or publish
         uses: changesets/action@v1
