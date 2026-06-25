@@ -30,8 +30,8 @@
     "samesake"
   ],
   "dependencies": {
-    "@samesake/core": "^2.0.0",
-    "@samesake/server": "^2.0.0"
+    "@samesake/core": "workspace:^",
+    "@samesake/server": "workspace:^"
   },
   "devDependencies": {
     "tsup": "^8.5.1"
