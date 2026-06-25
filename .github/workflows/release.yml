@@ -30,8 +30,8 @@ jobs:
       - name: Version or publish
         uses: changesets/action@v1
         with:
-          version: bun run ci:version
-          publish: bun run ci:publish
+          version: bun run release:version
+          publish: bun run release:publish
           commit: "chore: version packages"
           title: "chore: version packages"
         env:

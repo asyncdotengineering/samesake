@@ -1,3 +1,11 @@
+## 2.4.1
+
+### Patch Changes
+
+- 87a8d9c: Use `workspace:^` for inter-package dependencies. In dev this always resolves to the local
+  workspace package; at publish `bun publish` rewrites it to a real `^<version>` (verified via
+  `bun pm pack`). Replaces the previous loose `^2.0.0` ranges that could silently resolve to a stale
+  published version (the bug that left `apps/playground` pinned to `^1.3.0`).
 
 # @samesake/server changelog
 
@@ -34,6 +42,7 @@ The parse-cache key includes a hash of the final composed prompt, so
 this change invalidates all cached parse results automatically.
 
 Consumers whose 0.5.3 override was a full prompt should split it into:
+
 1. Their domain content (role + examples + extraction rules) → keep
    in their entity's `parse.instructions`.
 2. Schema contract — DELETE from the consumer override; framework now
@@ -73,7 +82,7 @@ GPT-5 / Vercel AI SDK prompt-engineering guidance:
 
 The parse-cache key includes a hash of the instructions string, so
 this change invalidates all cached parse results automatically.
-Existing rows in the per-project entity_<kind>_match tables retain
+Existing rows in the per-project entity\_<kind>\_match tables retain
 their stored parsed columns; they will not be re-parsed unless the
 caller re-upserts. For demos and design-partner deploys, wipe and
 re-seed; for production, re-upsert affected rows when convenient.
@@ -127,7 +136,7 @@ Day-1-import flow for Sri Lankan SME customer books:
   Tamil, `ச` at word-start is the `s` sound — the per-script map
   was factually wrong.
 - Even when phonetic keys converged (e.g. `Anuja Wiwarana ↔ අනූජ
-  විවරණ` both → `NCVRN`), the trigram channel returned 0 because
+විවරණ` both → `NCVRN`), the trigram channel returned 0 because
   the two scripts share no character n-grams in their original
   form. With cosine alone carrying ~85% of the combined-score
   weight, cross-script same-name pairs sat at the 0.78 suggest
@@ -136,14 +145,16 @@ Day-1-import flow for Sri Lankan SME customer books:
 ### Changes
 
 **`samesake_phonetic` (system DDL)**
+
 - Tamil `ச` → `S` (was `C`). Aligns with how Latin `s` already maps.
 - Tamil `ஜ` → `C` explicitly (was bundled with ச in `'சஜ' → 'CC'`).
   Preserves the j-class mapping to align with Latin `j`.
 
 **Generated `match_<kind>` SQL (people-shape)**
+
 - Trigram channel is now `GREATEST(similarity(query.norm,
-  candidate.name_normalised), similarity(query.phon,
-  candidate.phon_hash))`. Intra-script pairs still use the richer
+candidate.name_normalised), similarity(query.phon,
+candidate.phon_hash))`. Intra-script pairs still use the richer
   normalised-text similarity (no behavior change). Cross-script
   pairs gain a trigram bridge via their phonetic signatures — for
   identical phonetic keys, trigram ≈ 1.0 instead of 0.

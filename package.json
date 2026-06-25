@@ -16,8 +16,8 @@
     "pack:assert": "bun scripts/pack-assert.ts",
     "build": "for d in packages/sdk packages/server packages/cli packages/mcp; do (cd \"$d\" && bun run build) || exit 1; done",
     "changeset": "changeset",
-    "ci:version": "changeset version && bun update",
-    "ci:publish": "bun run build && for dir in packages/*; do (cd \"$dir\" && bun publish || true); done && changeset tag"
+    "release:version": "changeset version && bun update",
+    "release:publish": "bun run build && for dir in packages/*; do [ -f \"$dir/package.json\" ] && (cd \"$dir\" && bun publish || true); done && changeset tag"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
@@ -30,6 +30,6 @@
     "@porulle/core": "0.1.0"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   }
 }
