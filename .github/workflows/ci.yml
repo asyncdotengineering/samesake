@@ -29,7 +29,7 @@ jobs:
       - name: typecheck workspaces
         run: |
           fail=0
-          for d in packages/sdk packages/server packages/cli apps/bom-quotation apps/ecommerce-assistant; do
+          for d in packages/sdk packages/server packages/cli packages/mcp apps/bom-quotation apps/ecommerce-assistant; do
             echo "── tsc: $d ──"
             (cd "$d" && bunx tsc --noEmit) || { echo "::error::tsc failed in $d"; fail=1; }
           done

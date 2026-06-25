@@ -198,6 +198,32 @@ server.registerTool(
 );
 
 server.registerTool(
+  "samesake_facets",
+  {
+    title: "Aggregate facet counts and stats (no query)",
+    description:
+      "Query-free aggregation over a collection: counts per value for text/enum fields, and " +
+      "count/avg/min/max for numeric range facets — e.g. 'how many products per brand', 'average " +
+      "price'. No search query needed; optional filters scope the aggregation. Read-only.",
+    inputSchema: {
+      facets: z.array(z.string()).describe("Field names to aggregate, e.g. [\"brand\",\"price\"]"),
+      ...target,
+      filters: z.record(z.string(), z.unknown()).optional().describe("Optional filters to scope, e.g. { \"category\": \"Footwear\" }"),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  },
+  async ({ facets, project, collection, filters }) => {
+    try {
+      const { project: p, collection: c } = resolveTarget(project, collection);
+      const data = await callSamesake(`/v1/projects/${p}/collections/${c}/facets`, { facets, filters });
+      return ok(data);
+    } catch (err) {
+      return fail(err);
+    }
+  },
+);
+
+server.registerTool(
   "samesake_read",
   {
     title: "Read a document",
