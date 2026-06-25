@@ -457,6 +457,27 @@ export function buildApp(deps: AppDeps): Hono {
     }
   );
 
+  // Query-free aggregation: counts per value + numeric stats, no search query (pure GROUP BY).
+  const FacetsBody = z.object({
+    facets: z.array(z.string()),
+    filters: z.record(z.string(), z.unknown()).optional(),
+  });
+  app.post(
+    "/v1/projects/:project/collections/:collection/facets",
+    zValidator("json", FacetsBody),
+    async (c) => {
+      const { project, collection } = c.req.param();
+      await requireProjectKey(c, project);
+      const body = c.req.valid("json");
+      return c.json(
+        await services.search.facets(project, collection, {
+          filters: body.filters as Record<string, import("./core/search.ts").FilterClause> | undefined,
+          facets: body.facets,
+        })
+      );
+    }
+  );
+
   // Read a single document by id (agent "read" primitive). offset/maxChars page the text.
   app.get("/v1/projects/:project/collections/:collection/documents/:id", async (c) => {
     const { project, collection, id } = c.req.param();

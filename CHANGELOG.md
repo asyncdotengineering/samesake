@@ -2,6 +2,13 @@
 
 All notable changes to samesake. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.4.0]
+
+### Added
+
+- **Query-free `facets` HTTP route** — `POST /v1/projects/:project/collections/:collection/facets` exposes `matcher.facets()` over HTTP (counts per value + numeric count/avg/min/max), so consumers can aggregate without a search query. Previously only reachable via the `facets` param on `/search`.
+- **`@samesake/mcp` gains `samesake_facets`** — the query-free aggregation tool ("count per brand", "average price"), bringing the MCP to six tools.
+
 ## [2.3.0]
 
 ### Added
