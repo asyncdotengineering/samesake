@@ -1,11 +1,11 @@
 {
   "name": "@samesake/server",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "repository": {
     "type": "git",
     "url": "https://github.com/asyncdotengineering/samesake"
   },
-  "description": "createMatcher factory \u2014 hybrid search (FTS+vector RRF, filters, facets, NLQ, enrichment) and entity resolution on PostgreSQL + pgvector. Hono app with universal fetch handler; BYO embed/generate/parse functions.",
+  "description": "createMatcher factory — hybrid search (FTS+vector RRF, filters, facets, NLQ, enrichment) and entity resolution on PostgreSQL + pgvector. Hono app with universal fetch handler; BYO embed/generate/parse functions.",
   "type": "module",
   "license": "MIT",
   "main": "./dist/index.cjs",
