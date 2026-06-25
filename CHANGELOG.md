@@ -2,6 +2,16 @@
 
 All notable changes to samesake. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.5.0]
+
+### Added
+
+- **Fashion NLQ vibe/aesthetic expansion** (`@samesake/core`) — the fashion NLQ now maps cultural & mood references to the structured `styles` attribute it already tags: *quiet luxury* → `minimalist,classic`; *old money* → `classic,preppy`; *y2k* → `y2k`; *cottagecore* → `romantic,bohemian`; *clean girl* / *coastal grandmother* → `minimalist,classic` — and expands the `semantic_query` into the concrete look (silhouette, palette, materials) the aesthetic implies. Previously these vibe queries produced **no structured signal** and rode entirely on the raw embedding. `styles` is now a **soft** filter (biases ranking, never hard-excludes on an inferred attribute).
+
+### Fixed
+
+- **Fashion budget hints now work** — `fashionNlqSchema` was missing `price_budget_hint`, the field both the NLQ instructions and `nlqParsedToFilters` expect, so vague budget words ("cheap", "premium") never mapped. Added it.
+
 ## [2.4.0]
 
 ### Added
