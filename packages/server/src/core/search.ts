@@ -972,7 +972,72 @@ export function makeSearchService(
     });
   }
 
-  return { search, searchExplain, searchWithExplain, indexDocuments, getCollectionDef, facets };
+  /**
+   * A single document by id — its structured data plus the indexed text. The "read" primitive
+   * for agents: search finds candidates, this returns the whole document. `offset`/`maxChars`
+   * slice the (potentially long) text so large documents can be paged without shipping all of it.
+   */
+  async function getDocument(
+    projectSlug: string,
+    collectionName: string,
+    id: string,
+    opts: { offset?: number; maxChars?: number } = {}
+  ): Promise<{ id: string; data: unknown; doc: string | null; enriched: unknown; indexedAt: unknown } | null> {
+    const project = await projectsService.getProject(projectSlug);
+    if (!project) throw new Error(`project "${projectSlug}" not found`);
+    if (!(await getCollectionDef(projectSlug, collectionName))) {
+      throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
+    }
+    const table = collectionTableName(project.schema_name, collectionName);
+    const rows = (await ctx.storage
+      .client("get document")
+      .unsafe(`SELECT id, data, doc, enriched, indexed_at FROM ${table} WHERE id = $1 LIMIT 1`, [id])) as Record<
+      string,
+      unknown
+    >[];
+    if (!rows.length) return null;
+    const r = rows[0]!;
+    let doc = (r.doc as string | null) ?? null;
+    if (doc !== null) {
+      if (opts.offset) doc = doc.slice(opts.offset);
+      if (opts.maxChars != null) doc = doc.slice(0, opts.maxChars);
+    }
+    return { id: String(r.id), data: r.data, doc, enriched: r.enriched ?? null, indexedAt: r.indexed_at };
+  }
+
+  /**
+   * Regex-grep a single document's text (the indexed `doc`, else its data JSON), returning matches
+   * with surrounding context — so an agent can drill into one document without pulling the whole
+   * thing. Server-side so only the matches travel, not the full text.
+   */
+  async function grepDocument(
+    projectSlug: string,
+    collectionName: string,
+    id: string,
+    opts: { pattern: string; context?: number; maxMatches?: number }
+  ): Promise<{ id: string; matches: { match: string; start: number; end: number; context: string }[] } | null> {
+    const doc = await getDocument(projectSlug, collectionName, id);
+    if (!doc) return null;
+    const text = doc.doc && doc.doc.trim() ? doc.doc : JSON.stringify(doc.data ?? {});
+    let re: RegExp;
+    try {
+      re = new RegExp(opts.pattern, "g");
+    } catch {
+      throw new Error(`invalid regex: ${opts.pattern}`);
+    }
+    const ctxChars = opts.context ?? 60;
+    const cap = opts.maxMatches ?? 50;
+    const matches: { match: string; start: number; end: number; context: string }[] = [];
+    for (const m of text.matchAll(re)) {
+      const start = m.index ?? 0;
+      const end = start + m[0].length;
+      matches.push({ match: m[0], start, end, context: text.slice(Math.max(0, start - ctxChars), Math.min(text.length, end + ctxChars)) });
+      if (matches.length >= cap) break;
+    }
+    return { id: doc.id, matches };
+  }
+
+  return { search, searchExplain, searchWithExplain, indexDocuments, getCollectionDef, facets, getDocument, grepDocument };
 }
 
 export type SearchService = ReturnType<typeof makeSearchService>;

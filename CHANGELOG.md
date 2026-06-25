@@ -2,6 +2,14 @@
 
 All notable changes to samesake. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.3.0]
+
+### Added
+
+- **`matcher.getDocument(project, collection, id, { offset?, maxChars? })`** — read a single document by id: its full structured `data` plus the indexed text, with optional slicing for long text. The agent "read" primitive (search finds candidates; this returns the whole document). Exposed over HTTP at `GET /v1/projects/:project/collections/:collection/documents/:id`.
+- **`matcher.grepDocument(project, collection, id, { pattern, context?, maxMatches? })`** — regex-grep a single document's text (the indexed `doc`, else its data JSON), returning matches with surrounding context. Server-side, so only matches travel — an agent can drill into a document without pulling all of it. Exposed at `POST …/documents/:id/grep`. (Inspired by workerbase's `read`/`grep` agent tools.)
+- **`@samesake/mcp` gains `samesake_read` + `samesake_grep` tools** wrapping the two routes, alongside `samesake_search` / `find_products` / `find_similar`.
+
 ## [2.2.0]
 
 ### Added

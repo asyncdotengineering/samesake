@@ -152,6 +152,27 @@ describeIf("facets and pagination", () => {
     expect(stats?.avg).toBeCloseTo(105, 5);
   });
 
+  test("getDocument returns a document by id (data + text), null when missing", async () => {
+    const doc = await matcher.getDocument(projectSlug, "products", "1");
+    expect(doc?.id).toBe("1");
+    expect((doc?.data as { title: string }).title).toBe("red nike shoes");
+    expect(doc?.doc).toContain("nike");
+    expect(await matcher.getDocument(projectSlug, "products", "nope")).toBeNull();
+  });
+
+  test("getDocument slices the text with offset/maxChars", async () => {
+    const doc = await matcher.getDocument(projectSlug, "products", "1", { offset: 4, maxChars: 4 });
+    expect(doc?.doc).toBe("nike"); // "red nike shoes".slice(4, 8)
+  });
+
+  test("grepDocument returns regex matches with context", async () => {
+    const res = await matcher.grepDocument(projectSlug, "products", "1", { pattern: "nike", context: 3 });
+    expect(res?.matches.length).toBe(1);
+    expect(res?.matches[0]!.match).toBe("nike");
+    expect(res?.matches[0]!.context).toContain("nike");
+    expect(await matcher.grepDocument(projectSlug, "products", "missing", { pattern: "x" })).toBeNull();
+  });
+
   test("offset pagination and total_candidates", async () => {
     const page0 = await matcher.search(projectSlug, "products", {
       q: "red",
