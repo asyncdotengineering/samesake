@@ -72,6 +72,34 @@ Spaces capability ships but stays **off by default**. Flat-weighted segmented ve
 
 Verdict and engineering findings: [`docs/spaces-gate.md`](./docs/spaces-gate.md).
 
+## Enrichment accuracy — the root-cause gate (separate from search relevance)
+
+Search relevance is downstream of enrichment: a mis-extracted color or missed neckline corrupts
+ranking, but a relevance metric only sees blurred noise. `matcher.evaluateEnrichment(...)` scores the
+pipeline's extracted attributes against a **human-labeled gold set** (`evals/golden-enrichment-fashion-lk.json`,
+50 real LK products from the `demo_store` corpus, labeled independently from titles) with per-attribute
+precision/recall/F1. Reproduce: `cd examples/fashion-search && bun eval-enrichment.ts --fixture`
+(offline, no DB/LLM) or `bun --env-file=../../.env eval-enrichment.ts` (live) — both give identical numbers.
+
+| attribute | precision | recall | F1 |
+|---|---|---|---|
+| category | 94.0% | 94.0% | 94.0% |
+| gender | 100% | 100% | 100% |
+| colors | 98.1% | 100% | 99.0% |
+| pattern | 100% | 100% | 100% |
+| is_apparel_product | 98.0% | 98.0% | 98.0% |
+| **overall (micro)** | **97.6%** | **98.1%** | **97.8%** |
+| **macro F1** | | | **98.2%** |
+
+Scoring: each value is a set token; TP = pred∩gold, FP = hallucinated, FN = missed ("NULL is worse
+than wrong"). v1 gold covers the controlled, gate/filter-critical attributes only (free-text
+`product_type` and image-derived `occasions/styles/fit/material` are out of scope until labeled from
+images — see [implementation notes](./search-enrichment-accuracy-implementation-notes.md)).
+
+The disagreement list is the payoff: this run flagged a shoe-care brush (`6842`) mis-classified as an
+apparel accessory and **not** gated (leaking into accessory search) — a real bug the search eval
+could not have localized.
+
 ## Methodology
 
 - **Golden set**: 50 queries covering keyword, attribute, use-case, price, negation, style, local, and broad intent types.

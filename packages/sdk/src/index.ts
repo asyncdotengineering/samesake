@@ -72,7 +72,9 @@ export {
   fashionNlqSchema,
   FASHION_EXTRACT_INSTRUCTIONS,
   FASHION_NLQ_INSTRUCTIONS,
+  fashionEvalAttributes,
   type FashionEnrichOptions,
+  type EnrichEvalAttr,
 } from "./templates/fashion.ts";
 export { IdentError, assertIdent, assertNoIdentCollisions } from "./ident.ts";
 

@@ -412,6 +412,32 @@ export function fashionSpaces(opts: { visual?: boolean; priceMax?: number } = {}
   return spaces;
 }
 
+// ── Enrichment-accuracy eval defaults ───────────────────────────────────
+/** One scorable attribute for enrichment-accuracy eval. Structurally matches @samesake/server's
+ * `AttrSpec` (kept dependency-free here so the SDK does not import the server). */
+export interface EnrichEvalAttr {
+  name: string;
+  kind: "single" | "multi";
+  /** Values that mean "no value" beyond ""/null/missing. Defaults to ["unknown"] in the scorer. */
+  empty?: string[];
+}
+
+/**
+ * Default attribute specs for scoring fashion enrichment accuracy via `matcher.evaluateEnrichment`.
+ * The controlled, gate/filter-critical attributes the classify+extract pipeline is expected to get
+ * right. `is_apparel_product` has no "unknown" state (true/false are both real), so its empty-set is
+ * []. Baked into the template (like fashion.fields/spaces/nlq) so consumers score without hand-rolling.
+ */
+export function fashionEvalAttributes(): EnrichEvalAttr[] {
+  return [
+    { name: "category", kind: "single" },
+    { name: "gender", kind: "single" },
+    { name: "colors", kind: "multi" },
+    { name: "pattern", kind: "single" },
+    { name: "is_apparel_product", kind: "single", empty: [] },
+  ];
+}
+
 /** Grouped namespace — `import { fashion } from "@samesake/core"`. */
 export const fashion = {
   taxonomy: fashionTaxonomy,
@@ -424,4 +450,5 @@ export const fashion = {
   extractSchema: fashionExtractSchema,
   extractInstructions: FASHION_EXTRACT_INSTRUCTIONS,
   nlq: { instructions: FASHION_NLQ_INSTRUCTIONS, schema: fashionNlqSchema },
+  evalAttributes: fashionEvalAttributes,
 };

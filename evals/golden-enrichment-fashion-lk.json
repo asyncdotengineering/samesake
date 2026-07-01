@@ -1,0 +1,620 @@
+{
+  "version": 1,
+  "country": "LK",
+  "corpus": "demo_store (Myntra LK fashion subset, 50 products) — matches examples/fashion-search/datasets/demo-store-seed.sql",
+  "notes": "Ground-truth attribute labels for measuring enrichment (classify+extract) ACCURACY, separate from search relevance. Scored per-attribute by scoreEnrichment (precision/recall/F1).",
+  "labeling_rules": [
+    "Labeled INDEPENDENTLY from the product TITLE only (no peeking at pipeline output).",
+    "Enum values only, from @samesake/core fashion template (validated at generation time).",
+    "colors: base colours only (enum), compound names mapped to base — 'Navy Blue'->navy, 'Off White'->white, 'Copper'/'Bronze'->brown, 'Gold Toned'->gold. A color key that is ABSENT means unlabeled (not scored); it does not mean 'no colour'.",
+    "category: the specific garment category wins over the generic 'kids' bucket; 'kids' only when the title gives no garment type (e.g. 'Kidswear'). This surfaces the real kids/garment taxonomy overlap.",
+    "pattern: labeled only when the title states it (Solid/Check/Stripes); otherwise unlabeled.",
+    "is_apparel_product: false for non-wearables — deodorant, perfume, laptop sleeve, shoe-care brush; true for watches/bags/belts/jewelry/footwear (fashion accessories)."
+  ],
+  "attributes_scored": {
+    "category": "single",
+    "gender": "single",
+    "colors": "multi",
+    "pattern": "single",
+    "is_apparel_product": "single"
+  },
+  "v1_scope_excludes": "product_type (free text — needs canonicalization before exact-match scoring); occasions/styles/fit/material/neckline (image-derived, need image-based labeling).",
+  "products": [
+    {
+      "id": "10268",
+      "title": "Clarks Men Hang Work Leather Black Formal Shoes",
+      "labels": {
+        "category": "footwear",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "black"
+        ]
+      }
+    },
+    {
+      "id": "10866",
+      "title": "Wrangler Men Motor Rider Red T-Shirts",
+      "labels": {
+        "category": "tops",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "red"
+        ]
+      }
+    },
+    {
+      "id": "11940",
+      "title": "Ganuchi Men Casual Black Sandals",
+      "labels": {
+        "category": "footwear",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "black"
+        ]
+      }
+    },
+    {
+      "id": "12967",
+      "title": "ADIDAS Men Spry M Black Sandals",
+      "labels": {
+        "category": "footwear",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "black"
+        ]
+      }
+    },
+    {
+      "id": "13419",
+      "title": "United Colors of Benetton Men Solid Pink Polo T-shirts",
+      "labels": {
+        "category": "tops",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "pink"
+        ],
+        "pattern": "solid"
+      }
+    },
+    {
+      "id": "15528",
+      "title": "Puma Men Scribble Black Tshirts",
+      "labels": {
+        "category": "tops",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "black"
+        ]
+      }
+    },
+    {
+      "id": "15970",
+      "title": "Turtle Check Men Navy Blue Shirt",
+      "labels": {
+        "category": "tops",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "navy"
+        ],
+        "pattern": "checked"
+      }
+    },
+    {
+      "id": "17429",
+      "title": "CASIO G-Shock Men Black Digital Watch G-7710-1DR G223",
+      "labels": {
+        "category": "accessories",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "black"
+        ]
+      }
+    },
+    {
+      "id": "17871",
+      "title": "Levis Men Boxer Maroon Brief",
+      "labels": {
+        "category": "underwear",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "maroon"
+        ]
+      }
+    },
+    {
+      "id": "18461",
+      "title": "David Beckham Signature Men Deos",
+      "labels": {
+        "category": "other",
+        "gender": "men",
+        "is_apparel_product": false
+      }
+    },
+    {
+      "id": "19123",
+      "title": "Lotto Men XL Water Man Silver Slippers",
+      "labels": {
+        "category": "footwear",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "silver"
+        ]
+      }
+    },
+    {
+      "id": "21379",
+      "title": "Manchester United Men Solid Black Track Pants",
+      "labels": {
+        "category": "activewear",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "black"
+        ],
+        "pattern": "solid"
+      }
+    },
+    {
+      "id": "21977",
+      "title": "Murcia Women Casual Brown Handbag",
+      "labels": {
+        "category": "bags",
+        "gender": "women",
+        "is_apparel_product": true,
+        "colors": [
+          "brown"
+        ]
+      }
+    },
+    {
+      "id": "2288",
+      "title": "Nike Women Black T-shirt",
+      "labels": {
+        "category": "tops",
+        "gender": "women",
+        "is_apparel_product": true,
+        "colors": [
+          "black"
+        ]
+      }
+    },
+    {
+      "id": "23278",
+      "title": "Maxima Ssteele Men Off White Watch",
+      "labels": {
+        "category": "accessories",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "white"
+        ]
+      }
+    },
+    {
+      "id": "25349",
+      "title": "Levis Men Red Brief",
+      "labels": {
+        "category": "underwear",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "red"
+        ]
+      }
+    },
+    {
+      "id": "26538",
+      "title": "ID Men Red Shoes",
+      "labels": {
+        "category": "footwear",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "red"
+        ]
+      }
+    },
+    {
+      "id": "28456",
+      "title": "Urban Yoga Women Blue Skirt With Leggings",
+      "labels": {
+        "category": "activewear",
+        "gender": "women",
+        "is_apparel_product": true,
+        "colors": [
+          "blue"
+        ]
+      }
+    },
+    {
+      "id": "29570",
+      "title": "Vans Men Classic Slip-On Purple & Black Shoes",
+      "labels": {
+        "category": "footwear",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "purple",
+          "black"
+        ]
+      }
+    },
+    {
+      "id": "29928",
+      "title": "Police Men Black Dial Watch PL12889JVSB",
+      "labels": {
+        "category": "accessories",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "black"
+        ]
+      }
+    },
+    {
+      "id": "3168",
+      "title": "Nike Men's Incinerate MSL White Blue Shoe",
+      "labels": {
+        "category": "footwear",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "white",
+          "blue"
+        ]
+      }
+    },
+    {
+      "id": "33822",
+      "title": "Puma Men Axis White & Grey Sports Shoes",
+      "labels": {
+        "category": "footwear",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "white",
+          "grey"
+        ]
+      }
+    },
+    {
+      "id": "34009",
+      "title": "Gini and Jony Girls Black Top",
+      "labels": {
+        "category": "tops",
+        "gender": "kids",
+        "is_apparel_product": true,
+        "colors": [
+          "black"
+        ]
+      }
+    },
+    {
+      "id": "38402",
+      "title": "Baggit Women Hood Dabang Black Belt",
+      "labels": {
+        "category": "accessories",
+        "gender": "women",
+        "is_apparel_product": true,
+        "colors": [
+          "black"
+        ]
+      }
+    },
+    {
+      "id": "39386",
+      "title": "Peter England Men Party Blue Jeans",
+      "labels": {
+        "category": "bottoms",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "blue"
+        ]
+      }
+    },
+    {
+      "id": "39524",
+      "title": "Peter England Unisex Orange Sleeve Bag",
+      "labels": {
+        "category": "other",
+        "gender": "unisex",
+        "is_apparel_product": false
+      }
+    },
+    {
+      "id": "39988",
+      "title": "Gas Men Europa White Shoes",
+      "labels": {
+        "category": "footwear",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "white"
+        ]
+      }
+    },
+    {
+      "id": "42841",
+      "title": "French Connection Women Beige Handbag",
+      "labels": {
+        "category": "bags",
+        "gender": "women",
+        "is_apparel_product": true,
+        "colors": [
+          "beige"
+        ]
+      }
+    },
+    {
+      "id": "43369",
+      "title": "Reebok Men Black Possession Flip Flops",
+      "labels": {
+        "category": "footwear",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "black"
+        ]
+      }
+    },
+    {
+      "id": "43993",
+      "title": "Police Women Passion Perfume",
+      "labels": {
+        "category": "other",
+        "gender": "women",
+        "is_apparel_product": false
+      }
+    },
+    {
+      "id": "44970",
+      "title": "Maxima Men White Dial Analog Chronograph Watch",
+      "labels": {
+        "category": "accessories",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "white"
+        ]
+      }
+    },
+    {
+      "id": "46885",
+      "title": "Ben 10 Boys Navy Blue Slippers",
+      "labels": {
+        "category": "footwear",
+        "gender": "kids",
+        "is_apparel_product": true,
+        "colors": [
+          "navy"
+        ]
+      }
+    },
+    {
+      "id": "4729",
+      "title": "Disney Kids Boy's Crew Sea Life Sialing Green Teen Kidswear",
+      "labels": {
+        "category": "kids",
+        "gender": "kids",
+        "is_apparel_product": true,
+        "colors": [
+          "green"
+        ]
+      }
+    },
+    {
+      "id": "47957",
+      "title": "Murcia Women Blue Handbag",
+      "labels": {
+        "category": "bags",
+        "gender": "women",
+        "is_apparel_product": true,
+        "colors": [
+          "blue"
+        ]
+      }
+    },
+    {
+      "id": "48311",
+      "title": "Pitaraa Women Bronze Beaded Bracelet",
+      "labels": {
+        "category": "jewelry",
+        "gender": "women",
+        "is_apparel_product": true,
+        "colors": [
+          "brown"
+        ]
+      }
+    },
+    {
+      "id": "4943",
+      "title": "Gini and Jony Boy's Kaleb White Brown Kidswear",
+      "labels": {
+        "category": "kids",
+        "gender": "kids",
+        "is_apparel_product": true,
+        "colors": [
+          "white",
+          "brown"
+        ]
+      }
+    },
+    {
+      "id": "49653",
+      "title": "Mineral Women Green Top",
+      "labels": {
+        "category": "tops",
+        "gender": "women",
+        "is_apparel_product": true,
+        "colors": [
+          "green"
+        ]
+      }
+    },
+    {
+      "id": "51658",
+      "title": "Fossil Women Copper Chronograph Watch CH2589",
+      "labels": {
+        "category": "accessories",
+        "gender": "women",
+        "is_apparel_product": true,
+        "colors": [
+          "brown"
+        ]
+      }
+    },
+    {
+      "id": "54118",
+      "title": "Rocia Women Black Flats",
+      "labels": {
+        "category": "footwear",
+        "gender": "women",
+        "is_apparel_product": true,
+        "colors": [
+          "black"
+        ]
+      }
+    },
+    {
+      "id": "56825",
+      "title": "John Players Men Brown Shirt",
+      "labels": {
+        "category": "tops",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "brown"
+        ]
+      }
+    },
+    {
+      "id": "5865",
+      "title": "ADIDAS Men's Twelve Faster T-shirt",
+      "labels": {
+        "category": "tops",
+        "gender": "men",
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "59051",
+      "title": "Carlton London Women Black & Gold Toned Flats",
+      "labels": {
+        "category": "footwear",
+        "gender": "women",
+        "is_apparel_product": true,
+        "colors": [
+          "black",
+          "gold"
+        ]
+      }
+    },
+    {
+      "id": "59263",
+      "title": "Titan Women Silver Watch",
+      "labels": {
+        "category": "accessories",
+        "gender": "women",
+        "is_apparel_product": true,
+        "colors": [
+          "silver"
+        ]
+      }
+    },
+    {
+      "id": "59607",
+      "title": "FNF Pink & Grey Wedding Collection Sari",
+      "labels": {
+        "category": "ethnic",
+        "gender": "women",
+        "is_apparel_product": true,
+        "colors": [
+          "pink",
+          "grey"
+        ]
+      }
+    },
+    {
+      "id": "6842",
+      "title": "Timberland Unisex Rubber Sole Brush Shoe Accessories",
+      "labels": {
+        "category": "other",
+        "gender": "unisex",
+        "is_apparel_product": false
+      }
+    },
+    {
+      "id": "8574",
+      "title": "Crocs Dora Boots Pink Sandals",
+      "labels": {
+        "category": "footwear",
+        "gender": "kids",
+        "is_apparel_product": true,
+        "colors": [
+          "pink"
+        ]
+      }
+    },
+    {
+      "id": "8580",
+      "title": "Scullers Men  Grey Waistcoat",
+      "labels": {
+        "category": "outerwear",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "grey"
+        ]
+      }
+    },
+    {
+      "id": "9036",
+      "title": "Buckaroo Men Flores Black Formal Shoes",
+      "labels": {
+        "category": "footwear",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "black"
+        ]
+      }
+    },
+    {
+      "id": "9204",
+      "title": "Puma Men Future Cat Remix SF Black Casual Shoes",
+      "labels": {
+        "category": "footwear",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "black"
+        ]
+      }
+    },
+    {
+      "id": "9452",
+      "title": "John Miller Men Stripes White Red Shirts",
+      "labels": {
+        "category": "tops",
+        "gender": "men",
+        "is_apparel_product": true,
+        "colors": [
+          "white",
+          "red"
+        ],
+        "pattern": "striped"
+      }
+    }
+  ]
+}
