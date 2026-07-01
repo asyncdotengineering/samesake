@@ -38,6 +38,7 @@ export function candidateSummary(data: Record<string, unknown>, id: string): str
     `id: ${id}`,
     `title: ${text(data.title)}`,
     `brand: ${text(data.brand)}`,
+    `price: ${text(data.price)}`,
     `category: ${text(data.category)}`,
     `type: ${text(data.product_type)}`,
     `colors: ${text(data.colors)}`,

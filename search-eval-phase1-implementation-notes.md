@@ -72,3 +72,32 @@ intent. No engine coercion/fallback — the model simply can no longer produce t
 
 - Root `tsc --noEmit` clean; enrichment scorer tests still green (11/11) after the SDK change.
 - Reproduce: `cd examples/fashion-search && bun --env-file=../../.env eval-search.ts --phase=baseline|postfix`.
+
+## P2 (retrieval/NLQ robustness) + P3 (harness honesty)
+
+Verified with the deterministic judge (P3 #10) so pre/post deltas reflect retrieval, not judge noise.
+
+**Shipped:**
+- **#5 NLQ price robustness** (`FASHION_NLQ_INSTRUCTIONS` + schema): strip $/Rs/rupees, "5k"→5000,
+  IGNORE non-positive / inverted (min>max) bounds, "for N" is not a price. Red-team: "shoes under
+  -500" / "top for 0 rupees" now ignore the nonsensical bound and return normal results instead of
+  price=0 junk. Neutral on the golden price bucket.
+- **#7 price hygiene gate** (`fashionIndexing`): quarantine rows with price ≤ 0 (reason
+  `invalid-price`). Unit-tested (`fashion-template.test.ts`). Applies on next index; the already-baked
+  fashionparity corpus still shows price=0 rows (num-05) until re-indexed.
+- **#9 judge sees price** (`candidateSummary` + `hitText`): the LLM judge now gets each candidate's
+  price, so it can verify numeric constraints. Effect: golden price bucket 1.8→2.64 (accurate now),
+  and the red-team's 3 numerical "WEAK" false-alarms (num-01/03/04) disappeared — they were judge
+  blind-spots, not retrieval failures. Red-team findings 16→13.
+- **#10 persistent judge cache** (`calibrate-search.ts`, keyed `search-judge:<version>:sha1(query id)`
+  via the stage-cache table): a doc seen in both pre and post runs reuses its grade → deterministic
+  pre/post. Proven: p2base→p2post left keyword/broad/style/typo buckets bit-identical; only
+  retrieval-changed queries moved.
+
+**NOT shipped:**
+- **#6 styles-soft** (example config): reverted. Neutral on the golden `style` bucket (1.35→1.35) with
+  a small `local` regression (1.04→0.88) and no measured benefit — same discipline as P1 #2/#3.
+  (The SDK `fashionSearchFields` default is already `soft:true`; the example diverged — left as-is.)
+
+**Deferred (out of P1/P2/P3 scope):** OOD rejection (7/8 junk-shown — the P0 `relevanceFloor`
+calibration), multilingual Sinhala/Tamil, and lexical-leg/BM25 (#11 → research task #17).

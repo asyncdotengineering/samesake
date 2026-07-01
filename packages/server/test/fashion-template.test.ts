@@ -141,6 +141,17 @@ describe("fashion enrichment template", () => {
     ).toEqual({ index: false, reason: "low-confidence" });
   });
 
+  test("test:gate-invalid-price — non-positive price is quarantined (#7 price hygiene)", () => {
+    const idx = fashion.indexing();
+    const good = { is_apparel_product: true, category: "dresses", gender: "women", confidence: 0.9, colors: ["red"] };
+    expect(idx.gate({ data: { title: "Zero Dress", price: 0 }, enriched: good })).toEqual({ index: false, reason: "invalid-price" });
+    expect(idx.gate({ data: { title: "Neg Dress", price: -10 }, enriched: good })).toEqual({ index: false, reason: "invalid-price" });
+    // a valid price passes the price check (may still index)
+    expect(idx.gate({ data: { title: "Real Dress", price: 4500 }, enriched: good }).reason).not.toBe("invalid-price");
+    // absent price does not trigger it
+    expect(idx.gate({ data: { title: "No Price Dress" }, enriched: good }).reason).not.toBe("invalid-price");
+  });
+
   test("enrich pipeline is classify -> extract, extract gated to apparel", () => {
     const p = fashionEnrichPipeline();
     expect(p.stages.map((s) => s.name)).toEqual(["classify", "extract"]);
@@ -193,8 +204,8 @@ describe("fashion enrichment template", () => {
     expect(
       s.safeParse({
         category: null, gender: null, colors: null, exclude_colors: null, occasions: null,
-        exclude_patterns: null, exclude_terms: null, max_price: null, min_price: null,
-        semantic_query: "red dress",
+        styles: null, exclude_patterns: null, exclude_terms: null, max_price: null, min_price: null,
+        price_budget_hint: null, semantic_query: "red dress",
       }).success
     ).toBe(true);
   });
