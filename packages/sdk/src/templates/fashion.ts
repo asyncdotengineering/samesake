@@ -341,7 +341,11 @@ export function fashionNlqSchema(): z.ZodType {
   // to emit it — value or null — instead of silently dropping it; operational
   // descriptions tell the model exactly how to map natural language to each field.
   return z.object({
-    category: zEnum([...fashionTaxonomy.map((c) => c.id), "any"]).nullable().describe("Product category, only when unambiguous; else null."),
+    // "other" is the NON-APPAREL bucket (gift cards, homeware) — it must never be a search
+    // filter, or a vague intent query ("office wear", "resort wear") that the model can't map to a
+    // real category gets hard-filtered down to non-apparel and returns zero. Excluded from the enum
+    // so the model is forced to pick a real apparel category or null.
+    category: zEnum([...fashionTaxonomy.filter((c) => c.id !== "other").map((c) => c.id), "any"]).nullable().describe("Apparel category — ONLY when the query clearly names one (e.g. 'red dress'->dresses); else null. Never guess a category for a vague use-case/style query ('office wear', 'resort wear', 'smart casual') — leave it null and let semantic_query carry the intent."),
     gender: zEnum([...fashionEnums.gender, "any"]).nullable().describe("Target gender if stated; else null."),
     colors: z.array(zEnum(fashionEnums.colors)).nullable().describe("Colors the shopper explicitly wants, e.g. 'red dress' -> ['red']; else null."),
     exclude_colors: z.array(zEnum(fashionEnums.colors)).nullable().describe("Colors explicitly excluded, e.g. 'not black' -> ['black']; else null."),
@@ -358,7 +362,7 @@ export function fashionNlqSchema(): z.ZodType {
 
 export const FASHION_NLQ_INSTRUCTIONS = `Parse a fashion shopper's search query into structured filters and a clean semantic_query.
 
-- Map EXPLICIT constraints to filters only when clearly stated: price bounds, colors, gender, occasion, negations ("not bodycon", "no prints"). Do NOT invent filters the shopper didn't state. Set category only when unambiguous.
+- Map EXPLICIT constraints to filters only when clearly stated: price bounds, colors, gender, occasion, negations ("not bodycon", "no prints"). Do NOT invent filters the shopper didn't state. Set category ONLY when the query clearly names one apparel category; for vague use-case/style queries ("office wear", "smart casual", "resort wear") leave category null and let semantic_query carry the intent. Never output "other" as a category — it is the non-apparel bucket and returns nothing.
 - Price: "under/below/less than/up to N" -> max_price=N; "over/above/at least/from N" -> min_price=N; "between A and B" -> min_price=A and max_price=B. Strip currency symbols and commas.
 - Budget words without a number ("cheap", "affordable", "budget") -> price_budget_hint=cheap; ("luxury", "high-end", "premium") -> premium. An explicit number always wins.
 - styles/aesthetics: when the query names a fashion AESTHETIC or cultural reference ("quiet luxury", "old money", "y2k", "cottagecore", "coastal grandmother", "clean girl", "streetwear", "boho"), set styles to the closest values AND expand semantic_query into the concrete look (silhouette, palette, materials) it implies — never leave a known aesthetic only as raw words. Note: "quiet luxury" is an aesthetic (styles), not a price signal.

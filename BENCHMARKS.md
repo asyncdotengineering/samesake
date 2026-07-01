@@ -103,7 +103,7 @@ could not have localized.
 ## Methodology
 
 - **Golden set**: 50 queries covering keyword, attribute, use-case, price, negation, style, local, and broad intent types.
-- **Judge**: ESCI LLM grading (0–3 relevance scale), `gemini-3-flash-preview`, results cached per (query, result-set hash).
+- **Judge**: ESCI LLM grading (0–3 relevance scale), results cached per (query, result-set hash). The parity/post-wave tables above were produced by a historical spike run that used `gemini-3-flash-preview`; the **framework's current judge + generate model is `gemini-3.1-flash-lite`** (see `examples/fashion-search/gemini.ts`) — there is no "flash 3" in the live pipeline. New eval runs (e.g. `eval-search.ts`) stamp the model used into their artifact.
 - **Corpus**: LK fashion e-commerce — Shopify/Woo connectors, enrichment pipeline (classify + extract), pgvector 1536d embeddings.
 - **Metrics**: mean grade@10 (primary), P@5 (precision at relevance ≥2), nDCG@10, price-violation rate, zero-result rate, median latency.
 
