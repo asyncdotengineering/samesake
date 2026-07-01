@@ -6,10 +6,12 @@ sources (cited at the end); numbers are from vendor/community benchmarks, treat 
 
 ## TL;DR (the decisions)
 
-1. **samesake is nowhere near Postgres's scale limits and won't be for a long time.** Today ~5.5k
-   products; a *large* single fashion store is 10k–1M SKUs. PG's hard walls (HNSW index outgrowing
-   RAM) start around **10M × 1536-dim vectors (~80–120 GB index)** — 10–1000× beyond our "1". So the
-   scaling question is **not** sharding/billions; it's "right config for catalog-scale + know the exit."
+1. **samesake is nowhere near Postgres's scale limits and won't be for a long time.** Launch corpus is
+   **~100k+ products** (the 5.5k `fashionparity` set is test data); a *large* single fashion store is
+   up to ~1M SKUs. 100k × 1536-dim ≈ **0.6 GB vectors / ~1.2 GB HNSW index** — fits in RAM on a 4–8 GB
+   box; even 1M ≈ 6 GB / ~10 GB (fine on 16–32 GB). PG's hard wall (HNSW index outgrowing RAM) is
+   ~**10M × 1536-dim (~80–120 GB index)** — ~100× beyond launch. The scaling question is **not**
+   sharding/billions; it's "right config for catalog-scale + know the exit."
 2. **The only genuine near-term *quality* gap is #11 — the lexical leg (`ts_rank_cd`).** Every source
    (even the pro-Postgres ones) agrees `ts_rank` ranking is weak (no IDF, no length normalization, no
    TF saturation, no efficient top-N). Real BM25 exists in PG (**ParadeDB `pg_search`**, **VectorChord
@@ -23,11 +25,11 @@ sources (cited at the end); numbers are from vendor/community benchmarks, treat 
 
 ## 1. Where samesake actually sits (scale honesty)
 
-| | Today | Large single store (the "1") | PG-native ceiling |
+| | Launch (~100k) | Large single store (the "1") | PG-native ceiling |
 |---|---|---|---|
-| Products / vectors | ~5.5k | 10k–1M | HNSW index fits RAM to ~1–5M × 1536-dim; wall ~10M (~80–120 GB) |
-| Vector storage (1536-dim fp32) | ~33 MB | ~6 GB @ 1M | column ~6 KB/row; index ≈ 1.5–2× |
-| Single-node PG comfort | trivial | comfortable | degrades when a single table > ~100–200M rows / working set ≫ RAM |
+| Products / vectors | ~100k+ (5.5k is test data) | up to ~1M | HNSW index fits RAM to ~1–5M × 1536-dim; wall ~10M (~80–120 GB) |
+| Vector storage (1536-dim fp32) | ~0.6 GB (index ~1.2 GB; ~0.6 GB w/ halfvec) | ~6 GB @ 1M (index ~10 GB) | column ~6 KB/row; index ≈ 1.5–2× |
+| Single-node PG comfort | trivial (4–8 GB box) | comfortable (16–32 GB box) | degrades when a single table > ~100–200M rows / working set ≫ RAM |
 
 **Implication:** for one store's catalog, a single tuned Postgres with pgvector HNSW is *comfortable*.
 We do **not** need pgvectorscale, VectorChord, Citus, sharding, or read-replica fan-out at this scale.
@@ -53,13 +55,30 @@ both **NOT installable on stock RDS/Aurora/Cloud SQL/Neon**):
 | Perf | 20–1000× vs native FTS; ~parity with Elasticsearch | ~3× ES QPS headline → **~40% after aligning stopwords/stemmer**; NDCG@10 ~ ES |
 | Deploy | ParadeDB distro / Docker / self-host; **dropped from new Neon (Mar 2026)** | `vchord-suite` Docker / self-host; EDB-packaged |
 
-**Recommendation:** if/when samesake runs on **controlled Postgres** (Fly VM, EC2, or the ParadeDB
-Docker image — our deploy story already includes Fly), **ParadeDB `pg_search` is the pick** — it's the
-mature, feature-complete option and its faceting + JSON-attribute search + fuzzy/typo + field boosting
-map directly onto the ecommerce toolkit gaps (autocomplete, merchandising, highlighting). `vchord_bm25`
-is the leaner choice only if we also adopt the VectorChord vector stack and want one suite; it's
-earlier-stage and ranking-only. **Neither ships RRF** — hybrid fusion stays hand-written SQL (which we
-already do), and RRF should be re-validated on our catalog (it *can* hurt on some datasets).
+**Recommendation — measure first, then bake-off; no default winner.** (Bias check: much of the
+pro-`pg_search` narrative is ParadeDB's own content marketing + a Neon partner post — loud ≠ correct;
+and "more features" ≠ "right for a 100k fashion catalog." An earlier draft of this doc leaned ParadeDB
+on maturity/content; that lean is not evidence.)
+
+1. **First establish whether the lexical leg is even the bottleneck.** It's 1 of 3 RRF legs, and our
+   `gemini-embedding-2` semantic leg already absorbs typos/vocab (the red-team confirmed this). Try the
+   **zero-infra mitigations** — `setweight` field-weighting on the `tsvector` (title ≫ tags ≫
+   description), `pg_trgm` fuzzy fallback (extension already installed), and RRF leg-reweighting — and
+   measure with the golden + red-team suites. These may capture most of the gain at ~zero operational
+   cost, on any managed PG.
+2. **Only if the eval shows lexical is the limiting factor AND we've committed to controlled-PG
+   deployment, run a bake-off on OUR corpus** across `{tuned ts_rank+setweight+trgm, ParadeDB
+   pg_search, VectorChord vchord_bm25}`, judged by the eval suites — not vendor blogs.
+3. **Honest ParadeDB vs VectorChord trade (unsettled):** ParadeDB = more mature (v2, named customers),
+   feature-complete (faceting/JSON/highlight/fuzzy), **but** a heavier dependency (Tantivy embedded,
+   deep planner/storage hooks → upgrade/compat risk), BM25-only (still run pgvector separately), AGPL,
+   dropped from Neon. VectorChord = leaner, pgvector-native, and a **more coherent single bet for a
+   vector-first framework** (one suite: vectors + BM25 + tokenizer, RaBitQ, ~10× updates) — **but**
+   earlier-stage, ranking-only, needs the extra `pg_tokenizer` piece, no head-to-head-vs-pg_search
+   numbers. Both AGPL-3.0, both need `shared_preload_libraries` (self-host). Decide on our own bake-off.
+
+**Neither ships RRF** — hybrid fusion stays hand-written SQL (which we already do), and RRF should be
+re-validated on our catalog (it *can* hurt on some datasets).
 
 **If we stay on Neon/managed PG (no controlled instance):** BM25 is off the table. Mitigations that
 *are* available: (a) **`setweight`** the `tsvector` (title ≫ tags ≫ description) — real precision gain,
@@ -138,12 +157,14 @@ then.
 
 ## 8. #11 verdict (the question that triggered this)
 
-`ts_rank_cd` is correctly identified as the weak leg and worth replacing with BM25 — **but only on a
-Postgres instance we control**, because every real-BM25 option needs `shared_preload_libraries` and
-Neon just dropped `pg_search`. That makes it a deployment decision, not a code edit, which is why it
-belongs here (task #17) rather than in the P1/P2/P3 fix batch. **Recommended path: ParadeDB `pg_search`
-on controlled PG in P-next.** Until that deployment call is made, the `setweight` + trigram mitigations
-are the lean, managed-PG-safe improvements.
+`ts_rank_cd` is correctly identified as the weak leg — **but** (a) real BM25 needs a Postgres instance
+we control (`shared_preload_libraries`; Neon dropped `pg_search`), so it's a deployment decision, not a
+code edit; and (b) at 100k with a strong semantic leg, **we haven't yet proven the lexical leg is the
+bottleneck.** So the honest path is: **ship the managed-PG-safe mitigations first** (`setweight` +
+`pg_trgm` + RRF leg-reweighting), **measure** with the eval suites, and **only if lexical is confirmed
+limiting, run a bake-off** (`tuned ts_rank` vs `pg_search` vs `vchord_bm25`) on our own corpus. No
+pre-committed BM25 vendor — ParadeDB and VectorChord are both contenders with real trade-offs, to be
+decided by our numbers, not their blogs.
 
 ## Sources
 
