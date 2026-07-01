@@ -119,7 +119,7 @@ export function fashionClassifySchema(): z.ZodType {
 
 export function fashionExtractSchema(categoryId: string): z.ZodType {
   return z.object({
-    colors: z.array(zEnum(fashionEnums.colors)).describe("rule[color_base]: BASE colours only (red, navy, beige), primary colour first; marketing names go in raw_color"),
+    colors: z.array(zEnum(fashionEnums.colors)).describe("rule[color_base]: BASE colours only (red, navy, beige), primary first. A compound single-shade name maps to ONE base: 'navy blue'→['navy'] (NOT ['navy','blue']), 'sky blue'→['blue'], 'off white'→['white'], 'dark green'→['green']. Only list multiple colours for genuinely multi-coloured items. Marketing names go in raw_color."),
     raw_color: z.string().optional().describe("the seller's marketing colour name verbatim if stated (e.g. crimson, midnight, blush), else empty"),
     pattern: zEnum(fashionEnums.pattern).describe("dominant visible pattern; 'solid' if plain"),
     material: zEnum(fashionEnums.materials).optional().describe("from text when stated; from the image only as a low-confidence guess; else 'unknown'"),
@@ -150,7 +150,7 @@ category, colors, gender and occasions drive hard filtering and ranking — thes
 <rules>
 - rule[enums_only]: use ONLY the allowed enum values for each field; never invent a value.
 - rule[unknown_over_guess]: if an attribute is not visible or stated, use "unknown" (or omit) — do not guess.
-- rule[color_base]: colors are BASE colours only (red, navy, beige, olive…), primary colour first. Put the seller's marketing colour name verbatim in raw_color (e.g. title "Crimson" → colors:["red"], raw_color:"crimson"; "midnight" → colors:["navy"], raw_color:"midnight").
+- rule[color_base]: colors are BASE colours only (red, navy, beige, olive…), primary colour first. A compound single-shade name collapses to ONE base — "Navy Blue" → colors:["navy"] (NOT ["navy","blue"]); "Off White" → colors:["white"]; "Dark Green" → colors:["green"]. Only emit multiple colours for genuinely multi-coloured items. Put the seller's marketing colour name verbatim in raw_color (e.g. title "Crimson" → colors:["red"], raw_color:"crimson"; "midnight" → colors:["navy"], raw_color:"midnight").
 - rule[style_derive]: styles must follow from what you SEE, never from brand copy — floral+flowy+relaxed → bohemian; tailored+structured → formal; cropped+logo+boxy → streetwear.
 - rule[details]: capture fine construction details even if minor (puff sleeve, ruffled, tiered, cutout, slit, belted, smocked).
 - rule[search_document]: 2-3 plain sentences a shopper understands — what it is, how it looks, what to wear it for. No marketing fluff.
@@ -325,6 +325,11 @@ export function fashionIndexing(opts: { titleKey?: string } = {}): IndexingDef {
     gate: ({ data, enriched }) => {
       if (enriched.is_apparel_product === false) return { index: false, reason: "non-apparel" };
       if (enriched.category === "other") return { index: false, reason: "category-other" };
+      // #7 price hygiene: a non-positive price is bad data (breaks budget filters — "under 100"
+      // matching a price=0 row) — quarantine rather than index it.
+      if (data.price != null && data.price !== "" && Number(data.price) <= 0) {
+        return { index: false, reason: "invalid-price" };
+      }
       if (Number(enriched.confidence ?? 1) < FASHION_CONFIDENCE_FLOOR) return { index: false, reason: "low-confidence" };
       if (intersects(asArray(enriched.uncertain_fields), ["category", "gender", "colors"])) {
         return { index: false, reason: "uncertain-load-bearing" };
@@ -341,7 +346,11 @@ export function fashionNlqSchema(): z.ZodType {
   // to emit it — value or null — instead of silently dropping it; operational
   // descriptions tell the model exactly how to map natural language to each field.
   return z.object({
-    category: zEnum([...fashionTaxonomy.map((c) => c.id), "any"]).nullable().describe("Product category, only when unambiguous; else null."),
+    // "other" is the NON-APPAREL bucket (gift cards, homeware) — it must never be a search
+    // filter, or a vague intent query ("office wear", "resort wear") that the model can't map to a
+    // real category gets hard-filtered down to non-apparel and returns zero. Excluded from the enum
+    // so the model is forced to pick a real apparel category or null.
+    category: zEnum([...fashionTaxonomy.filter((c) => c.id !== "other").map((c) => c.id), "any"]).nullable().describe("Apparel category — ONLY when the query clearly names one (e.g. 'red dress'->dresses); else null. Never guess a category for a vague use-case/style query ('office wear', 'resort wear', 'smart casual') — leave it null and let semantic_query carry the intent."),
     gender: zEnum([...fashionEnums.gender, "any"]).nullable().describe("Target gender if stated; else null."),
     colors: z.array(zEnum(fashionEnums.colors)).nullable().describe("Colors the shopper explicitly wants, e.g. 'red dress' -> ['red']; else null."),
     exclude_colors: z.array(zEnum(fashionEnums.colors)).nullable().describe("Colors explicitly excluded, e.g. 'not black' -> ['black']; else null."),
@@ -349,8 +358,8 @@ export function fashionNlqSchema(): z.ZodType {
     styles: z.array(zEnum(fashionEnums.styles)).nullable().describe("Style / aesthetic. Map cultural & mood references to the closest styles: 'quiet luxury'->['minimalist','classic']; 'old money'->['classic','preppy']; 'y2k'->['y2k']; 'cottagecore'->['romantic','bohemian']; 'clean girl'/'coastal grandmother'->['minimalist','classic']; 'boho'->['bohemian']; 'streetwear'->['streetwear']. else null."),
     exclude_patterns: z.array(zEnum(fashionEnums.pattern)).nullable().describe("Patterns excluded, e.g. 'no prints'; else null."),
     exclude_terms: z.array(z.string()).nullable().describe("Negated attributes/styles, e.g. ['bodycon','skinny']; else null."),
-    max_price: z.number().nullable().describe("Upper price bound as a plain number; strip currency + commas. Map 'under/below/less than/up to N' -> N. null if no upper bound."),
-    min_price: z.number().nullable().describe("Lower price bound as a plain number. Map 'over/above/more than/at least/from N' -> N. 'between A and B' sets min=A and max=B. null if no lower bound."),
+    max_price: z.number().nullable().describe("Upper price bound as a plain POSITIVE number; strip currency + commas, 'k'->*1000. Map 'under/below/less than/up to N' -> N. null if no upper bound or if the stated bound is <=0/nonsensical."),
+    min_price: z.number().nullable().describe("Lower price bound as a plain POSITIVE number. Map 'over/above/more than/at least/from N' -> N. 'between A and B' sets min=A and max=B (drop both if A>B). null if no lower bound or if <=0."),
     price_budget_hint: zEnum(["cheap", "premium"]).nullable().describe("Vague budget words with NO number: 'cheap/affordable/budget'->'cheap'; 'luxury/high-end/premium'->'premium'. An explicit price number always wins. null for an AESTHETIC like 'quiet luxury' (that's a style, not a price)."),
     semantic_query: z.string().describe("The remaining descriptive intent, STRIPPED of every constraint mapped above (price, color, gender, negation), rewritten as a rich product-description fragment. Never empty; never echoes price/constraint words. e.g. 'red shoes under 3000' -> 'shoes'."),
   });
@@ -358,8 +367,8 @@ export function fashionNlqSchema(): z.ZodType {
 
 export const FASHION_NLQ_INSTRUCTIONS = `Parse a fashion shopper's search query into structured filters and a clean semantic_query.
 
-- Map EXPLICIT constraints to filters only when clearly stated: price bounds, colors, gender, occasion, negations ("not bodycon", "no prints"). Do NOT invent filters the shopper didn't state. Set category only when unambiguous.
-- Price: "under/below/less than/up to N" -> max_price=N; "over/above/at least/from N" -> min_price=N; "between A and B" -> min_price=A and max_price=B. Strip currency symbols and commas.
+- Map EXPLICIT constraints to filters only when clearly stated: price bounds, colors, gender, occasion, negations ("not bodycon", "no prints"). Do NOT invent filters the shopper didn't state. Set category ONLY when the query clearly names one apparel category; for vague use-case/style queries ("office wear", "smart casual", "resort wear") leave category null and let semantic_query carry the intent. Never output "other" as a category — it is the non-apparel bucket and returns nothing.
+- Price: "under/below/less than/up to N" -> max_price=N; "over/above/at least/from N" -> min_price=N; "between A and B" -> min_price=A and max_price=B. Strip currency symbols/words ($, Rs, rupees) and commas; "5k"->5000, "2.5k"->2500. IGNORE non-positive or nonsensical bounds (<=0 -> null, do not filter) and inverted ranges (if min>max, drop both). "for N" is NOT a price unless N is clearly a price with a currency.
 - Budget words without a number ("cheap", "affordable", "budget") -> price_budget_hint=cheap; ("luxury", "high-end", "premium") -> premium. An explicit number always wins.
 - styles/aesthetics: when the query names a fashion AESTHETIC or cultural reference ("quiet luxury", "old money", "y2k", "cottagecore", "coastal grandmother", "clean girl", "streetwear", "boho"), set styles to the closest values AND expand semantic_query into the concrete look (silhouette, palette, materials) it implies — never leave a known aesthetic only as raw words. Note: "quiet luxury" is an aesthetic (styles), not a price signal.
 - semantic_query: the remaining descriptive intent, STRIPPED of every constraint mapped above (price, color, gender, negation), rewritten as a rich product-description fragment. Never empty; never echo the price/constraint words.
@@ -412,6 +421,32 @@ export function fashionSpaces(opts: { visual?: boolean; priceMax?: number } = {}
   return spaces;
 }
 
+// ── Enrichment-accuracy eval defaults ───────────────────────────────────
+/** One scorable attribute for enrichment-accuracy eval. Structurally matches @samesake/server's
+ * `AttrSpec` (kept dependency-free here so the SDK does not import the server). */
+export interface EnrichEvalAttr {
+  name: string;
+  kind: "single" | "multi";
+  /** Values that mean "no value" beyond ""/null/missing. Defaults to ["unknown"] in the scorer. */
+  empty?: string[];
+}
+
+/**
+ * Default attribute specs for scoring fashion enrichment accuracy via `matcher.evaluateEnrichment`.
+ * The controlled, gate/filter-critical attributes the classify+extract pipeline is expected to get
+ * right. `is_apparel_product` has no "unknown" state (true/false are both real), so its empty-set is
+ * []. Baked into the template (like fashion.fields/spaces/nlq) so consumers score without hand-rolling.
+ */
+export function fashionEvalAttributes(): EnrichEvalAttr[] {
+  return [
+    { name: "category", kind: "single" },
+    { name: "gender", kind: "single" },
+    { name: "colors", kind: "multi" },
+    { name: "pattern", kind: "single" },
+    { name: "is_apparel_product", kind: "single", empty: [] },
+  ];
+}
+
 /** Grouped namespace — `import { fashion } from "@samesake/core"`. */
 export const fashion = {
   taxonomy: fashionTaxonomy,
@@ -424,4 +459,5 @@ export const fashion = {
   extractSchema: fashionExtractSchema,
   extractInstructions: FASHION_EXTRACT_INSTRUCTIONS,
   nlq: { instructions: FASHION_NLQ_INSTRUCTIONS, schema: fashionNlqSchema },
+  evalAttributes: fashionEvalAttributes,
 };

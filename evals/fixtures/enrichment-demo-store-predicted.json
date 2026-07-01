@@ -1,0 +1,1836 @@
+{
+  "version": 1,
+  "source": "project_demo_store.c_products (Myntra LK subset, baked enrichment from the 2-stage fashion pipeline)",
+  "note": "Captured pipeline output used to score enrichment accuracy offline (no DB/LLM). Regenerate from the demo-store seed.",
+  "count": 50,
+  "products": [
+    {
+      "id": "10268",
+      "title": "Clarks Men Hang Work Leather Black Formal Shoes",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "black"
+        ],
+        "gender": "men",
+        "styles": [
+          "formal",
+          "classic"
+        ],
+        "closure": "lace-up",
+        "details": [
+          "lace-up closure",
+          "leather upper"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "footwear",
+        "material": "leather",
+        "occasions": [
+          "office",
+          "party",
+          "evening"
+        ],
+        "raw_color": "Black",
+        "toe_shape": "round",
+        "confidence": 0.95,
+        "heel_height": "low",
+        "product_type": "formal shoes",
+        "search_document": "These are classic black leather formal shoes for men. They feature a lace-up design and a low heel, making them suitable for office wear or formal evening events.",
+        "uncertain_fields": [],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "10866",
+      "title": "Wrangler Men Motor Rider Red T-Shirts",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "red"
+        ],
+        "gender": "men",
+        "styles": [
+          "casual"
+        ],
+        "details": [
+          "graphic print"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "tops",
+        "material": "unknown",
+        "neckline": "round",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "Red",
+        "confidence": 0.9,
+        "strap_type": "none",
+        "top_length": "regular",
+        "product_type": "t-shirt",
+        "sleeve_length": "short",
+        "search_document": "A red men's t-shirt featuring a graphic print. This casual top is suitable for everyday wear.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "11940",
+      "title": "Ganuchi Men Casual Black Sandals",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "black"
+        ],
+        "gender": "men",
+        "styles": [
+          "casual"
+        ],
+        "closure": "unknown",
+        "details": [
+          "strappy"
+        ],
+        "modesty": "revealing",
+        "pattern": "solid",
+        "category": "footwear",
+        "material": "unknown",
+        "occasions": [
+          "everyday",
+          "beach",
+          "vacation"
+        ],
+        "raw_color": "black",
+        "toe_shape": "open",
+        "confidence": 0.7,
+        "heel_height": "flat",
+        "product_type": "sandals",
+        "search_document": "A pair of black men's sandals designed for casual summer wear. These open-toe sandals are suitable for everyday use, the beach, or vacation.",
+        "uncertain_fields": [
+          "material",
+          "fit",
+          "closure"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "12967",
+      "title": "ADIDAS Men Spry M Black Sandals",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "black"
+        ],
+        "gender": "men",
+        "styles": [
+          "casual",
+          "sporty"
+        ],
+        "closure": "strap",
+        "details": [
+          "logo detail"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "footwear",
+        "material": "unknown",
+        "occasions": [
+          "everyday",
+          "lounge"
+        ],
+        "raw_color": "Black",
+        "toe_shape": "open",
+        "confidence": 0.9,
+        "heel_height": "flat",
+        "product_type": "sandals",
+        "search_document": "These are black men's sandals featuring a strap closure and a flat sole. They are designed for casual everyday wear.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "13419",
+      "title": "United Colors of Benetton Men Solid Pink Polo T-shirts",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "pink"
+        ],
+        "gender": "men",
+        "styles": [
+          "casual",
+          "classic"
+        ],
+        "details": [
+          "polo collar",
+          "button placket"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "tops",
+        "material": "unknown",
+        "neckline": "collared",
+        "occasions": [
+          "everyday",
+          "vacation"
+        ],
+        "raw_color": "pink",
+        "confidence": 0.95,
+        "strap_type": "none",
+        "top_length": "regular",
+        "product_type": "polo t-shirt",
+        "sleeve_length": "short",
+        "search_document": "A solid pink polo t-shirt with a classic collar and short sleeves. This casual top is perfect for everyday wear during the summer.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "15528",
+      "title": "Puma Men Scribble Black Tshirts",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "black"
+        ],
+        "gender": "men",
+        "styles": [
+          "casual",
+          "sporty"
+        ],
+        "details": [
+          "graphic print"
+        ],
+        "modesty": "moderate",
+        "pattern": "graphic",
+        "category": "tops",
+        "material": "unknown",
+        "neckline": "crew",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "Black",
+        "confidence": 0.9,
+        "strap_type": "none",
+        "top_length": "regular",
+        "product_type": "t-shirt",
+        "sleeve_length": "short",
+        "search_document": "A black short-sleeve crew neck t-shirt featuring a graphic print. This casual top is suitable for everyday wear.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "15970",
+      "title": "Turtle Check Men Navy Blue Shirt",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "navy",
+          "blue"
+        ],
+        "gender": "men",
+        "styles": [
+          "casual",
+          "classic"
+        ],
+        "details": [
+          "button-down"
+        ],
+        "modesty": "modest",
+        "pattern": "checked",
+        "category": "tops",
+        "material": "unknown",
+        "neckline": "collared",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "Navy Blue",
+        "confidence": 0.8,
+        "top_length": "regular",
+        "product_type": "shirt",
+        "sleeve_length": "long",
+        "search_document": "A navy blue checked long-sleeve shirt with a collar. This casual button-down is suitable for everyday wear during the fall season.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "17429",
+      "title": "CASIO G-Shock Men Black Digital Watch G-7710-1DR G223",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "black"
+        ],
+        "gender": "men",
+        "styles": [
+          "sporty",
+          "casual"
+        ],
+        "details": [
+          "digital display",
+          "shock resistant"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "accessories",
+        "material": "unknown",
+        "occasions": [
+          "everyday",
+          "gym"
+        ],
+        "raw_color": "black",
+        "confidence": 0.95,
+        "product_type": "watch",
+        "search_document": "A black digital G-Shock watch designed for durability and everyday wear. It features a classic sporty aesthetic suitable for casual settings.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "17871",
+      "title": "Levis Men Boxer Maroon Brief",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "maroon"
+        ],
+        "gender": "men",
+        "length": "unknown",
+        "styles": [
+          "casual"
+        ],
+        "details": [
+          "boxer brief"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "underwear",
+        "material": "unknown",
+        "neckline": "unknown",
+        "occasions": [
+          "everyday",
+          "lounge"
+        ],
+        "raw_color": "maroon",
+        "confidence": 0.9,
+        "product_type": "briefs",
+        "sleeve_length": "unknown",
+        "search_document": "A pair of maroon men's boxer briefs designed for everyday comfort and casual wear. These briefs provide a standard fit suitable for daily use.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "18461",
+      "title": "David Beckham Signature Men Deos",
+      "pipeline_status": "quarantined",
+      "gate_reason": "non-apparel",
+      "enriched": {
+        "gender": "men",
+        "category": "other",
+        "product_type": "deodorant",
+        "is_apparel_product": false
+      }
+    },
+    {
+      "id": "19123",
+      "title": "Lotto Men XL Water Man Silver Slippers",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "silver"
+        ],
+        "gender": "men",
+        "styles": [
+          "casual",
+          "sporty"
+        ],
+        "closure": "slip-on",
+        "details": [
+          "thong strap"
+        ],
+        "modesty": "revealing",
+        "pattern": "solid",
+        "category": "footwear",
+        "material": "unknown",
+        "occasions": [
+          "everyday",
+          "lounge"
+        ],
+        "raw_color": "silver",
+        "toe_shape": "open",
+        "confidence": 0.8,
+        "heel_height": "flat",
+        "product_type": "flip flops",
+        "search_document": "These silver men's flip flops are designed for casual everyday wear. They feature a simple slip-on design with an open-toe construction.",
+        "uncertain_fields": [
+          "material",
+          "fit"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "21379",
+      "title": "Manchester United Men Solid Black Track Pants",
+      "pipeline_status": "quarantined",
+      "gate_reason": "cross-signal-disagree",
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "black"
+        ],
+        "gender": "men",
+        "length": "regular",
+        "styles": [
+          "sporty",
+          "casual"
+        ],
+        "details": [
+          "elasticated waist",
+          "drawstring"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "activewear",
+        "material": "unknown",
+        "neckline": "unknown",
+        "occasions": [
+          "everyday",
+          "gym",
+          "lounge"
+        ],
+        "raw_color": "black",
+        "confidence": 0.9,
+        "product_type": "track pants",
+        "sleeve_length": "unknown",
+        "search_document": "Solid black track pants designed for comfort and athletic activity. These pants are suitable for everyday wear, gym sessions, or lounging.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "21977",
+      "title": "Murcia Women Casual Brown Handbag",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "brown"
+        ],
+        "gender": "women",
+        "styles": [
+          "casual"
+        ],
+        "details": [],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "bags",
+        "material": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "brown",
+        "confidence": 0.5,
+        "product_type": "handbag",
+        "search_document": "A casual brown handbag for women. This versatile bag is suitable for everyday use throughout the winter season.",
+        "uncertain_fields": [
+          "material",
+          "fit"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "2288",
+      "title": "Nike Women Black T-shirt",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "black"
+        ],
+        "gender": "women",
+        "styles": [
+          "sporty",
+          "casual"
+        ],
+        "details": [
+          "logo"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "tops",
+        "material": "unknown",
+        "neckline": "round",
+        "occasions": [
+          "gym",
+          "everyday"
+        ],
+        "raw_color": "black",
+        "confidence": 0.9,
+        "strap_type": "none",
+        "top_length": "regular",
+        "product_type": "t-shirt",
+        "sleeve_length": "short",
+        "search_document": "A black short-sleeve t-shirt featuring a Nike logo. This versatile top is suitable for sports activities or everyday casual wear.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "23278",
+      "title": "Maxima Ssteele Men Off White Watch",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "white"
+        ],
+        "gender": "men",
+        "styles": [
+          "casual"
+        ],
+        "details": [
+          "analog display"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "accessories",
+        "material": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "off white",
+        "confidence": 0.7,
+        "product_type": "watch",
+        "search_document": "A men's watch in an off-white finish. This casual timepiece is suitable for everyday wear.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "25349",
+      "title": "Levis Men Red Brief",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "red"
+        ],
+        "gender": "men",
+        "length": "unknown",
+        "styles": [
+          "casual"
+        ],
+        "details": [
+          "elastic waistband"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "underwear",
+        "material": "unknown",
+        "neckline": "unknown",
+        "occasions": [
+          "everyday",
+          "lounge"
+        ],
+        "raw_color": "Red",
+        "confidence": 0.7,
+        "product_type": "briefs",
+        "sleeve_length": "unknown",
+        "search_document": "A pair of red men's briefs designed for everyday comfort. These are simple, solid-colored underwear suitable for daily wear.",
+        "uncertain_fields": [
+          "material",
+          "fit",
+          "details"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "26538",
+      "title": "ID Men Red Shoes",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "red"
+        ],
+        "gender": "men",
+        "styles": [
+          "casual"
+        ],
+        "closure": "unknown",
+        "details": [],
+        "pattern": "solid",
+        "category": "footwear",
+        "material": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "Red",
+        "toe_shape": "round",
+        "confidence": 0.6,
+        "heel_height": "flat",
+        "product_type": "casual shoes",
+        "search_document": "A pair of red casual shoes designed for everyday wear. These shoes feature a simple, solid-colored design suitable for relaxed settings.",
+        "uncertain_fields": [
+          "material",
+          "closure"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "28456",
+      "title": "Urban Yoga Women Blue Skirt With Leggings",
+      "pipeline_status": "quarantined",
+      "gate_reason": "cross-signal-disagree",
+      "enriched": {
+        "fit": "slim",
+        "colors": [
+          "blue"
+        ],
+        "gender": "women",
+        "length": "mini",
+        "styles": [
+          "sporty"
+        ],
+        "details": [
+          "integrated leggings"
+        ],
+        "modesty": "modest",
+        "pattern": "solid",
+        "category": "activewear",
+        "material": "unknown",
+        "neckline": "unknown",
+        "occasions": [
+          "gym",
+          "everyday"
+        ],
+        "raw_color": "blue",
+        "confidence": 0.8,
+        "product_type": "skirt with leggings",
+        "sleeve_length": "unknown",
+        "search_document": "A blue skirt with integrated leggings designed for sports and active everyday wear. It offers a modest and comfortable fit for movement.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "29570",
+      "title": "Vans Men Classic Slip-On Purple & Black Shoes",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "purple",
+          "black"
+        ],
+        "gender": "men",
+        "styles": [
+          "casual",
+          "streetwear"
+        ],
+        "closure": "slip-on",
+        "details": [
+          "elastic side panels"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "footwear",
+        "material": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "toe_shape": "round",
+        "confidence": 0.95,
+        "heel_height": "flat",
+        "product_type": "slip-on shoes",
+        "search_document": "These are classic slip-on shoes featuring a purple and black design. They are comfortable, flat-soled shoes perfect for everyday casual wear.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "29928",
+      "title": "Police Men Black Dial Watch PL12889JVSB",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "black"
+        ],
+        "gender": "men",
+        "styles": [
+          "casual"
+        ],
+        "details": [
+          "analog display"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "accessories",
+        "material": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "black",
+        "confidence": 0.7,
+        "product_type": "watch",
+        "search_document": "A black dial men's watch designed for casual everyday wear. It features a classic look suitable for various seasons.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "3168",
+      "title": "Nike Men's Incinerate MSL White Blue Shoe",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "white",
+          "blue"
+        ],
+        "gender": "men",
+        "styles": [
+          "sporty"
+        ],
+        "closure": "lace-up",
+        "details": [
+          "athletic sole",
+          "padded collar"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "footwear",
+        "material": "unknown",
+        "occasions": [
+          "gym"
+        ],
+        "raw_color": "White Blue",
+        "toe_shape": "round",
+        "confidence": 0.8,
+        "heel_height": "low",
+        "product_type": "sports shoes",
+        "search_document": "A pair of white and blue men's sports shoes designed for athletic activities. These sneakers feature a lace-up closure and a comfortable fit suitable for gym wear.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "33822",
+      "title": "Puma Men Axis White & Grey Sports Shoes",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "white",
+          "grey"
+        ],
+        "gender": "men",
+        "styles": [
+          "sporty",
+          "streetwear"
+        ],
+        "closure": "lace-up",
+        "details": [
+          "padded collar",
+          "cushioned sole"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "footwear",
+        "material": "unknown",
+        "occasions": [
+          "gym",
+          "everyday"
+        ],
+        "raw_color": "White & Grey",
+        "toe_shape": "round",
+        "confidence": 0.9,
+        "heel_height": "low",
+        "product_type": "sports shoes",
+        "search_document": "These white and grey sports shoes feature a classic athletic design with a lace-up closure. They are suitable for gym workouts and everyday casual wear.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "34009",
+      "title": "Gini and Jony Girls Black Top",
+      "pipeline_status": "quarantined",
+      "gate_reason": "low-confidence",
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "black"
+        ],
+        "gender": "kids",
+        "length": "regular",
+        "styles": [
+          "casual"
+        ],
+        "details": [],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "kids",
+        "material": "unknown",
+        "neckline": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "black",
+        "confidence": 0.4,
+        "product_type": "top",
+        "sleeve_length": "unknown",
+        "search_document": "A simple black top for girls, designed for casual everyday wear during the summer. It features a versatile solid color that pairs easily with any bottoms.",
+        "uncertain_fields": [
+          "neckline",
+          "sleeve_length",
+          "material",
+          "fit"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "38402",
+      "title": "Baggit Women Hood Dabang Black Belt",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "black"
+        ],
+        "gender": "women",
+        "styles": [
+          "casual"
+        ],
+        "details": [
+          "buckle"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "accessories",
+        "material": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "black",
+        "confidence": 0.9,
+        "product_type": "belt",
+        "search_document": "A solid black belt designed for casual everyday wear. It features a simple design that pairs well with various outfits.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "39386",
+      "title": "Peter England Men Party Blue Jeans",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "rise": "unknown",
+        "colors": [
+          "blue"
+        ],
+        "gender": "men",
+        "length": "regular",
+        "styles": [
+          "casual"
+        ],
+        "details": [],
+        "leg_cut": "unknown",
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "bottoms",
+        "material": "unknown",
+        "occasions": [
+          "everyday",
+          "party"
+        ],
+        "raw_color": "Blue",
+        "confidence": 0.6,
+        "product_type": "jeans",
+        "search_document": "A pair of blue jeans designed for casual wear. These versatile bottoms are suitable for everyday outings or social gatherings.",
+        "uncertain_fields": [
+          "material",
+          "leg_cut",
+          "rise"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "39524",
+      "title": "Peter England Unisex Orange Sleeve Bag",
+      "pipeline_status": "quarantined",
+      "gate_reason": "non-apparel",
+      "enriched": {
+        "gender": "unisex",
+        "category": "bags",
+        "product_type": "laptop bag",
+        "is_apparel_product": false
+      }
+    },
+    {
+      "id": "39988",
+      "title": "Gas Men Europa White Shoes",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "white"
+        ],
+        "gender": "men",
+        "styles": [
+          "casual",
+          "minimalist"
+        ],
+        "closure": "lace-up",
+        "details": [
+          "low-top"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "footwear",
+        "material": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "White",
+        "toe_shape": "round",
+        "confidence": 0.9,
+        "heel_height": "flat",
+        "product_type": "casual shoes",
+        "search_document": "A pair of white casual men's shoes with a clean, minimalist design. These lace-up sneakers are versatile for everyday wear.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "42841",
+      "title": "French Connection Women Beige Handbag",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "beige"
+        ],
+        "gender": "women",
+        "styles": [
+          "casual",
+          "minimalist"
+        ],
+        "details": [],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "bags",
+        "material": "unknown",
+        "occasions": [
+          "everyday",
+          "vacation"
+        ],
+        "raw_color": "beige",
+        "confidence": 0.7,
+        "product_type": "handbag",
+        "search_document": "A simple beige handbag designed for everyday use. Its neutral tone makes it a versatile accessory for casual summer outfits.",
+        "uncertain_fields": [
+          "material",
+          "fit"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "43369",
+      "title": "Reebok Men Black Possession Flip Flops",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "black"
+        ],
+        "gender": "men",
+        "styles": [
+          "casual",
+          "sporty"
+        ],
+        "closure": "slip-on",
+        "details": [
+          "thong strap"
+        ],
+        "modesty": "revealing",
+        "pattern": "solid",
+        "category": "footwear",
+        "material": "unknown",
+        "occasions": [
+          "everyday",
+          "beach",
+          "vacation"
+        ],
+        "raw_color": "Black",
+        "toe_shape": "open",
+        "confidence": 0.95,
+        "heel_height": "flat",
+        "product_type": "flip flops",
+        "search_document": "Black men's flip flops with a simple thong strap design. These lightweight sandals are perfect for casual everyday wear, the beach, or summer vacations.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "43993",
+      "title": "Police Women Passion Perfume",
+      "pipeline_status": "quarantined",
+      "gate_reason": "non-apparel",
+      "enriched": {
+        "gender": "women",
+        "category": "other",
+        "product_type": "perfume",
+        "is_apparel_product": false
+      }
+    },
+    {
+      "id": "44970",
+      "title": "Maxima Men White Dial Analog Chronograph Watch",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "white"
+        ],
+        "gender": "men",
+        "styles": [
+          "casual",
+          "classic"
+        ],
+        "details": [
+          "analog",
+          "chronograph"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "accessories",
+        "material": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "white",
+        "confidence": 0.9,
+        "product_type": "watch",
+        "search_document": "A men's analog chronograph watch featuring a white dial. This classic timepiece is designed for everyday casual wear.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "46885",
+      "title": "Ben 10 Boys Navy Blue Slippers",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "navy"
+        ],
+        "gender": "kids",
+        "styles": [
+          "casual"
+        ],
+        "closure": "slip-on",
+        "details": [
+          "flip flop style"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "footwear",
+        "material": "unknown",
+        "occasions": [
+          "everyday",
+          "lounge"
+        ],
+        "raw_color": "Navy Blue",
+        "toe_shape": "open",
+        "confidence": 0.9,
+        "heel_height": "flat",
+        "product_type": "slippers",
+        "search_document": "These navy blue flip-flop slippers are designed for casual everyday wear and lounging. They feature a simple slip-on design with an open-toe construction.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "4729",
+      "title": "Disney Kids Boy's Crew Sea Life Sialing Green Teen Kidswear",
+      "pipeline_status": "quarantined",
+      "gate_reason": "cross-signal-disagree",
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "green"
+        ],
+        "gender": "kids",
+        "length": "regular",
+        "styles": [
+          "casual"
+        ],
+        "details": [
+          "graphic print"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "kids",
+        "material": "unknown",
+        "neckline": "crew",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "green",
+        "confidence": 0.8,
+        "product_type": "t-shirt",
+        "sleeve_length": "short",
+        "search_document": "A green crew-neck t-shirt for kids featuring a sea life graphic. This casual top is suitable for everyday wear during the summer.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "47957",
+      "title": "Murcia Women Blue Handbag",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "blue"
+        ],
+        "gender": "women",
+        "styles": [
+          "casual"
+        ],
+        "details": [],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "bags",
+        "material": "unknown",
+        "occasions": [
+          "everyday",
+          "vacation"
+        ],
+        "raw_color": "Blue",
+        "confidence": 0.5,
+        "product_type": "handbag",
+        "search_document": "A blue handbag designed for casual everyday use. It is a versatile accessory suitable for summer outings and daily errands.",
+        "uncertain_fields": [
+          "material",
+          "fit"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "48311",
+      "title": "Pitaraa Women Bronze Beaded Bracelet",
+      "pipeline_status": "quarantined",
+      "gate_reason": "cross-signal-disagree",
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "brown"
+        ],
+        "gender": "women",
+        "styles": [
+          "casual"
+        ],
+        "details": [
+          "beaded"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "jewelry",
+        "material": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "bronze",
+        "confidence": 0.7,
+        "product_type": "bracelet",
+        "search_document": "A bronze-toned beaded bracelet designed for everyday casual wear. It features a simple beaded construction that adds a subtle metallic touch to your outfit.",
+        "uncertain_fields": [
+          "material",
+          "fit"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "4943",
+      "title": "Gini and Jony Boy's Kaleb White Brown Kidswear",
+      "pipeline_status": "quarantined",
+      "gate_reason": "cross-signal-disagree",
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "white",
+          "brown"
+        ],
+        "gender": "kids",
+        "length": "regular",
+        "styles": [
+          "casual"
+        ],
+        "details": [
+          "button-down"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "kids",
+        "material": "unknown",
+        "neckline": "collared",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "White Brown",
+        "confidence": 0.7,
+        "product_type": "shirt",
+        "sleeve_length": "short",
+        "search_document": "A white and brown casual shirt for boys, suitable for everyday summer wear. It features a classic collared design with short sleeves.",
+        "uncertain_fields": [
+          "material",
+          "pattern"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "49653",
+      "title": "Mineral Women Green Top",
+      "pipeline_status": "quarantined",
+      "gate_reason": "low-confidence",
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "green"
+        ],
+        "gender": "women",
+        "styles": [
+          "casual"
+        ],
+        "details": [],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "tops",
+        "material": "unknown",
+        "neckline": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "green",
+        "confidence": 0.4,
+        "strap_type": "unknown",
+        "top_length": "regular",
+        "product_type": "top",
+        "sleeve_length": "unknown",
+        "search_document": "A simple green top designed for casual everyday wear. It is a versatile piece suitable for warm weather.",
+        "uncertain_fields": [
+          "material",
+          "fit",
+          "neckline",
+          "sleeve_length",
+          "top_length"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "51658",
+      "title": "Fossil Women Copper Chronograph Watch CH2589",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "brown"
+        ],
+        "gender": "women",
+        "styles": [
+          "casual",
+          "classic"
+        ],
+        "details": [
+          "chronograph"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "accessories",
+        "material": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "copper",
+        "confidence": 0.8,
+        "product_type": "watch",
+        "search_document": "A copper-toned chronograph watch designed for women. This classic timepiece is suitable for everyday casual wear.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "54118",
+      "title": "Rocia Women Black Flats",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "black"
+        ],
+        "gender": "women",
+        "styles": [
+          "casual",
+          "classic"
+        ],
+        "closure": "unknown",
+        "details": [],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "footwear",
+        "material": "unknown",
+        "occasions": [
+          "everyday",
+          "party"
+        ],
+        "raw_color": "black",
+        "toe_shape": "unknown",
+        "confidence": 0.7,
+        "heel_height": "flat",
+        "product_type": "flats",
+        "search_document": "A pair of black flat shoes suitable for casual everyday wear. These versatile flats are designed for comfort and can be styled for various occasions.",
+        "uncertain_fields": [
+          "material",
+          "toe_shape",
+          "closure"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "56825",
+      "title": "John Players Men Brown Shirt",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "brown"
+        ],
+        "gender": "men",
+        "styles": [
+          "casual",
+          "classic"
+        ],
+        "details": [],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "tops",
+        "material": "unknown",
+        "neckline": "collared",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "brown",
+        "confidence": 0.7,
+        "strap_type": "none",
+        "top_length": "regular",
+        "product_type": "shirt",
+        "sleeve_length": "unknown",
+        "search_document": "A solid brown men's shirt designed for casual everyday wear. It features a classic collared neckline and a regular fit.",
+        "uncertain_fields": [
+          "material",
+          "sleeve_length"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "5865",
+      "title": "ADIDAS Men's Twelve Faster T-shirt",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "black"
+        ],
+        "gender": "men",
+        "styles": [
+          "casual",
+          "sporty"
+        ],
+        "details": [
+          "logo"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "tops",
+        "material": "unknown",
+        "neckline": "crew",
+        "occasions": [
+          "everyday",
+          "gym"
+        ],
+        "raw_color": "black",
+        "confidence": 0.9,
+        "strap_type": "none",
+        "top_length": "regular",
+        "product_type": "t-shirt",
+        "sleeve_length": "short",
+        "search_document": "A black men's t-shirt featuring a graphic logo design. This casual top is suitable for everyday wear or athletic activities.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "59051",
+      "title": "Carlton London Women Black & Gold Toned Flats",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "black",
+          "gold"
+        ],
+        "gender": "women",
+        "styles": [
+          "casual",
+          "classic"
+        ],
+        "closure": "slip-on",
+        "details": [
+          "gold-toned accents"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "footwear",
+        "material": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "Black & Gold Toned",
+        "toe_shape": "unknown",
+        "confidence": 0.7,
+        "heel_height": "flat",
+        "product_type": "flats",
+        "search_document": "These black flats feature gold-toned detailing, offering a simple and versatile look. They are designed for everyday casual wear.",
+        "uncertain_fields": [
+          "material",
+          "toe_shape"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "59263",
+      "title": "Titan Women Silver Watch",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "silver"
+        ],
+        "gender": "women",
+        "styles": [
+          "classic",
+          "minimalist"
+        ],
+        "details": [
+          "analog"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "accessories",
+        "material": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "silver",
+        "confidence": 0.7,
+        "product_type": "watch",
+        "search_document": "A silver-toned women's watch with a classic design. It is a versatile accessory suitable for everyday casual wear.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "59607",
+      "title": "FNF Pink & Grey Wedding Collection Sari",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "work": "unknown",
+        "colors": [
+          "pink",
+          "grey"
+        ],
+        "gender": "women",
+        "styles": [
+          "classic",
+          "formal"
+        ],
+        "details": [],
+        "modesty": "modest",
+        "pattern": "solid",
+        "category": "ethnic",
+        "material": "unknown",
+        "occasions": [
+          "wedding guest",
+          "festive"
+        ],
+        "raw_color": "Pink & Grey",
+        "confidence": 0.5,
+        "border_type": "unknown",
+        "drape_style": "unknown",
+        "product_type": "saree",
+        "search_document": "A pink and grey saree from a wedding collection, suitable for festive events and wedding guest attire. It features a classic design that pairs well with traditional jewelry.",
+        "set_composition": "saree",
+        "uncertain_fields": [
+          "material",
+          "work",
+          "border_type"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "6842",
+      "title": "Timberland Unisex Rubber Sole Brush Shoe Accessories",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "black"
+        ],
+        "gender": "unisex",
+        "styles": [
+          "casual"
+        ],
+        "details": [
+          "rubber sole brush"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "accessories",
+        "material": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "black",
+        "confidence": 0.9,
+        "product_type": "shoe brush",
+        "search_document": "A black shoe brush designed for cleaning rubber soles. This accessory is a practical tool for maintaining footwear.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "8574",
+      "title": "Crocs Dora Boots Pink Sandals",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "unknown",
+        "colors": [
+          "pink"
+        ],
+        "gender": "kids",
+        "styles": [
+          "casual"
+        ],
+        "closure": "unknown",
+        "details": [
+          "branded"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "footwear",
+        "material": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "Pink",
+        "toe_shape": "unknown",
+        "confidence": 0.5,
+        "heel_height": "unknown",
+        "product_type": "sandals",
+        "search_document": "A pair of pink sandals designed for casual everyday wear. These shoes feature a simple construction suitable for relaxed settings.",
+        "uncertain_fields": [
+          "material",
+          "fit",
+          "heel_height",
+          "toe_shape",
+          "closure"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "8580",
+      "title": "Scullers Men  Grey Waistcoat",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "lapel": "unknown",
+        "colors": [
+          "grey"
+        ],
+        "gender": "men",
+        "length": "regular",
+        "styles": [
+          "classic",
+          "casual"
+        ],
+        "closure": "buttons",
+        "details": [
+          "sleeveless",
+          "button-front"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "outerwear",
+        "material": "unknown",
+        "occasions": [
+          "everyday",
+          "office"
+        ],
+        "raw_color": "Grey",
+        "confidence": 0.9,
+        "product_type": "waistcoat",
+        "search_document": "A grey men's waistcoat featuring a button-front closure. This versatile piece is suitable for everyday wear or office settings.",
+        "uncertain_fields": [
+          "material",
+          "lapel"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "9036",
+      "title": "Buckaroo Men Flores Black Formal Shoes",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "black"
+        ],
+        "gender": "men",
+        "styles": [
+          "formal",
+          "classic"
+        ],
+        "closure": "unknown",
+        "details": [
+          "formal shoes"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "footwear",
+        "material": "unknown",
+        "occasions": [
+          "office",
+          "party",
+          "evening"
+        ],
+        "raw_color": "Black",
+        "toe_shape": "unknown",
+        "confidence": 0.7,
+        "heel_height": "low",
+        "product_type": "formal shoes",
+        "search_document": "These black formal shoes are designed for professional settings and evening events. They offer a classic look suitable for formal wear.",
+        "uncertain_fields": [
+          "material",
+          "toe_shape",
+          "closure"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "9204",
+      "title": "Puma Men Future Cat Remix SF Black Casual Shoes",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "slim",
+        "colors": [
+          "black"
+        ],
+        "gender": "men",
+        "styles": [
+          "sporty",
+          "casual"
+        ],
+        "closure": "lace-up",
+        "details": [
+          "low profile",
+          "asymmetrical lacing"
+        ],
+        "modesty": "moderate",
+        "pattern": "solid",
+        "category": "footwear",
+        "material": "unknown",
+        "occasions": [
+          "everyday"
+        ],
+        "raw_color": "Black",
+        "toe_shape": "round",
+        "confidence": 0.9,
+        "heel_height": "flat",
+        "product_type": "casual shoes",
+        "search_document": "These black Puma casual shoes feature a low-profile design with a sleek, sporty silhouette. They are ideal for everyday wear and casual summer outings.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    },
+    {
+      "id": "9452",
+      "title": "John Miller Men Stripes White Red Shirts",
+      "pipeline_status": "ready",
+      "gate_reason": null,
+      "enriched": {
+        "fit": "regular",
+        "colors": [
+          "white",
+          "red"
+        ],
+        "gender": "men",
+        "styles": [
+          "classic",
+          "formal"
+        ],
+        "details": [
+          "button-down"
+        ],
+        "modesty": "modest",
+        "pattern": "striped",
+        "category": "tops",
+        "material": "unknown",
+        "neckline": "collared",
+        "occasions": [
+          "office",
+          "party"
+        ],
+        "raw_color": "White Red",
+        "confidence": 0.8,
+        "strap_type": "none",
+        "top_length": "regular",
+        "product_type": "shirt",
+        "sleeve_length": "long",
+        "search_document": "A men's long-sleeve shirt featuring a red and white striped pattern. This collared shirt is suitable for formal office wear or smart-casual events.",
+        "uncertain_fields": [
+          "material"
+        ],
+        "is_apparel_product": true
+      }
+    }
+  ]
+}

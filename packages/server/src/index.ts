@@ -46,6 +46,17 @@ export type {
   SearchEvalResult,
   CalibrateResult,
 } from "./core/calibrate-search.ts";
+export { scoreEnrichment } from "./core/evaluate-enrich.ts";
+export type {
+  AttrKind,
+  AttrSpec,
+  GoldRow,
+  PredictedRow,
+  AttrMetrics,
+  ProductDiff,
+  EnrichEvalResult,
+  EvaluateEnrichInput,
+} from "./core/evaluate-enrich.ts";
 export type {
   EvalOpts,
   EvalResult,

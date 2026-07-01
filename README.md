@@ -123,6 +123,8 @@ Six fashion/e-commerce primitives are baked into the core, on the principle of g
 
 Self-tuning: `matcher.evaluateSearch(...)` scores graded relevance@k / nDCG@k (caller labels or the configured LLM as judge), and `matcher.calibrateSearch(...)` sweeps a mode/weight grid and returns the recommended default — so "no config" can mean samesake calibrates itself.
 
+Enrichment accuracy (the root cause under relevance): `matcher.evaluateEnrichment(...)` scores the pipeline's extracted attributes against a human-labeled gold set — per-attribute precision/recall/F1 — so a mis-extracted color or a missed neckline is caught at the source, not blamed on ranking. Search relevance is only as good as the attributes enrichment pulls; measure both. See the [enrichment-accuracy guide](./apps/docs/src/content/docs/guides/eval-enrichment.mdx) and `examples/fashion-search/eval-enrichment.ts`.
+
 ### Fashion enrichment template (best defaults)
 
 Attribute-aware search needs structured attributes (a "Crimson" title should be retrievable under "red dress"). `@samesake/core` ships a fashion enrichment template so you get that without hand-writing a taxonomy + schemas:
@@ -201,7 +203,7 @@ Runnable demo (stub embed, weight flip): [`bun examples/hello-spaces/run.ts`](./
 | NLQ → hard filters + semantic residual | Structured parse gates (brand, size, internal code) |
 | Multi-stage enrichment pipeline + stage cache | Confirm / decline → alias active learning |
 | Connectors (Shopify, Woo, JSONL) + document push | `/explain` per-channel score breakdown |
-| Eval harness (golden queries + ESCI judge) | F1 threshold calibration per scope |
+| Eval harness: search relevance (golden queries + ESCI judge) **and** enrichment accuracy (per-attribute P/R/F1) | F1 threshold calibration per scope |
 | Query-time channel weights | `/match-batch` for bulk workloads |
 
 Search and match share embeddings, Postgres caches, and per-project runtime DDL.

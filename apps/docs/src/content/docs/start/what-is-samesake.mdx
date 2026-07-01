@@ -43,6 +43,14 @@ Three retrieval signals combine through **reciprocal-rank fusion (RRF)**:
 
 Hard filters (`price ≤ X`, `available = true`, `colors ∋ red`) compile to SQL predicates that gate the result set before ranking.
 
+## Measuring quality
+
+Search quality is only as good as the attributes enrichment extracts, so samesake ships three eval loops — the reason relevance is measured, not asserted:
+
+- **Enrichment accuracy** — `matcher.evaluateEnrichment(...)` scores the pipeline's extracted attributes against a human-labeled gold set (per-attribute precision / recall / F1). This is the *root cause*: a mis-extracted colour or a missed neckline is caught here, not blamed on ranking. See [Measure enrichment accuracy](/guides/eval-enrichment/).
+- **Search relevance** — `matcher.evaluateSearch(...)` grades results with an LLM-as-judge (or your labels); `matcher.calibrateSearch(...)` sweeps configs. Judge grades are cached per (query, doc) so pre/post comparisons are deterministic. See [Eval from search snapshots](/guides/eval-from-snapshots/).
+- **Adversarial red-team** — out-of-distribution, numerical, injection, contradiction, and polysemy queries to prove the engine fails *gracefully* (no crashes, no junk for off-domain queries).
+
 ## Three ways to call it
 
 `createMatcher(config)` returns one object you can call three ways:

@@ -67,6 +67,11 @@ vs `responseJsonSchema` — stays in your `generate` function.
 Run with `matcher.enrich(project, collection)`. Colours went from mostly-empty to accurate
 ("RED PUFF SLEEVE MAXI DRESS" → `solid red`). See [the full pipeline](/guides/porulle-fashion-app/#enrich-attributes-from-the-image-samesake-enrich-pipeline).
 
+**Then measure the enrichment itself** — `matcher.evaluateEnrichment(...)` scores per-attribute
+precision / recall / F1 against a gold set, so you know whether the fix actually landed (and catch
+regressions where a prompt tweak fixes one product but breaks others). It's the root-cause loop
+beneath search relevance — see [Measure enrichment accuracy](/guides/eval-enrichment/).
+
 ## 4. Compose what you embed — the `indexing` DSL
 
 An embedding only knows what's in the text it was built from. Declare **surface builders** on the collection — they run at enrich time, persist to the row, and the indexer reads them (no separate compose step, no string template on the embeddings block):
@@ -146,13 +151,26 @@ See [Reranking](/reference/reranking/) and [Relevance judge](/reference/relevanc
 **Empirical tuning:** `FASHION_CONFIDENCE_FLOOR` and `relevanceExponent` are placeholders until
 you run the offline eval gate — see [Eval gate — tune floor and exponents](/guides/eval-gate/).
 
-## 8. Measure, and respect corpus size
+## 8. Measure with three loops, and respect corpus size
 
-Tune against a fixed query set, not vibes — see [Eval from search snapshots](/guides/eval-from-snapshots/)
-for relevance@k + constraint compliance, and [Eval gate](/guides/eval-gate/) for the golden-set
-harness (`runEval`) that gates ranking and floor changes. And be honest about scale: at ~30 products colour is a weak
-discriminator no matter what, because the embedding is dominated by category. Real relevance wins
-need both clean attributes **and** a catalog big enough to disambiguate.
+Tune against fixed sets, not vibes. samesake has three complementary eval loops:
+
+- **Enrichment accuracy** (root cause) — `matcher.evaluateEnrichment(...)`, per-attribute P/R/F1 vs a
+  gold set. Fix this first; search can't beat the data it ranks. See [Measure enrichment accuracy](/guides/eval-enrichment/).
+- **Search relevance** — `matcher.evaluateSearch(...)` / `runEval` over a fixed query set:
+  relevance@k, nDCG, constraint compliance. See [Eval from search snapshots](/guides/eval-from-snapshots/)
+  and [Eval gate](/guides/eval-gate/). The LLM judge **sees each candidate's price** (so it can verify
+  "under N" constraints) and **persists grades per (query, doc)** — so a pre/post comparison reflects a
+  real *retrieval* change, not judge re-roll noise. Report **by query bucket** (keyword / attribute /
+  use-case / price / negation / style / local); an overall nDCG win can hide a tail regression.
+- **Adversarial red-team** — deliberately-breaking queries (out-of-distribution, numerical/malformed,
+  injection, contradiction, degenerate, polysemy) to confirm the engine fails *gracefully*: no crashes,
+  no leaked secrets, and no confident junk for off-domain queries (tune `search.relevanceFloor` so
+  "gaming laptop" returns nothing, not five random dresses).
+
+Be honest about scale: at ~30 products colour is a weak discriminator no matter what, because the
+embedding is dominated by category. Real relevance wins need clean attributes **and** a catalog big
+enough to disambiguate.
 
 ## Running enrichment in the background
 

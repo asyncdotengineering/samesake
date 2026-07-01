@@ -2,6 +2,20 @@
 
 All notable changes to samesake. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.6.0]
+
+### Added
+
+- **Enrichment-accuracy eval** (`@samesake/server`) — `matcher.evaluateEnrichment(project, collection, { gold, attributes })` + the pure `scoreEnrichment(gold, predicted, attributes)` score the enrich pipeline's extracted attributes against a human-labeled gold set with **per-attribute precision / recall / F1** (micro + macro, coverage, per-product diffs). The root-cause loop beneath search relevance — the enrichment twin of `evaluateSearch`. `@samesake/core` ships `fashion.evalAttributes()` (+ `EnrichEvalAttr`) as the default fashion attribute spec.
+- **Eval-harness honesty** (`@samesake/server`) — the relevance judge now **sees each candidate's price** (`candidateSummary`/`hitText`) so it can verify numeric constraints ("under N"); and `evaluateSearch` **persists judge grades** per `(judge-version, query, doc)` via the stage cache, so pre/post comparisons reflect a real retrieval change, not judge re-roll noise.
+- **Price-hygiene index gate** (`@samesake/core`) — `fashionIndexing` quarantines rows with `price ≤ 0` (`reason: "invalid-price"`).
+
+### Fixed
+
+- **NLQ `category:"other"` no-results** (`@samesake/core`) — vague use-case queries ("office wear for women", "resort wear") were mapped to the non-apparel `other` category as a **hard filter** → zero results. `"other"` is removed from the NLQ category enum; vague queries now leave `category` null and let `semantic_query` carry intent. (use-case no-results 30% → 0%.)
+- **Colour over-emission** (`@samesake/core`) — the extract rule now collapses compound single-shade names to one base ("navy blue" → `["navy"]`, not `["navy","blue"]`; "off white" → `["white"]`).
+- **NLQ price robustness** (`@samesake/core`) — strip `$`/`Rs`/`rupees`, `"5k"` → 5000, and ignore non-positive / inverted (`min > max`) bounds instead of surfacing junk.
+
 ## [2.5.0]
 
 ### Added

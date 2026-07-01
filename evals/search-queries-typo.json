@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "country": "LK",
+  "notes": "Misspelled shopper queries — the Phase-1 typo-tolerance gap. Each maps to a real intent present in the fashionparity corpus. The LLM judge understands the typo; this measures whether RETRIEVAL still surfaces the right items when the lexical tokens don't match.",
+  "queries": [
+    { "id": "typo-01", "type": "typo", "query": "blak dress", "intent": "black dress" },
+    { "id": "typo-02", "type": "typo", "query": "denim jaket", "intent": "denim jacket" },
+    { "id": "typo-03", "type": "typo", "query": "linnen shirt", "intent": "linen shirt" },
+    { "id": "typo-04", "type": "typo", "query": "wite blouse", "intent": "white blouse" },
+    { "id": "typo-05", "type": "typo", "query": "palazo pants", "intent": "palazzo pants" },
+    { "id": "typo-06", "type": "typo", "query": "maxi skrt", "intent": "maxi skirt" },
+    { "id": "typo-07", "type": "typo", "query": "croptop", "intent": "crop top" },
+    { "id": "typo-08", "type": "typo", "query": "floral dres", "intent": "floral dress" },
+    { "id": "typo-09", "type": "typo", "query": "hoddie", "intent": "hoodie" },
+    { "id": "typo-10", "type": "typo", "query": "oversized tshit", "intent": "oversized tshirt" },
+    { "id": "typo-11", "type": "typo", "query": "saree blous", "intent": "saree blouse" },
+    { "id": "typo-12", "type": "typo", "query": "kurtaa top", "intent": "kurta top" }
+  ]
+}

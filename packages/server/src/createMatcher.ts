@@ -46,6 +46,7 @@ import { makeRetryService } from "./core/retry.ts";
 import { makeFashionSearchService } from "./core/fashion-search.ts";
 import { makeCalibrateService } from "./core/calibrate.ts";
 import { makeCalibrateSearchService } from "./core/calibrate-search.ts";
+import { makeEvaluateEnrichService } from "./core/evaluate-enrich.ts";
 import { makeEvalService } from "./core/eval/run.ts";
 import { makeExplainService } from "./core/explain.ts";
 import { makeVariantsService } from "./core/variants.ts";
@@ -81,6 +82,7 @@ export interface Matcher {
   grepDocument: ReturnType<typeof makeSearchService>["grepDocument"];
   evaluateSearch: ReturnType<typeof makeCalibrateSearchService>["evaluateSearch"];
   calibrateSearch: ReturnType<typeof makeCalibrateSearchService>["calibrateSearch"];
+  evaluateEnrichment: ReturnType<typeof makeEvaluateEnrichService>["evaluateEnrichment"];
   findProducts: ReturnType<typeof makeAgentToolsService>["findProducts"];
   findSimilarProducts: ReturnType<typeof makeAgentToolsService>["findSimilarProducts"];
   agentToolDescriptors: ReturnType<typeof makeAgentToolsService>["toolDescriptors"];
@@ -243,6 +245,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
   const matchService = makeMatchService(ctx, embedService, parseService, projectsService, schemaGen);
   const searchService = makeSearchService(ctx, embedService, projectsService);
   const calibrateSearchService = makeCalibrateSearchService(ctx, searchService);
+  const evaluateEnrichService = makeEvaluateEnrichService(ctx, projectsService);
   const evalService = makeEvalService(ctx, searchService);
   const agentToolsService = makeAgentToolsService(ctx, projectsService, searchService);
   const ingestService = makeIngestService(ctx, projectsService);
@@ -314,6 +317,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
     grepDocument: searchService.grepDocument,
     evaluateSearch: calibrateSearchService.evaluateSearch,
     calibrateSearch: calibrateSearchService.calibrateSearch,
+    evaluateEnrichment: evaluateEnrichService.evaluateEnrichment,
     findProducts: agentToolsService.findProducts,
     findSimilarProducts: agentToolsService.findSimilarProducts,
     agentToolDescriptors: agentToolsService.toolDescriptors,
