@@ -48,7 +48,24 @@ A gold label that is **absent** means "unlabeled" (skipped). A label of `[]` or 
    bun --env-file=../../.env eval-enrichment.ts
    ```
 
+4. **Testing an enrich-prompt / taxonomy change?** The seeded corpus is baked, so re-enrich the gold
+   products live through the *current* pipeline, then score — this is what actually exercises a prompt
+   change. Run once before and once after your change to get a clean pre/post:
+
+   ```bash
+   bun --env-file=../../.env eval-enrichment.ts --reenrich --tag=pre    # before the change
+   # …edit the enrich prompt/schema, rebuild…
+   bun --env-file=../../.env eval-enrichment.ts --reenrich --tag=post   # after
+   ```
+
 </Steps>
+
+<Aside type="caution">
+Global enrich-prompt edits are risky — a change that fixes one product often breaks others (e.g.
+tightening the non-apparel rule can misclassify watches). The re-enrich pre/post gate catches this. For
+narrow edge cases, prefer the few-shot **correction loop** (`review.ts` → corrections fed back as
+exemplars) over rewriting the global prompt.
+</Aside>
 
 Both write `evals/runs/<ts>-enrichment-*.{json,md}` and print a per-attribute scorecard:
 

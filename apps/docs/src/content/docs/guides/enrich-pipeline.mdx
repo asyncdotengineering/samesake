@@ -79,8 +79,18 @@ await matcher.apply("market", { entities: [], collections: [products] });
 Pulling from Shopify, WooCommerce, or Medusa? The [integration guides](/integrations/shopify/) give you the connector that turns a store feed into the `rows` you pass to `pushDocuments`. The durable wrapper is the same no matter where the rows come from.
 </Aside>
 
+## Did the enrichment actually work?
+
+Enrichment quality is the make-or-break for search — so measure it, don't assume it. After a run,
+`matcher.evaluateEnrichment(project, collection, { gold, attributes: fashion.evalAttributes() })`
+scores the pipeline's extracted attributes against a human-labeled gold set with **per-attribute
+precision / recall / F1** (and flags where the model hallucinated or missed a value). Gate your
+enrich-prompt, taxonomy, or confidence-floor changes on it. See
+[Measure enrichment accuracy](/guides/eval-enrichment/).
+
 ## Where to go next
 
 - **Status machine for every row** — [Pipeline lifecycle](/guides/pipeline-lifecycle/)
+- **Measure enrichment accuracy** — [per-attribute P/R/F1 vs a gold set](/guides/eval-enrichment/)
 - **Marketplace loop in plain language** — [Search for a fashion marketplace](/guides/marketplace-search/)
 - **Single-store version** — [From a store idea to search](/guides/idea-to-search/)

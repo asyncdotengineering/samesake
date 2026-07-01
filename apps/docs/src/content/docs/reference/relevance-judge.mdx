@@ -65,7 +65,7 @@ Candidate products:
 Return a grade 0|1|2 per candidate with facet sub-grades and a short reason. Keep the original candidate order.
 ```
 
-Candidate text comes from `candidateSummary` when built from product data (title, brand, category, colors, occasions, etc.) or from the `text` field passed in (rerank path uses `rerankCandidateText`).
+Candidate text comes from `candidateSummary` when built from product data (title, brand, **price**, category, colors, occasions, styles, material, pattern, fit, description) or from the `text` field passed in (rerank path uses `rerankCandidateText`). Price is included so the judge can verify numeric constraints like "under 5000" — without it, numeric queries get under-graded (a judge that can't see the price can't confirm the bound).
 
 ## Structured output schema
 
