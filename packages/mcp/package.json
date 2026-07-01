@@ -1,6 +1,6 @@
 {
   "name": "@samesake/mcp",
-  "version": "0.3.0",
+  "version": "2.6.0",
   "description": "Stdio MCP server that exposes a deployed samesake matcher (hybrid search + agent-commerce tools) to any MCP client.",
   "type": "module",
   "bin": {
