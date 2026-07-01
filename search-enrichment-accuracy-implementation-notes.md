@@ -98,3 +98,31 @@ Artifacts land in `evals/runs/<ts>-enrichment-{fixture,live}.{json,md}`.
 `evaluateEnrichment` is the primitive; wiring it as a CI/merge gate on enrich-prompt / taxonomy /
 `FASHION_CONFIDENCE_FLOOR` changes (fail on per-attribute F1 regression) is the natural follow-up,
 mirroring how `bench-retrieval.ts` gates ranking changes.
+
+## P1 enrichment-quality fixes (via live re-enrich harness)
+
+`eval-enrichment.ts --reenrich` re-enriches the 50 gold products live (text-only; the demo raw
+images are expired signed URLs) through the current pipeline, then scores — so enrich-prompt changes
+are actually exercised (the seeded corpus is baked). Pre and post are both text-only, isolating the fix.
+
+**Shipped: #4 colour over-emission.** `fashionExtractSchema` colors rule now collapses compound
+single-shade names to one base ("navy blue"→[navy], not [navy,blue]). Clean win, no collateral:
+
+| | pre | post |
+|---|---|---|
+| colors F1 | 0.99 | **1.00** |
+| category F1 | 0.94 | 0.94 (unchanged) |
+| micro F1 | 0.978 | **0.981** |
+
+**NOT shipped: #2 non-apparel gate + #3 kids/garment.** Both were attempted as classify-prompt edits
+and every variant NET-REGRESSED (the re-enrich gate caught it each time):
+- #3 "prefer garment category / kids-only-generic" → fixed girls-top + shoe-brush but broke activewear
+  (track pants→bottoms) and generic kidswear (→tops): category 0.94→0.90.
+- #2 "tools/tech sleeves → non-apparel" → made **watches** classify as non-apparel; a narrower
+  "watches ARE fashion" variant then scrambled watch *categories* → category 0.82.
+
+Conclusion: the classify stage (already 94% category / 98% is_apparel) is too sensitive to global
+instruction edits for these 2-3 ambiguous edge cases (shoe brush, girls-top, laptop "sleeve bag").
+The correct mechanism is the framework's **few-shot correction loop** (`review.ts` →
+`correctionExamples` injected into the enrich prompt) — targeted per-product examples that don't
+perturb the global classifier — not prompt surgery. Left as follow-up; #4 shipped.

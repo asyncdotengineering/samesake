@@ -119,7 +119,7 @@ export function fashionClassifySchema(): z.ZodType {
 
 export function fashionExtractSchema(categoryId: string): z.ZodType {
   return z.object({
-    colors: z.array(zEnum(fashionEnums.colors)).describe("rule[color_base]: BASE colours only (red, navy, beige), primary colour first; marketing names go in raw_color"),
+    colors: z.array(zEnum(fashionEnums.colors)).describe("rule[color_base]: BASE colours only (red, navy, beige), primary first. A compound single-shade name maps to ONE base: 'navy blue'→['navy'] (NOT ['navy','blue']), 'sky blue'→['blue'], 'off white'→['white'], 'dark green'→['green']. Only list multiple colours for genuinely multi-coloured items. Marketing names go in raw_color."),
     raw_color: z.string().optional().describe("the seller's marketing colour name verbatim if stated (e.g. crimson, midnight, blush), else empty"),
     pattern: zEnum(fashionEnums.pattern).describe("dominant visible pattern; 'solid' if plain"),
     material: zEnum(fashionEnums.materials).optional().describe("from text when stated; from the image only as a low-confidence guess; else 'unknown'"),
@@ -150,7 +150,7 @@ category, colors, gender and occasions drive hard filtering and ranking — thes
 <rules>
 - rule[enums_only]: use ONLY the allowed enum values for each field; never invent a value.
 - rule[unknown_over_guess]: if an attribute is not visible or stated, use "unknown" (or omit) — do not guess.
-- rule[color_base]: colors are BASE colours only (red, navy, beige, olive…), primary colour first. Put the seller's marketing colour name verbatim in raw_color (e.g. title "Crimson" → colors:["red"], raw_color:"crimson"; "midnight" → colors:["navy"], raw_color:"midnight").
+- rule[color_base]: colors are BASE colours only (red, navy, beige, olive…), primary colour first. A compound single-shade name collapses to ONE base — "Navy Blue" → colors:["navy"] (NOT ["navy","blue"]); "Off White" → colors:["white"]; "Dark Green" → colors:["green"]. Only emit multiple colours for genuinely multi-coloured items. Put the seller's marketing colour name verbatim in raw_color (e.g. title "Crimson" → colors:["red"], raw_color:"crimson"; "midnight" → colors:["navy"], raw_color:"midnight").
 - rule[style_derive]: styles must follow from what you SEE, never from brand copy — floral+flowy+relaxed → bohemian; tailored+structured → formal; cropped+logo+boxy → streetwear.
 - rule[details]: capture fine construction details even if minor (puff sleeve, ruffled, tiered, cutout, slit, belted, smocked).
 - rule[search_document]: 2-3 plain sentences a shopper understands — what it is, how it looks, what to wear it for. No marketing fluff.

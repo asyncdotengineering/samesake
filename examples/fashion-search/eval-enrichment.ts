@@ -18,7 +18,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fashion } from "@samesake/core";
-import { scoreEnrichment, type GoldRow, type PredictedRow, type EnrichEvalResult } from "@samesake/server";
+import { scoreEnrichment, createDbFromUrl, type GoldRow, type PredictedRow, type EnrichEvalResult } from "@samesake/server";
 
 const REPO_ROOT = join(import.meta.dir, "..", "..");
 const GOLD_PATH = join(REPO_ROOT, "evals", "golden-enrichment-fashion-lk.json");
@@ -136,8 +136,48 @@ async function runBootstrap(inputPath?: string): Promise<void> {
   console.log(`wrote blank gold template (${template.products.length} products) → ${out}`);
 }
 
+// Re-enrich the gold products LIVE through the current pipeline (so enrich-prompt/gate/taxonomy
+// changes are actually exercised — the seeded corpus is baked and won't reflect them), then score.
+// Images in the demo raw data are expired signed URLs, so this runs text-only; both pre and post
+// runs are text-only, so the pre/post delta fairly isolates the fix.
+async function runReenrich(tag: string): Promise<void> {
+  const { createFashionMatcher, productsCollection } = await import("./samesake.config.ts");
+  const gold = await loadGold();
+  const ids = gold.products.map((p) => p.id);
+
+  const src = createDbFromUrl(process.env.DATABASE_URL!);
+  const raw = (await (src.db as unknown as { session: { client: { unsafe: (s: string, p: unknown[]) => Promise<Array<Record<string, unknown>>> } } }).session.client.unsafe(
+    `SELECT id, data FROM project_demo_store.c_products WHERE id = ANY($1)`,
+    [ids]
+  )) as Array<{ id: string; data: unknown }>;
+  const docs = raw.map((r) => ({ id: String(r.id), data: (typeof r.data === "string" ? JSON.parse(r.data) : r.data) as Record<string, unknown> }));
+  await src.close();
+  if (!docs.length) throw new Error("no raw docs read from demo_store — is it seeded?");
+
+  const matcher = createFashionMatcher();
+  await matcher.migrate();
+  const TEMP = "enrich_eval";
+  await matcher.apply(TEMP, { entities: [], collections: [productsCollection] });
+  // Clean slate so enrich re-processes every row (enrich skips rows whose enriched_at is set).
+  const tmp = createDbFromUrl(process.env.DATABASE_URL!);
+  await (tmp.db as unknown as { session: { client: { unsafe: (s: string) => Promise<unknown> } } }).session.client.unsafe(`TRUNCATE project_${TEMP}.c_products`);
+  await tmp.close();
+
+  await matcher.pushDocuments(TEMP, "products", docs);
+  const er = await matcher.enrich(TEMP, "products", { concurrency: 8 });
+  console.log(`re-enriched ${er.enriched}, failed ${er.failed}, skipped ${er.skipped} (text-only; images expired)`);
+  const r = await matcher.evaluateEnrichment(TEMP, "products", { gold: gold.products, attributes: ATTRS });
+  console.log(await writeArtifacts(r, `reenrich-${tag}`));
+  await matcher.close();
+}
+
 const args = process.argv.slice(2);
-if (args.includes("--bootstrap")) {
+if (args.includes("--reenrich")) {
+  // accept --tag=post or --tag post
+  const eq = args.find((a) => a.startsWith("--tag="))?.split("=")[1];
+  const sp = args[args.indexOf("--tag") + 1];
+  await runReenrich(eq ?? (args.includes("--tag") && sp ? sp : "pre"));
+} else if (args.includes("--bootstrap")) {
   const i = args.indexOf("--bootstrap");
   await runBootstrap(args[i + 1] && !args[i + 1]!.startsWith("--") ? args[i + 1] : undefined);
 } else if (args.includes("--fixture")) {
