@@ -54,7 +54,7 @@ export default {
 - **Neon serverless**: pass the Drizzle handle via `createMatcher({ db, apiKey, embed })` instead of `databaseUrl`.
 - Set `SAMESAKE_SERVERLESS=1` on `apps/matcher` if you also run the standalone entry — it skips `Bun.serve` when that env is set.
 
-Workers do not run background jobs. For async enrich/index at scale, use `@samesake/jobs-pgboss` (**experimental**) on a long-lived process or trigger index via HTTP/CLI.
+Workers do not run background jobs. For async enrich/index at scale, wrap the pipeline stages in your job platform (Inngest / Upstash / Cloudflare Workflows / Vercel Workflows — see the pipeline guides in `apps/docs`) or trigger index via HTTP/CLI.
 
 ## Local dev
 

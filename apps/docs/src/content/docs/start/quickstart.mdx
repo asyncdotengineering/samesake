@@ -7,6 +7,19 @@ import { Tabs, TabItem, Aside, Steps } from '@astrojs/starlight/components';
 
 This is the precise, no-narration version of [Build a search experience](/start/build-a-search-experience/). Keyword-only search needs no LLM.
 
+<Aside type="tip">
+**Fastest path** — scaffold a complete runnable project (config, docker-compose Postgres, server,
+seeded 24-product catalog, `.env`) and search it, no LLM key required:
+
+```bash
+bunx @samesake/cli init my-shop && cd my-shop
+bun run db:up && bun install && bun run seed
+bun run search "red running shoes"
+```
+
+The rest of this page is the same journey by hand, one step at a time.
+</Aside>
+
 ## Prerequisites
 
 - Bun 1.3+ (Node also works)

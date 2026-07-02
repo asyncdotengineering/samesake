@@ -33,3 +33,18 @@ examples/real-world-sample/_raw.json
 apps/playground/.data/
 .plandesk/token
 .plandesk/server.json
+
+# Eval run artifacts are generated; only curated baselines are committed
+# (explicit !-exceptions below — extend the list when a new baseline is minted).
+evals/runs/*
+evals/.cache/
+!evals/runs/2026-07-01T09-51-11-780Z-adversarial.json
+!evals/runs/2026-07-01T09-51-11-780Z-adversarial.md
+!evals/runs/2026-07-01T09-37-16-758Z-enrichment-reenrich-post-final.json
+!evals/runs/2026-07-01T09-37-16-758Z-enrichment-reenrich-post-final.md
+!evals/runs/2026-07-02T07-47-08-993Z-search-tier0post.json
+!evals/runs/2026-07-02T07-47-08-993Z-search-tier0post.md
+!evals/runs/2026-07-02T16-01-22-852Z-search-p0honesty.json
+!evals/runs/2026-07-02T16-01-22-852Z-search-p0honesty.md
+!evals/runs/2026-07-02T18-42-08-109Z-search-p1cutoff.json
+!evals/runs/2026-07-02T18-42-08-109Z-search-p1cutoff.md

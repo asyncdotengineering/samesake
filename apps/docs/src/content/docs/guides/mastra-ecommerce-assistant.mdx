@@ -105,18 +105,14 @@ export const products = collection(PRODUCTS, {
 
 The `budget: true` on `price` plus the `nlq` block is what lets a shopper say *"under $200"* in plain English and get a hard filter, not a fuzzy vibe.
 
-## 3. Wire your models (bring-your-own)
+## 3. Wire your models
 
-`@samesake/server` ships no AI SDK — you pick the models. This app uses Gemini for embeddings and NLQ:
+`@samesake/server` ships no AI SDK — you pick the models. This app uses the ready-made Gemini
+adapters from `@samesake/providers` (retry/backoff and bulk-indexing throttling built in):
 
 ```ts
-// src/providers.ts  (abridged)
-export const geminiEmbed: EmbedFn = async ({ text, dim }) => {
-  // POST to gemini-embedding-2:embedContent, outputDimensionality = dim
-};
-export const geminiGenerate: GenerateFn = async ({ prompt, system, schema }) => {
-  // POST to gemini-3.1-flash-lite:generateContent with responseJsonSchema = schema
-};
+// src/samesake.ts
+import { geminiEmbedder, geminiGenerator } from "@samesake/providers";
 ```
 
 ```ts
@@ -128,8 +124,8 @@ export function getMatcher() {
     databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
     apiKey: process.env.SAMESAKE_API_KEY ?? "dev-key-please-change",
     migrate: "eager",
-    embed: geminiEmbed,
-    generate: geminiGenerate,
+    embed: geminiEmbedder({ minIntervalMs: 120, retries: 8 }),
+    generate: geminiGenerator({ retries: 8 }),
   });
   return _matcher;
 }

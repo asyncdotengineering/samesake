@@ -3,7 +3,7 @@ import { collection, entity, fields, f, gates } from "../../sdk/src/index.ts";
 import { makeCollectionsSchemaGen } from "../src/core/collections-schema-gen.ts";
 import { makeSchemaGen } from "../src/core/schema-gen.ts";
 
-const collections = makeCollectionsSchemaGen({ projectPrefix: "project_" });
+const collections = makeCollectionsSchemaGen({ systemSchema: "public", hasPhonetic: false, projectPrefix: "project_" });
 const entities = makeSchemaGen({ sys: "public", projectPrefix: "project_" });
 
 describe("pgvector HNSW dimension validation", () => {

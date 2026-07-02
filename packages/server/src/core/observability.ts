@@ -12,6 +12,7 @@ export type LoggerFn = (event: LoggerEvent) => void;
 export interface MetricsSnapshot {
   searches_total: number;
   search_cache_hits: number;
+  search_cutoff_dropped_total: number;
   nlq_cache_hits: number;
   nlq_degraded_total: number;
   enrich_docs_total: number;
@@ -71,6 +72,7 @@ export function createObservability(config?: { logger?: LoggerFn }): Observabili
   const counters: MetricsSnapshot = {
     searches_total: 0,
     search_cache_hits: 0,
+    search_cutoff_dropped_total: 0,
     nlq_cache_hits: 0,
     nlq_degraded_total: 0,
     enrich_docs_total: 0,

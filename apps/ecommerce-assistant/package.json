@@ -13,11 +13,11 @@
   },
   "dependencies": {
     "@samesake/core": "workspace:*",
+    "@samesake/providers": "workspace:*",
     "@samesake/server": "workspace:*",
     "@mastra/core": "^1.42.0",
     "@mastra/mcp": "^1.10.0",
     "@ai-sdk/openai": "^3.0.71",
-    "ai": "^6.0.184",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.19",
     "zod": "^4.4.3"

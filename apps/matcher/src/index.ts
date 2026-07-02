@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { z } from "zod";
 import { createMatcher, createDbFromUrl } from "@samesake/server";
-import { makeGeminiEmbedder, makeGeminiParser } from "./embedder.ts";
+import { geminiEmbedder, geminiParser } from "@samesake/providers";
 
 (BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () {
   return this.toString();
@@ -25,8 +25,8 @@ const matcher = createMatcher({
   apiKey: env.SAMESAKE_API_KEY,
   schema: env.SAMESAKE_SCHEMA,
   projectPrefix: env.SAMESAKE_PROJECT_PREFIX,
-  embed: makeGeminiEmbedder(env.GEMINI_API_KEY),
-  parse: makeGeminiParser(env.GEMINI_API_KEY),
+  embed: geminiEmbedder({ apiKey: env.GEMINI_API_KEY }),
+  parse: geminiParser({ apiKey: env.GEMINI_API_KEY }),
   migrate: "eager",
 });
 

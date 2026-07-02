@@ -1,7 +1,6 @@
 import { collection, Channels, f, fashion, type CollectionDef, type CollectionFieldDef } from "@samesake/core";
 import { createMatcher } from "@samesake/server";
-import { geminiEmbed } from "./embed";
-import { geminiGenerate } from "./generate";
+import { geminiEmbedder, geminiGenerator } from "@samesake/providers";
 
 export const PROJECT = "playground";
 export const COLLECTION = "products";
@@ -44,8 +43,8 @@ export function getMatcher() {
     databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
     apiKey: process.env.SAMESAKE_API_KEY!,
     migrate: "eager",
-    embed: geminiEmbed,
-    generate: geminiGenerate,
+    embed: geminiEmbedder(),
+    generate: geminiGenerator(),
   });
   return _matcher;
 }

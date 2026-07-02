@@ -5,6 +5,23 @@ import { assertIndexableVectorDimension } from "./vector-dim.ts";
 
 export interface CollectionsSchemaGenConfig {
   projectPrefix: string;
+  /** Schema holding samesake's utility functions (samesake_normalise, samesake_phonetic_tokens). */
+  systemSchema: string;
+  /** Whether createMatcher was given a PhoneticProvider (gates search.phonetic collections). */
+  hasPhonetic: boolean;
+}
+
+const FTS_LANGUAGE = /^[a-z_]{1,63}$/;
+
+/** The collection's FTS regconfig, validated. Default "english". */
+export function ftsLanguage(c: Pick<CollectionDef, "language" | "name">): string {
+  const lang = c.language ?? "english";
+  if (!FTS_LANGUAGE.test(lang)) {
+    throw new Error(
+      `collection ${c.name ?? "?"}: invalid language "${lang}" — must match /^[a-z_]+$/ (a Postgres text-search config, e.g. "english", "german", "simple")`
+    );
+  }
+  return lang;
 }
 
 function fieldSqlType(def: CollectionFieldDef): string {
@@ -23,19 +40,43 @@ function fieldSqlType(def: CollectionFieldDef): string {
   }
 }
 
-function ftsGeneratedColumnDdl(_fields: Record<string, CollectionFieldDef>): string {
+function ftsGeneratedColumnDdl(c: CollectionDef, sys: string): string {
   // Weighted lexical surface: fts_src_a carries title-class text (weight A, ranks
   // above everything else in ts_rank_cd), fts_src carries the rest (weight B).
+  // samesake_normalise folds accents/case/punct so "café" ≡ "cafe" in any
+  // language; the collection's `language` picks the stemmer.
+  const lang = ftsLanguage(c);
   return (
     `fts tsvector GENERATED ALWAYS AS (` +
-    `setweight(to_tsvector('english', coalesce(fts_src_a, '')), 'A') || ` +
-    `setweight(to_tsvector('english', coalesce(fts_src, '')), 'B')` +
+    `setweight(to_tsvector('${lang}', ${sys}.samesake_normalise(coalesce(fts_src_a, ''))), 'A') || ` +
+    `setweight(to_tsvector('${lang}', ${sys}.samesake_normalise(coalesce(fts_src, ''))), 'B')` +
+    `) STORED`
+  );
+}
+
+function ftsPhonColumnDdl(sys: string): string {
+  // Cross-script lexical fallback: per-token phonetic codes of the fts sources,
+  // matched with the 'simple' config (codes are already language-neutral).
+  return (
+    `fts_phon tsvector GENERATED ALWAYS AS (` +
+    `to_tsvector('simple', ${sys}.samesake_phonetic_tokens(coalesce(fts_src_a, '') || ' ' || coalesce(fts_src, '')))` +
     `) STORED`
   );
 }
 
 export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
   const PREFIX = config.projectPrefix;
+  const SYS = sanitiseIdent(config.systemSchema);
+
+  function assertPhoneticAvailable(c: CollectionDef): boolean {
+    if (!c.search?.phonetic) return false;
+    if (!config.hasPhonetic) {
+      throw new Error(
+        `collection ${c.name}: search.phonetic requires a phonetic provider — pass createMatcher({ phonetic: indicPhonetic }) (or your own PhoneticProvider)`
+      );
+    }
+    return true;
+  }
 
   function projectSchemaName(slug: string): string {
     const safe = slug.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
@@ -46,6 +87,7 @@ export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
     if (!c.name) throw new Error("collection must have a name");
     const coll = sanitiseIdent(c.name);
     const table = `${schema}.c_${coll}`;
+    const wantPhon = assertPhoneticAvailable(c);
 
     const fieldCols = Object.entries(c.fields)
       .map(([k, def]) => `  ${sanitiseIdent(k)} ${fieldSqlType(def)}`)
@@ -89,7 +131,7 @@ ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
         fts_src text,
         fts_src_a text,
         gate_reason text,
-        ${ftsGeneratedColumnDdl(c.fields)},
+        ${ftsGeneratedColumnDdl(c, SYS)},${wantPhon ? `\n        ${ftsPhonColumnDdl(SYS)},` : ""}
         embedding halfvec(${embedDim})${spaceVecCol},
         ingested_at timestamptz NOT NULL DEFAULT now(),
         enriched_at timestamptz,
@@ -105,6 +147,9 @@ ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
     `);
 
     stmts.push(`CREATE INDEX IF NOT EXISTS c_${coll}_fts_idx ON ${table} USING gin (fts);`);
+    if (wantPhon) {
+      stmts.push(`CREATE INDEX IF NOT EXISTS c_${coll}_fts_phon_idx ON ${table} USING gin (fts_phon);`);
+    }
 
     if (c.embeddings && Object.keys(c.embeddings).length > 0) {
       stmts.push(
@@ -149,7 +194,14 @@ ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
       `UPDATE ${table} SET pipeline_status='ready' WHERE pipeline_status='pending' AND (indexed_at IS NOT NULL OR enriched_at IS NOT NULL);`,
     ];
 
-    void def;
+    // Enabling search.phonetic on an existing collection is additive: the
+    // generated column backfills itself from the stored fts sources.
+    if (def && assertPhoneticAvailable(def)) {
+      stmts.push(
+        `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${ftsPhonColumnDdl(SYS)};`,
+        `CREATE INDEX IF NOT EXISTS c_${sanitiseIdent(collectionName)}_fts_phon_idx ON ${table} USING gin (fts_phon);`
+      );
+    }
 
     return stmts;
   }

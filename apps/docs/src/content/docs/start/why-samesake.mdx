@@ -1,0 +1,71 @@
+---
+title: Why samesake?
+description: How samesake compares to hosted search, Elasticsearch/Typesense/Meilisearch, vector databases, and RAG frameworks — and when you should not use it.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+samesake is the **enrichment + fast-search toolkit you can replace your ecommerce search with** —
+especially for multi-vendor marketplaces. Declare the catalog in TypeScript, bring your own
+models, run it on the Postgres you already have. Two processes in production: Postgres and your
+app.
+
+## The one-paragraph pitch
+
+Most product-search quality problems are **data problems**: raw vendor listings with missing
+attributes, inconsistent titles, and no retrieval-friendly text. samesake treats LLM enrichment as
+a first-class pipeline stage (schema-validated extraction, quarantine gates, accuracy evals — not
+a one-off script), then compiles your catalog declaration into hybrid retrieval — weighted FTS +
+semantic + typed vector spaces, fused with RRF — inside Postgres. The search layer and the
+enrichment layer share one schema, one migration story, one eval harness.
+
+## Compared to the alternatives
+
+| | samesake | Hosted search (Algolia, Constructor) | Search engines (Elasticsearch, Typesense, Meilisearch) | Vector DBs (Pinecone, Qdrant, Weaviate) | RAG frameworks |
+|---|---|---|---|---|---|
+| **Infra you run** | your Postgres + your app | none (SaaS) | separate cluster to operate | separate cluster/SaaS | varies |
+| **Enrichment of messy listings** | first-class pipeline with gates + accuracy evals | limited / DIY | DIY | DIY | chunking-oriented, not catalog-oriented |
+| **Hybrid retrieval** | FTS + semantic + typed spaces, RRF | proprietary | strong lexical; vectors bolted on | strong vectors; lexical bolted on | delegated to a store |
+| **Hard constraints** ("under 5000", "in stock") | typed filters compiled to SQL — never soft | good | good | filter support varies under ANN | usually prompt-level |
+| **Honest zero-results** | default-on result cutoff | varies | DIY | DIY (nearest neighbours always "match") | DIY |
+| **Relevance evals** | built-in LLM-judged eval + calibration, model-family separation enforced | dashboards | plugins/DIY | DIY | DIY |
+| **Models** | BYO closures or `@samesake/providers` | theirs | theirs/BYO | BYO embeddings | BYO |
+| **Cost shape** | your Postgres bill | per-search pricing | cluster + ops | per-vector pricing | n/a |
+
+The one direct OSS analog — Marqo's open-source engine — is deprecated; that slot (open-source,
+batteries-included commerce search with enrichment) is the one samesake targets.
+
+## Why Postgres-only is a feature
+
+For catalogs up to ~1M SKUs — which is nearly every store and marketplace — HNSW indexes fit
+comfortably in RAM on ordinary instances. The industry lesson (MICES; teams like Digitec and
+dm-drogerie) is *start with what your engineers know*: adding Elasticsearch or a vector DB buys
+you an operational surface, a sync pipeline, and a consistency problem before it buys you
+relevance. samesake's ceiling is real — roughly 10M×1536-dim vectors — but it is 100× beyond the
+catalogs this is for. If you are past that, you have a search team, and this is not your tool.
+
+## What samesake deliberately does not do
+
+Challenged and rejected for this stage — not roadmap gaps:
+
+- **Learning-to-rank / learned rankers** — no installation has click data at day one.
+- **SPLADE / ColBERT** — license and stack traps for marginal gain at this scale.
+- **A second storage backend** — Postgres-only *is* the pitch.
+- **An internal job queue** — durability belongs to your platform (Inngest, Upstash, Cloudflare
+  or Vercel workflows; [guides](/guides/pipeline-lifecycle/)).
+- **Personalization / behavioral collaborative filtering** — needs traffic you don't have yet.
+
+## When to pick something else
+
+- You need web-scale search (>10M SKUs) or query-per-second numbers with dedicated infra — pick a
+  search cluster and a team.
+- You want a fully-managed black box with merchandising dashboards — pick a hosted provider.
+- You're building document RAG, not catalog search — pick a RAG stack; samesake's enrichment and
+  typed spaces are commerce-shaped.
+- You cannot run Postgres 15+ with extensions — everything here assumes it.
+
+<Aside type="note">
+samesake is **alpha**: APIs break between minors, and the [roadmap](https://github.com/asyncdotengineering/samesake/blob/main/ROADMAP.md)
+is public. The claims above are backed by the eval harness in-repo — run them against your own
+catalog rather than trusting a comparison table.
+</Aside>

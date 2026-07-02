@@ -105,6 +105,16 @@ export function planCollectionMigration(
   const storedSpaces = stored.spaces ?? {};
   const incomingSpaces = incoming.spaces ?? {};
 
+  // The fts generated column bakes the language in; changing it means rebuilding
+  // that column (and queries would silently mis-stem against the old index).
+  const storedLang = stored.language ?? "english";
+  const incomingLang = incoming.language ?? "english";
+  if (storedLang !== incomingLang) {
+    plan.destructive.push(
+      `${coll}: FTS language change ${storedLang} → ${incomingLang} (fts column must be rebuilt — recreate the collection)`
+    );
+  }
+
   for (const [name, def] of Object.entries(incomingFields)) {
     const prev = storedFields[name];
     if (!prev) {

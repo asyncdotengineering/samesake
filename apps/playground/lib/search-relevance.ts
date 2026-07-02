@@ -1,5 +1,7 @@
-import { makeLlmJudge } from "@samesake/server";
-import { geminiGenerate } from "./generate";
+import { makeLlmJudge, type GenerateFn } from "@samesake/server";
+import { geminiGenerator } from "@samesake/providers";
+
+const geminiGenerate = geminiGenerator();
 
 type PlaygroundHit = {
   id: string;
@@ -35,7 +37,7 @@ function toCandidate(hit: PlaygroundHit) {
 export async function filterHitsBySemanticRelevance<T extends PlaygroundHit>(
   query: string,
   hits: T[],
-  generate: typeof geminiGenerate = geminiGenerate
+  generate: GenerateFn = geminiGenerate
 ): Promise<T[]> {
   const q = query.trim();
   if (!q || hits.length === 0) return hits;
@@ -43,6 +45,10 @@ export async function filterHitsBySemanticRelevance<T extends PlaygroundHit>(
   const candidates = hits.slice(0, 24).map(toCandidate);
   const judge = makeLlmJudge(generate, { version: "playground-binary-v1" });
   const graded = await judge.grade(q, candidates);
+  // A judge outage (every hit marked "judge-error") must not empty the page —
+  // keep the retrieval results. An actual all-irrelevant verdict has real
+  // ESCI grades and still filters to zero.
+  if (graded.length > 0 && graded.every((g) => g.reason === "judge-error")) return hits;
   const relevant = new Set(graded.filter((g) => g.grade >= 1).map((g) => g.id));
   return candidates.filter((c) => relevant.has(c.id)).map((c) => hits.find((h) => h.id === c.id)!);
 }

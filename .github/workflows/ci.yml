@@ -1,9 +1,13 @@
 name: ci
 
+# NOT ACTIVE YET (by request): manual runs only. To activate the gate on PR + main,
+# replace the `on:` block with:
+#   on:
+#     push:
+#       branches: [main]
+#     pull_request:
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   typecheck:
@@ -19,7 +23,7 @@ jobs:
       # Build the @samesake packages so consumers (apps/cli) typecheck against the real dist.
       - name: build packages
         run: |
-          for p in packages/sdk packages/server packages/cli; do
+          for p in packages/sdk packages/server packages/providers packages/cli; do
             echo "── build: $p ──"
             (cd "$p" && bun run build)
           done
@@ -29,8 +33,87 @@ jobs:
       - name: typecheck workspaces
         run: |
           fail=0
-          for d in packages/sdk packages/server packages/cli packages/mcp apps/bom-quotation apps/ecommerce-assistant; do
+          for d in packages/sdk packages/server packages/providers packages/cli packages/mcp apps/bom-quotation apps/ecommerce-assistant; do
             echo "── tsc: $d ──"
             (cd "$d" && bunx tsc --noEmit) || { echo "::error::tsc failed in $d"; fail=1; }
           done
           exit $fail
+
+  test:
+    name: tests (sdk + server on pgvector)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # pgvector 0.8 on Postgres 16; pg_trgm/unaccent/fuzzystrmatch ship in contrib.
+        # migrate() runs CREATE EXTENSION IF NOT EXISTS for all four.
+        image: pgvector/pgvector:0.8.0-pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: samesake
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SAMESAKE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/samesake
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install
+      # Server tests resolve @samesake/core from dist — build before testing.
+      - name: build packages
+        run: |
+          for p in packages/sdk packages/server; do
+            echo "── build: $p ──"
+            (cd "$p" && bun run build)
+          done
+      # Run from the repo root so the root bunfig.toml test timeout applies.
+      - name: sdk tests
+        run: bun test packages/sdk
+      - name: providers tests
+        run: bun test packages/providers
+      - name: server tests
+        run: bun test packages/server
+
+  examples:
+    name: release-gate examples
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.0-pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: samesake
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SAMESAKE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/samesake
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install
+      - name: build packages
+        run: |
+          for p in packages/sdk packages/server; do
+            echo "── build: $p ──"
+            (cd "$p" && bun run build)
+          done
+      # The break this gate exists for: S1c shipped with every minimal-path example
+      # silently indexing zero rows. These three are the release gate.
+      - run: bun run examples:hello-search
+      - run: bun run examples:hello-spaces
+      - run: bun run examples:quickstart

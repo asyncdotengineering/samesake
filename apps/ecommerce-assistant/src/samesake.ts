@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { collection, f, Channels, gates } from "@samesake/core";
 import { createMatcher } from "@samesake/server";
-import { geminiEmbed, geminiGenerate } from "./providers.ts";
+import { geminiEmbedder, geminiGenerator } from "@samesake/providers";
 
 // The samesake side of the recipe. The Weaviate version creates an "ECommerce" and a
 // "Brands" collection with text2vec vectors; here those become two samesake collection()s
@@ -105,8 +105,12 @@ export function getMatcher() {
     databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
     apiKey: process.env.SAMESAKE_API_KEY ?? "dev-key-please-change",
     migrate: "eager",
-    embed: geminiEmbed,
-    generate: geminiGenerate,
+    // Bulk indexing trips per-minute quotas: space embed calls and retry hard.
+    embed: geminiEmbedder({
+      minIntervalMs: Number(process.env.EMBED_MIN_INTERVAL_MS ?? 120),
+      retries: 8,
+    }),
+    generate: geminiGenerator({ retries: 8 }),
   });
   return _matcher;
 }

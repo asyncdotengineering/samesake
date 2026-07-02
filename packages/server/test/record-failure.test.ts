@@ -43,7 +43,7 @@ describeIf("test:record-failure-backoff (REQ-16)", () => {
   beforeAll(async () => {
     const built = createDbFromUrl(databaseUrl!);
     sharedClose = built.close;
-    const collectionsSchemaGen = makeCollectionsSchemaGen({ projectPrefix: "project_" });
+    const collectionsSchemaGen = makeCollectionsSchemaGen({ systemSchema: "public", hasPhonetic: false, projectPrefix: "project_" });
     const schemaGen = makeSchemaGen({ sys: "public", projectPrefix: "project_" });
     const ctx = {
       db: built.db,

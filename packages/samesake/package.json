@@ -1,0 +1,31 @@
+{
+  "name": "samesake",
+  "version": "3.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/asyncdotengineering/samesake"
+  },
+  "description": "Alias for @samesake/cli so `bunx samesake init` just works. Samesake: the enrichment + fast-search toolkit you can replace your ecommerce search with — TypeScript-declared catalogs compiled to Postgres + pgvector hybrid search.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "samesake": "./bin/samesake.js"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "samesake",
+    "search",
+    "ecommerce",
+    "pgvector",
+    "cli"
+  ],
+  "dependencies": {
+    "@samesake/cli": "workspace:^"
+  }
+}

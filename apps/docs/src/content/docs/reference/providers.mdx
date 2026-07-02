@@ -18,6 +18,58 @@ samesake never calls a model directly. You supply functions; the matcher passes 
 
 `model` on each request is an **opaque string** from your catalog config. Your function decides how to map it to a provider endpoint.
 
+## Ready-made adapters — `@samesake/providers`
+
+You rarely need to hand-write the glue: `@samesake/providers` ships zero-dependency factories
+returning exactly these closures, with lazy env-key resolution, 429/5xx retry with backoff, and
+optional call spacing for bulk indexing.
+
+```ts
+import { createMatcher } from "@samesake/server";
+import { geminiEmbedder, geminiGenerator, cohereReranker } from "@samesake/providers";
+
+const matcher = createMatcher({
+  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
+  apiKey: process.env.SAMESAKE_API_KEY!,
+  embed: geminiEmbedder(),        // multimodal (text + image); GEMINI_API_KEY
+  generate: geminiGenerator(),    // NLQ, enrichment, judge
+  rerank: cohereReranker(),       // optional second stage; COHERE_API_KEY
+});
+```
+
+| Provider | embed | generate | parse | rerank |
+|---|---|---|---|---|
+| Gemini | `geminiEmbedder` (multimodal) | `geminiGenerator` | `geminiParser` | — |
+| OpenAI | `openaiEmbedder` | `openaiGenerator` | `openaiParser` | — |
+| Voyage | `voyageEmbedder` | — | — | `voyageReranker` |
+| Cohere | `cohereEmbedder` | — | — | `cohereReranker` |
+
+All factories accept `{ apiKey, model, baseUrl, minIntervalMs, retries }`.
+
+### Vercel AI SDK bridge
+
+Already on the AI SDK? `@samesake/providers/ai-sdk` wraps any AI SDK model object (`ai` is an
+optional peer dependency, only needed for this subpath):
+
+```ts
+import { google } from "@ai-sdk/google";
+import { aiSdkEmbedder, aiSdkGenerator } from "@samesake/providers/ai-sdk";
+
+createMatcher({
+  embed: aiSdkEmbedder(google.textEmbedding("gemini-embedding-2"), {
+    providerOptions: ({ dim, taskType }) => ({
+      google: { outputDimensionality: dim, ...(taskType ? { taskType } : {}) },
+    }),
+  }),
+  generate: aiSdkGenerator(google("gemini-2.5-flash-lite")),
+});
+```
+
+Also `aiSdkParser(model)` and `aiSdkReranker(model)` (AI SDK v6 reranking models). Note the AI
+SDK's `embed()` is text-only — image spaces need a multimodal embedder (`geminiEmbedder`) or BYO.
+
+BYO stays first-class: anything satisfying the contracts below works.
+
 ## `EmbedFn`
 
 ```ts
@@ -65,7 +117,10 @@ Examples only — not endorsements. Pick what fits your latency, cost, and compl
 | **Ollama / sentence-transformers** | `nomic-embed-text` | local LLM | Self-hosted; no `taskType` |
 | **Local cross-encoder** | — | — | Rerank only; normalize logits to `[0,1]` yourself |
 
-## Wiring example — Vercel AI SDK + Gemini
+## Fully custom wiring (when the adapters don't fit)
+
+An example of implementing the closures yourself against the Vercel AI SDK — the same thing
+`@samesake/providers/ai-sdk` does for you:
 
 ```ts title="embed.ts"
 import { embed } from "ai";

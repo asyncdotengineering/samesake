@@ -24,6 +24,9 @@ export function createDbFromUrl(url: string): {
     max: 10,
     idle_timeout: 30,
     connect_timeout: 10,
+    // Idempotent DDL (CREATE ... IF NOT EXISTS) is the design; the resulting
+    // "already exists, skipping" NOTICEs are pure noise on every boot.
+    onnotice: () => {},
     types: {
       bigint: postgres.BigInt,
     },

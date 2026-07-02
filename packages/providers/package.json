@@ -1,0 +1,62 @@
+{
+  "name": "@samesake/providers",
+  "version": "3.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/asyncdotengineering/samesake"
+  },
+  "description": "Ready-made model-provider adapters for samesake's BYO embed/generate/rerank/parse seams: Gemini, OpenAI, Voyage, Cohere. Zero SDK dependencies — plain fetch with retry/backoff and optional throttling.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./ai-sdk": {
+      "types": "./dist/ai-sdk.d.ts",
+      "import": "./dist/ai-sdk.js",
+      "require": "./dist/ai-sdk.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "keywords": [
+    "samesake",
+    "embeddings",
+    "rerank",
+    "gemini",
+    "openai",
+    "voyage",
+    "cohere"
+  ],
+  "peerDependencies": {
+    "@samesake/server": "^3.0.0",
+    "ai": "^6.0.0"
+  },
+  "peerDependenciesMeta": {
+    "ai": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@samesake/server": "workspace:^",
+    "ai": "^6.0.184",
+    "tsup": "^8.5.1"
+  }
+}

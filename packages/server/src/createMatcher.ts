@@ -239,7 +239,11 @@ export function createMatcher(config: MatcherConfig): Matcher {
 
   // Compose services. Order matters — later services depend on earlier ones.
   const schemaGen = makeSchemaGen({ sys: schema, projectPrefix });
-  const collectionsSchemaGen = makeCollectionsSchemaGen({ projectPrefix });
+  const collectionsSchemaGen = makeCollectionsSchemaGen({
+    projectPrefix,
+    systemSchema: schema,
+    hasPhonetic: !!config.phonetic,
+  });
   const projectsService = makeProjectsService(ctx, schemaGen, collectionsSchemaGen);
   const embedService = makeEmbedService(ctx);
   const parseService = makeParseService(ctx);

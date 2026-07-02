@@ -61,7 +61,20 @@ export function getSystemDDL(schema: string, phonetic?: PhoneticProvider): strin
     $fn$;`,
 
     // samesake_phonetic — installed only when a PhoneticProvider is configured (default: none)
-    ...(phonetic ? [phonetic.ddl(s)] : []),
+    ...(phonetic
+      ? [
+          phonetic.ddl(s),
+          // Per-token phonetic codes for document text — the collection lexical
+          // leg indexes this (samesake_phonetic itself hashes one name/token).
+          `
+    CREATE OR REPLACE FUNCTION ${s}.samesake_phonetic_tokens(input text)
+    RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $fn$
+      SELECT coalesce(string_agg(${s}.samesake_phonetic(tok), ' '), '')
+      FROM regexp_split_to_table(${s}.samesake_normalise(input), ' ') AS tok
+      WHERE tok <> '';
+    $fn$;`,
+        ]
+      : []),
 
     // ── units-alias seed data (idempotent via ON CONFLICT) ───────────────
     `

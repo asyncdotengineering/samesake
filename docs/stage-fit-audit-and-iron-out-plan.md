@@ -97,6 +97,43 @@ at any installation yet.
     `GOOGLE_GENERATIVE_AI_API_KEY` no longer read. No fallback aliases.
     All folded into `.changeset/tier-zero-defaults.md` (pending major).
 
+### P1 session (2026-07-02) — the DX pack shipped (301/301 tests, tsc clean, all 3 release-gate examples pass)
+
+15. **P1-5a CI**: `.github/workflows/ci.yml` gained `test` + `examples` jobs on a
+    `pgvector/pgvector:0.8.0-pg16` service container (never Neon). **Inactive by user request**
+    (`workflow_dispatch` only; PR+main trigger left as a comment for one-line activation).
+16. **P1-5b trust surface**: CONTRIBUTING.md, SECURITY.md, ROADMAP.md, `docs/production.md`
+    (the guide deploy/README referenced but never existed), root `test`/`lint` scripts (oxlint).
+    Fixed a doc lie: deploy/README recommended the non-existent `@samesake/jobs-pgboss`.
+17. **P1-1 `samesake init`**: scaffolds a complete runnable project (config, docker-compose
+    Postgres, ~20-line server, deterministic local embedder — no LLM key, 24-product seed, .env).
+    Timed zero-to-first-search ≈16s of command time on published npm 3.0.0 packages.
+18. **P1-2 `@samesake/providers`**: zero-dep Gemini/OpenAI/Voyage/Cohere factories for
+    embed/generate/parse/rerank + a Vercel AI SDK bridge subpath (optional `ai` peer). The three
+    apps' hand-rolled glue deleted: **+19/−232 lines**.
+19. **P1-3 result cutoff**: `search.cutoff` strategies (score-drop default ON,
+    category-coherence, none); FTS-anchored hits never cut; hard-filtered queries bypass.
+    Adversarial proof: "laptop" vs a clothing catalog → 0 hits (`test/cutoff.test.ts`).
+20. **P1-4 multilingual lexical leg**: `CollectionDef.language` (both hardcoded `'english'`
+    sites gone), `samesake_normalise` in the fts column + accent-folded queries,
+    `search.phonetic` cross-script branch via new `samesake_phonetic_tokens`; multilingual
+    goldens `ml-01…ml-05` in the eval set (`test/multilingual-search.test.ts`).
+
+### P1 close-out (2026-07-03)
+
+21. **Eval regression proof + judge-cache fix**: p1cutoff run flat-vs-baseline (1.883/0.901/0%,
+    61/62 identical topIds, 0 blanked); found + fixed `evaluateSearch`'s fire-and-forget grade
+    write (grades now byte-stable across runs, 67/67). p1cutoff is the new curated baseline.
+22. **P1-6 repo presentation**: evals/runs gitignored with curated `!`-exceptions (22 noise
+    artifacts untracked), playground back to `workspace:*`, porulle override documented as
+    droppable once playground upgrades off `@porulle/*@0.1.0` (upstream fixed in 0.8.0).
+23. **"Why Samesake?"** page shipped (`start/why-samesake`), quickstart leads with
+    `bunx @samesake/cli init`, providers reference leads with `@samesake/providers`.
+    Docs build 31 pages. Playground search-relevance WIP finished (judge-outage fallback, 5/5);
+    dead deps removed (matcher: pg-boss/xlsx; ecommerce-assistant: ai).
+
+**P1 is complete.** Next: P2 (marketplace wedge).
+
 ## 3. The iron-out backlog (ordered; each item names its proof)
 
 ### P0 — correctness & honesty (the product's claims must be true)

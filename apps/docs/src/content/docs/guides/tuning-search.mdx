@@ -127,6 +127,29 @@ out of the NLQ schema. Diagnose which with `searchExplain`'s `appliedFilters`.
 
 For the full story — how a sentence splits into filters + a clean `semantic_query`, how price/numeric intent is handled, and the **`search.relevanceFloor`** that returns *nothing* instead of nearest-neighbour padding when there's no real match — see [Conversational search](/guides/conversational-search/).
 
+### Honest zero-results — `search.cutoff`
+
+A single global float is a blunt instrument, so beyond `relevanceFloor` every collection gets a
+pluggable **result cutoff** deciding where the list honestly ends (bad results are worse than an
+honest empty page). Default is `{ strategy: "score-drop" }`: with no keyword-matched hit, the
+whole list is cut when even the best cosine is below `minAnchor` (default 0.3 — calibrate per
+model, like `relevanceFloor`), and a steep cosine cliff (`maxDrop`, default 0.5) ends a semantic
+tail mid-list. Alternatives: `{ strategy: "category-coherence", field: "category" }` (unanchored
+hits scattered across categories → nothing real matched → zero) and `{ strategy: "none" }` to opt
+out. Keyword-matched hits are never cut, and any hard-filtered query bypasses the cutoff entirely
+— filtered recall stays total. Responses report removals via `cutoff_dropped`.
+
+### Multilingual catalogs — `language` + `search.phonetic`
+
+The lexical leg is language-configurable: `collection("products", { language: "german", … })` picks
+the Postgres stemmer for both the indexed `fts` column and query parsing (default `"english"`;
+use `"simple"` for mixed-language catalogs). Accents/case/punctuation are folded on both sides
+(`café` ≡ `cafe`) automatically. For cross-script matching — a Sinhala or Tamil query finding the
+Latin-transliterated product — declare `search: { phonetic: true }` and pass
+`createMatcher({ phonetic: indicPhonetic })`: index time stores per-token phonetic codes, query
+time ORs the query's codes into the lexical candidates. Changing `language` on an existing
+collection is a destructive migration (the generated column must be rebuilt).
+
 ## 6. Multimodal & cross-modal signals
 
 With a multimodal embedding model, an image space gives you three retrieval modes over one index:

@@ -30,6 +30,7 @@ export default defineConfig({
           label: "Start here",
           items: [
             { label: "What is samesake", slug: "start/what-is-samesake" },
+            { label: "Why samesake?", slug: "start/why-samesake" },
             { label: "Build a search experience", slug: "start/build-a-search-experience" },
             { label: "Quickstart", slug: "start/quickstart" },
           ],

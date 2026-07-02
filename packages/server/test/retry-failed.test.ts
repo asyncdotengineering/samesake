@@ -42,7 +42,7 @@ describeIf("test:retry-failed (REQ-17)", () => {
 
   beforeAll(async () => {
     const built = createDbFromUrl(databaseUrl!);
-    const collectionsSchemaGen = makeCollectionsSchemaGen({ projectPrefix: "project_" });
+    const collectionsSchemaGen = makeCollectionsSchemaGen({ systemSchema: "public", hasPhonetic: false, projectPrefix: "project_" });
     const schemaGen = makeSchemaGen({ sys: "public", projectPrefix: "project_" });
     const ctx = {
       db: built.db,

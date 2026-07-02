@@ -1,64 +1,312 @@
 {
   "version": 1,
   "country": "LK",
-  "notes": "Golden query set for fashion search eval. Types follow Baymard query taxonomy + research/industry findings. constraints use the search filter vocabulary (price: {$lte: N}) for objective violation metrics (LKR).",
+  "notes": "Golden query set for fashion search eval. Types follow Baymard query taxonomy + research/industry findings. constraints use the search filter vocabulary (price: {$lte: N}) for objective violation metrics (LKR). multilingual type (P1-4): Sinhala/Tamil/mixed-script/transliterated queries — proof queries for the configurable-language + normalise/phonetic lexical leg.",
   "queries": [
-    { "id": "kw-01", "type": "keyword", "query": "red dress" },
-    { "id": "kw-02", "type": "keyword", "query": "denim jacket" },
-    { "id": "kw-03", "type": "keyword", "query": "linen shirt men" },
-    { "id": "kw-04", "type": "keyword", "query": "white blouse" },
-    { "id": "kw-05", "type": "keyword", "query": "silk saree" },
-    { "id": "kw-06", "type": "keyword", "query": "crop top" },
-    { "id": "kw-07", "type": "keyword", "query": "palazzo pants" },
-    { "id": "kw-08", "type": "keyword", "query": "maxi skirt" },
-
-    { "id": "attr-01", "type": "attribute", "query": "high waisted wide leg jeans" },
-    { "id": "attr-02", "type": "attribute", "query": "off shoulder maxi dress" },
-    { "id": "attr-03", "type": "attribute", "query": "long sleeve cotton top" },
-    { "id": "attr-04", "type": "attribute", "query": "v neck floral midi dress" },
-    { "id": "attr-05", "type": "attribute", "query": "puff sleeve blouse" },
-    { "id": "attr-06", "type": "attribute", "query": "pleated midi skirt" },
-    { "id": "attr-07", "type": "attribute", "query": "sleeveless linen jumpsuit" },
-    { "id": "attr-08", "type": "attribute", "query": "oversized graphic tshirt" },
-
-    { "id": "use-01", "type": "use-case", "query": "office wear for women" },
-    { "id": "use-02", "type": "use-case", "query": "what to wear to a beach wedding as a guest" },
-    { "id": "use-03", "type": "use-case", "query": "smart casual outfit for men" },
-    { "id": "use-04", "type": "use-case", "query": "gym wear for women" },
-    { "id": "use-05", "type": "use-case", "query": "dinner date outfit" },
-    { "id": "use-06", "type": "use-case", "query": "modest dress for work" },
-    { "id": "use-07", "type": "use-case", "query": "saree for a wedding" },
-    { "id": "use-08", "type": "use-case", "query": "comfortable lounge wear set" },
-    { "id": "use-09", "type": "use-case", "query": "something light for hot weather" },
-    { "id": "use-10", "type": "use-case", "query": "resort wear for a holiday" },
-
-    { "id": "price-01", "type": "price", "query": "dress under 5000", "constraints": { "price": { "$lte": 5000 } } },
-    { "id": "price-02", "type": "price", "query": "office shirt under 3000 rupees", "constraints": { "price": { "$lte": 3000 } } },
-    { "id": "price-03", "type": "price", "query": "cheap casual tshirts", "constraints": { "price": { "$lte": 2500 } } },
-    { "id": "price-04", "type": "price", "query": "party dress under 10000", "constraints": { "price": { "$lte": 10000 } } },
-    { "id": "price-05", "type": "price", "query": "linen pants under 6000", "constraints": { "price": { "$lte": 6000 } } },
-
-    { "id": "neg-01", "type": "negation", "query": "long dress but not bodycon" },
-    { "id": "neg-02", "type": "negation", "query": "black top without prints" },
-    { "id": "neg-03", "type": "negation", "query": "summer dress not floral" },
-    { "id": "neg-04", "type": "negation", "query": "jeans but not skinny fit" },
-
-    { "id": "style-01", "type": "style", "query": "bohemian summer look" },
-    { "id": "style-02", "type": "style", "query": "old money aesthetic outfit" },
-    { "id": "style-03", "type": "style", "query": "y2k style top" },
-    { "id": "style-04", "type": "style", "query": "minimalist wardrobe basics" },
-    { "id": "style-05", "type": "style", "query": "streetwear hoodie" },
-    { "id": "style-06", "type": "style", "query": "romantic flowy dress for a date" },
-    { "id": "style-07", "type": "style", "query": "edgy all black outfit" },
-    { "id": "style-08", "type": "style", "query": "coastal vacation aesthetic" },
-
-    { "id": "lk-01", "type": "local", "query": "kandyan saree for wedding" },
-    { "id": "lk-02", "type": "local", "query": "batik shirt" },
-    { "id": "lk-03", "type": "local", "query": "sarong for men" },
-    { "id": "lk-04", "type": "local", "query": "kurta top for women" },
-    { "id": "lk-05", "type": "local", "query": "white dress for poya day" },
-
-    { "id": "broad-01", "type": "broad", "query": "dresses" },
-    { "id": "broad-02", "type": "broad", "query": "men's shirts" }
+    {
+      "id": "kw-01",
+      "type": "keyword",
+      "query": "red dress"
+    },
+    {
+      "id": "kw-02",
+      "type": "keyword",
+      "query": "denim jacket"
+    },
+    {
+      "id": "kw-03",
+      "type": "keyword",
+      "query": "linen shirt men"
+    },
+    {
+      "id": "kw-04",
+      "type": "keyword",
+      "query": "white blouse"
+    },
+    {
+      "id": "kw-05",
+      "type": "keyword",
+      "query": "silk saree"
+    },
+    {
+      "id": "kw-06",
+      "type": "keyword",
+      "query": "crop top"
+    },
+    {
+      "id": "kw-07",
+      "type": "keyword",
+      "query": "palazzo pants"
+    },
+    {
+      "id": "kw-08",
+      "type": "keyword",
+      "query": "maxi skirt"
+    },
+    {
+      "id": "attr-01",
+      "type": "attribute",
+      "query": "high waisted wide leg jeans"
+    },
+    {
+      "id": "attr-02",
+      "type": "attribute",
+      "query": "off shoulder maxi dress"
+    },
+    {
+      "id": "attr-03",
+      "type": "attribute",
+      "query": "long sleeve cotton top"
+    },
+    {
+      "id": "attr-04",
+      "type": "attribute",
+      "query": "v neck floral midi dress"
+    },
+    {
+      "id": "attr-05",
+      "type": "attribute",
+      "query": "puff sleeve blouse"
+    },
+    {
+      "id": "attr-06",
+      "type": "attribute",
+      "query": "pleated midi skirt"
+    },
+    {
+      "id": "attr-07",
+      "type": "attribute",
+      "query": "sleeveless linen jumpsuit"
+    },
+    {
+      "id": "attr-08",
+      "type": "attribute",
+      "query": "oversized graphic tshirt"
+    },
+    {
+      "id": "use-01",
+      "type": "use-case",
+      "query": "office wear for women"
+    },
+    {
+      "id": "use-02",
+      "type": "use-case",
+      "query": "what to wear to a beach wedding as a guest"
+    },
+    {
+      "id": "use-03",
+      "type": "use-case",
+      "query": "smart casual outfit for men"
+    },
+    {
+      "id": "use-04",
+      "type": "use-case",
+      "query": "gym wear for women"
+    },
+    {
+      "id": "use-05",
+      "type": "use-case",
+      "query": "dinner date outfit"
+    },
+    {
+      "id": "use-06",
+      "type": "use-case",
+      "query": "modest dress for work"
+    },
+    {
+      "id": "use-07",
+      "type": "use-case",
+      "query": "saree for a wedding"
+    },
+    {
+      "id": "use-08",
+      "type": "use-case",
+      "query": "comfortable lounge wear set"
+    },
+    {
+      "id": "use-09",
+      "type": "use-case",
+      "query": "something light for hot weather"
+    },
+    {
+      "id": "use-10",
+      "type": "use-case",
+      "query": "resort wear for a holiday"
+    },
+    {
+      "id": "price-01",
+      "type": "price",
+      "query": "dress under 5000",
+      "constraints": {
+        "price": {
+          "$lte": 5000
+        }
+      }
+    },
+    {
+      "id": "price-02",
+      "type": "price",
+      "query": "office shirt under 3000 rupees",
+      "constraints": {
+        "price": {
+          "$lte": 3000
+        }
+      }
+    },
+    {
+      "id": "price-03",
+      "type": "price",
+      "query": "cheap casual tshirts",
+      "constraints": {
+        "price": {
+          "$lte": 2500
+        }
+      }
+    },
+    {
+      "id": "price-04",
+      "type": "price",
+      "query": "party dress under 10000",
+      "constraints": {
+        "price": {
+          "$lte": 10000
+        }
+      }
+    },
+    {
+      "id": "price-05",
+      "type": "price",
+      "query": "linen pants under 6000",
+      "constraints": {
+        "price": {
+          "$lte": 6000
+        }
+      }
+    },
+    {
+      "id": "neg-01",
+      "type": "negation",
+      "query": "long dress but not bodycon"
+    },
+    {
+      "id": "neg-02",
+      "type": "negation",
+      "query": "black top without prints"
+    },
+    {
+      "id": "neg-03",
+      "type": "negation",
+      "query": "summer dress not floral"
+    },
+    {
+      "id": "neg-04",
+      "type": "negation",
+      "query": "jeans but not skinny fit"
+    },
+    {
+      "id": "style-01",
+      "type": "style",
+      "query": "bohemian summer look"
+    },
+    {
+      "id": "style-02",
+      "type": "style",
+      "query": "old money aesthetic outfit"
+    },
+    {
+      "id": "style-03",
+      "type": "style",
+      "query": "y2k style top"
+    },
+    {
+      "id": "style-04",
+      "type": "style",
+      "query": "minimalist wardrobe basics"
+    },
+    {
+      "id": "style-05",
+      "type": "style",
+      "query": "streetwear hoodie"
+    },
+    {
+      "id": "style-06",
+      "type": "style",
+      "query": "romantic flowy dress for a date"
+    },
+    {
+      "id": "style-07",
+      "type": "style",
+      "query": "edgy all black outfit"
+    },
+    {
+      "id": "style-08",
+      "type": "style",
+      "query": "coastal vacation aesthetic"
+    },
+    {
+      "id": "lk-01",
+      "type": "local",
+      "query": "kandyan saree for wedding"
+    },
+    {
+      "id": "lk-02",
+      "type": "local",
+      "query": "batik shirt"
+    },
+    {
+      "id": "lk-03",
+      "type": "local",
+      "query": "sarong for men"
+    },
+    {
+      "id": "lk-04",
+      "type": "local",
+      "query": "kurta top for women"
+    },
+    {
+      "id": "lk-05",
+      "type": "local",
+      "query": "white dress for poya day"
+    },
+    {
+      "id": "broad-01",
+      "type": "broad",
+      "query": "dresses"
+    },
+    {
+      "id": "broad-02",
+      "type": "broad",
+      "query": "men's shirts"
+    },
+    {
+      "id": "ml-01",
+      "type": "multilingual",
+      "query": "රතු ගවුම",
+      "note": "Sinhala: red frock/dress"
+    },
+    {
+      "id": "ml-02",
+      "type": "multilingual",
+      "query": "සාරි",
+      "note": "Sinhala: saree"
+    },
+    {
+      "id": "ml-03",
+      "type": "multilingual",
+      "query": "சேலை",
+      "note": "Tamil: saree"
+    },
+    {
+      "id": "ml-04",
+      "type": "multilingual",
+      "query": "denim ජැකට්",
+      "note": "mixed-script: denim jacket"
+    },
+    {
+      "id": "ml-05",
+      "type": "multilingual",
+      "query": "saree blouse hattaya",
+      "note": "Sinhala transliteration: hattaya = blouse"
+    }
   ]
 }

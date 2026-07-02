@@ -390,6 +390,24 @@ export interface CollectionSearchDef {
    * gemini-embedding-2); see guides/eval-gate.
    */
   relevanceFloor?: number;
+  /**
+   * Result-cutoff strategy: decides where the result list honestly ends instead
+   * of padding with nearest neighbours (bad results are worse than an honest
+   * zero-results page). Defaults to `{ strategy: "score-drop" }` — declare
+   * `{ strategy: "none" }` to opt out. Hits with an FTS keyword match are never
+   * cut (lexical evidence anchors the list); the strategies only judge
+   * semantic-only tails. Bypassed when NLQ derived hard filters (structured
+   * intent defines relevance there), mirroring `relevanceFloor`.
+   */
+  cutoff?: CollectionCutoffDef;
+  /**
+   * Extend the lexical leg with cross-script phonetic token matching: index
+   * time stores per-token `samesake_phonetic` codes of the fts sources
+   * (`fts_phon` column), query time ORs the query's phonetic codes into the
+   * lexical candidate set — so "අම්මා" finds "amma". Requires
+   * `createMatcher({ phonetic })` (e.g. `indicPhonetic`).
+   */
+  phonetic?: boolean;
   nlq?: {
     instructions?: string;
     semanticRewrite?: boolean;
@@ -397,6 +415,31 @@ export interface CollectionSearchDef {
     schema?: SchemaInput;
     model?: string;
   };
+}
+
+export interface CollectionCutoffDef {
+  /**
+   * - "score-drop" (default): with no FTS-anchored hit, the whole list is cut when
+   *   even the best cosine is below `minAnchor`; within a list, a relative cosine
+   *   cliff of more than `maxDrop` ends the semantic tail.
+   * - "category-coherence": with no FTS-anchored hit, the list is cut when the top
+   *   hits scatter across `field` values (majority share below `coherenceMin`) —
+   *   scattered categories mean the query matched nothing real.
+   * - "none": opt out.
+   */
+  strategy: "score-drop" | "category-coherence" | "none";
+  /** score-drop: relative drop between consecutive cosines that ends the tail (0–1). Default 0.5. */
+  maxDrop?: number;
+  /**
+   * Best-cosine floor an unanchored (no FTS match) result list must clear to
+   * survive at all. Calibrate per embedding model, like `relevanceFloor`.
+   * Default 0.3 (deliberately conservative).
+   */
+  minAnchor?: number;
+  /** category-coherence: the declared field whose values define coherence. Required for that strategy. */
+  field?: string;
+  /** category-coherence: minimum majority share among the top hits (0–1). Default 0.5. */
+  coherenceMin?: number;
 }
 
 export interface StageContext {
@@ -447,6 +490,15 @@ export interface IndexingDef {
 
 export interface CollectionDef {
   name?: string;
+  /**
+   * Postgres full-text-search configuration for the lexical leg (stemming +
+   * stopwords): "english" (default), "german", "spanish", "simple" (no
+   * stemming — right for mixed-language or non-European-language catalogs), or
+   * any installed regconfig. Applied to both the indexed `fts` column and
+   * query parsing. Changing it on an existing collection rebuilds the fts
+   * column — a destructive migration.
+   */
+  language?: string;
   fields: Record<string, CollectionFieldDef>;
   enrich?: PipelineDef;
   sources?: ConnectorDef[];

@@ -11,6 +11,18 @@ Docs (full site under [`apps/docs`](./apps/docs)):
 - [Search-tuning playbook](./apps/docs/src/content/docs/guides/tuning-search.mdx)
 - [Eval from snapshots](./apps/docs/src/content/docs/guides/eval-from-snapshots.mdx)
 
+## Quickstart
+
+Zero to first search, no LLM key required:
+
+```bash
+bunx @samesake/cli init my-shop && cd my-shop
+bun run db:up        # Postgres 16 + pgvector via Docker
+bun install
+bun run seed         # apply schema, push the sample catalog, build the index
+bun run search "red running shoes"
+```
+
 ## 60-second fashion search
 
 ```ts

@@ -8,10 +8,12 @@ import { buildConstraintTrace, relaxedSoftFields } from "./constraint-trace.ts";
 import { mergeFilters, parseNlq, shouldSkipNlq } from "./nlq.ts";
 import type { ProjectsService, ProjectRow } from "./projects.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
+import { ftsLanguage } from "./collections-schema-gen.ts";
 import { collectionTableName } from "./db-utils.ts";
 import { assembleQueryVector, weightedSegmentCosines } from "./spaces.ts";
 import { searchResultCache, type SearchCacheKey } from "./search-cache.ts";
 import { buildFilterSql, type FilterCompileOpts, type SearchFilters } from "./search-filter.ts";
+import { applyCutoff, type CutoffEvidence } from "./cutoff.ts";
 import {
   buildQueryImageVectors,
   buildQuerySpaceSegments,
@@ -59,6 +61,8 @@ export interface SearchResult {
   took_ms: number;
   facets?: Record<string, import("../db/postgres/facets.ts").FacetResult>;
   total_candidates?: number;
+  /** hits removed by the result-cutoff strategy (honest zero-results); absent when 0 */
+  cutoff_dropped?: number;
   /** true when served from the in-process result cache */
   cached?: boolean;
 }
@@ -328,23 +332,34 @@ async function runHybridQuery(
       // by the strict AND query first, then the OR query: docs matching ALL terms stay on top
       // (precision preserved for exact queries like "linen shirt men"), and partial matches only
       // fill in when nothing matches everything (fixes the inert-on-long-queries failure).
-      const andTsq = `websearch_to_tsquery('english', ${qRef})`;
+      // The collection's `language` picks the stemmer; unaccent() folds query accents to match
+      // the normalised fts column while preserving websearch operators (quotes, minus) that
+      // samesake_normalise would strip.
+      const lang = ftsLanguage(def);
+      const andTsq = `websearch_to_tsquery('${lang}', unaccent(${qRef}))`;
       const orTsq = `nullif(replace(${andTsq}::text, '&', '|'), '')::tsquery`;
+      // Cross-script phonetic fallback (search.phonetic + a configured provider):
+      // OR the query's per-token phonetic codes into the candidate set so e.g.
+      // "අම්මා" reaches docs that only carry the Latin transliteration.
+      const phonActive = !!def.search?.phonetic && !!ctx.phonetic;
+      const phonTsq = phonActive
+        ? `nullif(replace(plainto_tsquery('simple', ${sanitiseIdent(ctx.schema)}.samesake_phonetic_tokens(${qRef}))::text, '&', '|'), '')::tsquery`
+        : null;
       ctes.push(`lex AS (
         SELECT id, row_number() OVER (
-          ORDER BY ts_rank_cd(fts, ${andTsq}) DESC, ts_rank_cd(fts, ${orTsq}) DESC
+          ORDER BY ts_rank_cd(fts, ${andTsq}) DESC, ts_rank_cd(fts, ${orTsq}) DESC${phonTsq ? `, ts_rank_cd(fts_phon, ${phonTsq}) DESC` : ""}
         ) AS rn
         FROM ${table}
-        WHERE fts @@ ${orTsq} AND ${where}
+        WHERE (fts @@ ${orTsq}${phonTsq ? ` OR fts_phon @@ ${phonTsq}` : ""}) AND ${where}
         LIMIT ${CANDIDATES}
       )`);
       rankLegs.push({ cte: "lex", alias: "l", weight: weights.fts });
     }
 
     if (hasCos && vecRef) {
-      const cosCol = needCosFloor
-        ? `, (1 - (embedding <=> ${vecRef}::halfvec))::float AS cos`
-        : "";
+      // cos is retrieval evidence for the relevanceFloor AND the result-cutoff
+      // layer — always selected (explain mode simply ignores it).
+      const cosCol = `, (1 - (embedding <=> ${vecRef}::halfvec))::float AS cos`;
       ctes.push(`sem AS (
         SELECT id, row_number() OVER (ORDER BY embedding <=> ${vecRef}::halfvec) AS rn${cosCol}
         FROM ${table}
@@ -422,27 +437,28 @@ async function runHybridQuery(
       `;
     } else {
       const floorRef = needCosFloor ? addParam(relevanceFloor) : null;
-      const floorCols = needCosFloor
-        ? `,
+      // Per-hit retrieval evidence (lexical match, semantic cosine), consumed by
+      // the relevanceFloor WHERE below and the result-cutoff layer in TS.
+      const evidenceCols = `,
                  ${hasFts ? "(l.rn IS NOT NULL)" : "FALSE"} AS fts_present,
-                 s.cos AS cos_sim`
-        : "";
+                 ${hasCos ? "s.cos" : "NULL::float"} AS cos_sim`;
       const floorWhere = needCosFloor ? ` AND (fts_present OR cos_sim >= ${floorRef})` : "";
       query = `
         WITH ${ctes.join(", ")},
         fused AS (
           SELECT ${fusedId} AS id,
-                 (${scoreExprs.join(" + ")}) AS score${floorCols}
+                 (${scoreExprs.join(" + ")}) AS score${evidenceCols}
           ${fusedFrom}
         ),
         ranked AS (
-          SELECT id, score, count(*) OVER ()::int AS total_candidates
+          SELECT id, score, fts_present, cos_sim, count(*) OVER ()::int AS total_candidates
           FROM fused
           WHERE id IS NOT NULL${floorWhere}
           ORDER BY score DESC
           LIMIT ${limitRef} OFFSET ${offsetRef}
         )
-        SELECT d.id, d.data, d.rerank_doc, ${fieldCols}, r.score::float AS score, r.total_candidates
+        SELECT d.id, d.data, d.rerank_doc, ${fieldCols}, r.score::float AS score,
+               r.fts_present, r.cos_sim, r.total_candidates
         FROM ranked r
         JOIN ${table} d ON d.id = r.id
         ORDER BY r.score DESC
@@ -747,8 +763,29 @@ export function makeSearchService(
       return hit;
     });
 
+    // Result cutoff: end the list where the evidence honestly ends. Bypassed
+    // whenever hard filters (explicit or NLQ-derived) shape the query —
+    // structured intent defines relevance there and filtered recall must stay
+    // total ("hard filters stay hard").
+    let finalHits = hits;
+    let cutoffDropped = 0;
+    const hasFilters = Object.keys(r.mergedFilters).length > 0;
+    const cutoffDef = r.def.search?.cutoff;
+    const hasEvidence = rows.length > 0 && ("fts_present" in rows[0]! || "cos_sim" in rows[0]!);
+    if (!hasFilters && hasEvidence && cutoffDef?.strategy !== "none") {
+      const evidence: CutoffEvidence[] = rows.map((row, i) => ({
+        ftsPresent: row.fts_present === true,
+        cos: row.cos_sim == null ? null : Number(row.cos_sim),
+        value: cutoffDef?.field ? hits[i]![cutoffDef.field] : undefined,
+      }));
+      const cut = applyCutoff(hits, evidence, cutoffDef);
+      finalHits = cut.hits;
+      cutoffDropped = cut.dropped;
+      if (cutoffDropped > 0) ctx.observability.inc("search_cutoff_dropped_total", cutoffDropped);
+    }
+
     const result: SearchResult = {
-      hits,
+      hits: finalHits,
       constraintTrace: buildConstraintTrace(r.def, {
         semanticQuery: r.semanticText,
         derivedFilters: r.nlq.filters,
@@ -762,6 +799,7 @@ export function makeSearchService(
       took_ms: Date.now() - t0,
       total_candidates: totalCandidates,
     };
+    if (cutoffDropped > 0) result.cutoff_dropped = cutoffDropped;
 
     if (r.def.search?.nlq && !shouldSkipNlq(r.def, r.q)) {
       result.parsed = r.nlq.parsed;

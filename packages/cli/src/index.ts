@@ -16,6 +16,7 @@ function phoneticOpt(project: { entities?: ReadonlyArray<{ phonetic?: Record<str
 }
 import type { CollectionDef, EntityDef, ProjectConfig } from "@samesake/core";
 import { loadProjectConfig } from "./config-loader.ts";
+import { scaffoldProject } from "./init.ts";
 import { readFileSync, existsSync, writeFileSync, watch } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -200,7 +201,8 @@ USAGE
   samesake <command> [options]
 
 PROJECT LIFECYCLE
-  init           --name=NAME [--out=PATH]                Scaffold a new samesake.config.ts
+  init           [DIR] [--force]                         Scaffold a runnable search project (config,
+                                                         docker-compose Postgres, server, seeded catalog)
   apply          --project=NAME --config=PATH            Apply schema to a project
   list-projects                                          List every applied project
   seed           --project=NAME --file=PATH              Load JSON test data
@@ -893,51 +895,13 @@ async function cmdDoctor(): Promise<void> {
   }
 }
 
-const INIT_TEMPLATE = (name: string): string => `// samesake.config.ts — entities for project '${name}'.
-//
-// Apply via:
-//   bunx samesake apply --project=${name} --config=./samesake.config.ts
-import { entity, fields, Scorers } from "@samesake/core";
-
-export const customer = entity("customer", {
-  fields: {
-    name: fields.text({ required: true }),
-    phone: fields.text({ optional: true }),
-  },
-  scopes: ["tenantId"],
-  embeddings: {
-    name_emb: { source: "name", model: "gemini-embedding-001", dim: 768 },
-  },
-  phonetic: {
-    name_phon: { source: "name", algorithm: "indic-soundex" },
-  },
-  scoring: {
-    channels: [
-      Scorers.phoneExact({ field: "phone", weight: 1.0 }),
-      Scorers.cosine({ embedding: "name_emb", weight: 0.6 }),
-      Scorers.trigram({ field: "name", weight: 0.25, latinOnlyPartial: true }),
-      Scorers.aliasHit({ weight: 0.4 }),
-      Scorers.phoneticEq({ phonetic: "name_phon", weight: 0.2 }),
-    ],
-  },
-});
-`;
-
-async function cmdInit(flags: Record<string, string>): Promise<void> {
-  const name = flags.name ?? fail("--name is required (e.g. --name=mystore)");
-  if (!/^[a-z][a-z0-9_-]{0,62}$/i.test(name)) {
-    fail(`invalid project name: ${name} (must match /^[a-z][a-z0-9_-]+$/)`);
+async function cmdInit(flags: Record<string, string>, rest: string[]): Promise<void> {
+  const dir = rest.find((a) => !a.startsWith("--"));
+  try {
+    scaffoldProject(dir, flags.force === "true");
+  } catch (e) {
+    fail(e instanceof Error ? e.message : String(e));
   }
-  const out = resolve(flags.out ?? "./samesake.config.ts");
-  if (existsSync(out) && flags.force !== "true") {
-    fail(`${out} already exists — pass --force to overwrite`);
-  }
-  writeFileSync(out, INIT_TEMPLATE(name));
-  console.log(`✓ Wrote ${out}`);
-  console.log(`\nNext steps:`);
-  console.log(`  1. Review ${out}`);
-  console.log(`  2. samesake apply --project=${name} --config=${out}`);
-  console.log(`  3. samesake seed --project=${name} --file=seed.json`);
 }
 
 async function main(): Promise<void> {
@@ -950,7 +914,7 @@ async function main(): Promise<void> {
   switch (cmd) {
     case "healthz": await cmdHealthz(); break;
     case "doctor": await cmdDoctor(); break;
-    case "init": await cmdInit(flags); break;
+    case "init": await cmdInit(flags, rest); break;
     case "migrate": await cmdMigrate(flags); break;
     case "apply": await cmdApply(flags); break;
     case "seed": await cmdSeed(flags); break;
