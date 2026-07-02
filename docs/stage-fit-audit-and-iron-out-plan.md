@@ -147,8 +147,8 @@ at any installation yet.
     hits — junk tails behind keyword matches now cut; eval-verified retrieval-neutral on the
     real corpus (topIds 67/67 identical, p2tenancy baseline minted).
 
-Remaining P2: offer dedup (2), enrichment ROI upgrades (3), staged rollout (4), training-pair
-export (5).
+Remaining P2: offer dedup (2 — **RFC ready**: `rfcs/rfc-offer-dedup.md`, kickoff for a fresh
+session), enrichment ROI upgrades (3), staged rollout (4), training-pair export (5).
 
 ## 3. The iron-out backlog (ordered; each item names its proof)
 
