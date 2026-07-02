@@ -91,7 +91,7 @@ export function mergeBlendedRerank(
   return out;
 }
 
-export function fashionRerank(
+export function llmRerank(
   generate: GenerateFn,
   opts: { model?: string; version?: string; batchSize?: number; onError?: (msg: string) => void } = {}
 ): RerankFn {
@@ -101,6 +101,6 @@ export function fashionRerank(
       query,
       candidates.map((c) => ({ id: c.id, text: c.text, data: c.data }))
     );
-    return judged.map((j) => ({ id: j.id, score: j.grade / 2 }));
+    return judged.map((j) => ({ id: j.id, score: j.grade / 3 }));
   };
 }

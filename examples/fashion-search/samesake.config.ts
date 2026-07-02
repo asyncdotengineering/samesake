@@ -166,10 +166,10 @@ export const productsCollection = collection("products", {
 });
 
 export function createFashionMatcher() {
-  const databaseUrl = process.env.DATABASE_URL;
-  const apiKey = process.env.API_KEY ?? process.env.GEMINI_API_KEY;
-  if (!databaseUrl) throw new Error("DATABASE_URL missing");
-  if (!apiKey) throw new Error("API_KEY or GEMINI_API_KEY missing");
+  const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
+  const apiKey = process.env.SAMESAKE_API_KEY ?? process.env.GEMINI_API_KEY;
+  if (!databaseUrl) throw new Error("SAMESAKE_DATABASE_URL missing");
+  if (!apiKey) throw new Error("SAMESAKE_API_KEY or GEMINI_API_KEY missing");
 
   return createMatcher({
     databaseUrl,

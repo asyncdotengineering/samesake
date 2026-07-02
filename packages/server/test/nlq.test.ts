@@ -17,7 +17,7 @@ import { buildFilterSql } from "../src/core/search.ts";
 import type { MatcherCtx } from "../src/types.ts";
 import { ftsIndexingByTitle, nlqSchemaFixtureCollection, stubEmbed, testProductsCollection } from "./fixtures.ts";
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
 
 describe("deriveNlqSchema", () => {

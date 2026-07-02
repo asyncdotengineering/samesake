@@ -5,7 +5,7 @@ import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed, testProductsCollection } from "./fixtures.ts";
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
 
 describeIf("removeDocuments", () => {
@@ -29,7 +29,8 @@ describeIf("removeDocuments", () => {
       { id: "r2", data: { title: "blue shoes" } },
       { id: "r3", data: { title: "green shoes" } },
     ]);
-  }, 20_000);
+    await matcher.index(projectSlug, "products");
+  }, 30_000);
 
   afterAll(async () => {
     if (schemaName) {
@@ -40,17 +41,34 @@ describeIf("removeDocuments", () => {
     if (matcher) await matcher.close();
   });
 
-  test("removeDocuments deletes rows by id and reports the count", async () => {
-    const { removed } = await matcher.removeDocuments(projectSlug, "products", ["r1", "r3"]);
-    expect(removed).toBe(2);
+  test("push → delete → search returns nothing (HTTP + in-process)", async () => {
+    const before = await matcher.search(projectSlug, "products", { q: "shoes" });
+    expect(before.hits.map((h) => h.id).sort()).toEqual(["r1", "r2", "r3"]);
 
-    const { db, close } = createDbFromUrl(databaseUrl!);
-    const rows = (await db.execute(
-      sql.raw(`SELECT id FROM ${schemaName}.c_products ORDER BY id`)
-    )) as unknown as { id: string }[];
-    await close();
-    expect(rows.map((r) => r.id)).toEqual(["r2"]);
-  });
+    // HTTP surface
+    const res = await matcher.fetch(
+      new Request(`http://x/v1/projects/${projectSlug}/collections/products/documents`, {
+        method: "DELETE",
+        headers: {
+          Authorization: "Bearer test-api-key-12345",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ids: ["r1", "r3"] }),
+      })
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ removed: 2 });
+
+    const after = await matcher.search(projectSlug, "products", { q: "shoes" });
+    expect(after.hits.map((h) => h.id)).toEqual(["r2"]);
+
+    // In-process surface
+    const { removed } = await matcher.removeDocuments(projectSlug, "products", ["r2"]);
+    expect(removed).toBe(1);
+
+    const empty = await matcher.search(projectSlug, "products", { q: "shoes" });
+    expect(empty.hits).toEqual([]);
+  }, 30_000);
 
   test("removeDocuments with no ids is a no-op", async () => {
     const { removed } = await matcher.removeDocuments(projectSlug, "products", []);

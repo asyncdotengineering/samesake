@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { createKernel, ensureDefaultOrg, DEFAULT_ORG_ID, type Actor } from "@porulle/core";
 import configPromise from "../commerce.config.ts";
 
-const SUBSET = join(import.meta.dir, "..", "..", "..", "examples", "fashion-search", "datasets", "lk-snapshot-subset");
+const SUBSET = join(import.meta.dir, "..", "..", "..", "examples", "shop-search", "datasets", "lk-snapshot-subset");
 
 type Product = { id: string; title: string; brand: string; category: string; colors: string[]; material: string; price: number; available: boolean };
 

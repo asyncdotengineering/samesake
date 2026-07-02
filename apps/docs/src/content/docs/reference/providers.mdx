@@ -12,7 +12,7 @@ samesake never calls a model directly. You supply functions; the matcher passes 
 | Seam | Type | Required? | Used for |
 |------|------|-----------|----------|
 | `embed` | `EmbedFn` | **Yes** | Index + query vectors |
-| `generate` | `GenerateFn` | Optional | Enrich stages, NLQ, judge, `fashionRerank` |
+| `generate` | `GenerateFn` | Optional | Enrich stages, NLQ, judge, `llmRerank` |
 | `rerank` | `RerankFn` | Optional (default off) | Second-stage rerank — see [Reranking](/reference/reranking/) |
 | `groundImage` | `GroundImageFn` | Optional | Crop/segment before embed |
 
@@ -49,7 +49,7 @@ interface GenerateRequest {
 type GenerateFn = (req: GenerateRequest) => Promise<unknown>;
 ```
 
-Used by enrich pipelines, NLQ, the [relevance judge](/reference/relevance-judge/), and [`fashionRerank`](/reference/reranking/).
+Used by enrich pipelines, NLQ, the [relevance judge](/reference/relevance-judge/), and [`llmRerank`](/reference/reranking/).
 
 ## Provider matrix
 
@@ -107,16 +107,16 @@ export const geminiGenerate: GenerateFn = async ({ model, system, prompt, schema
 ```
 
 ```ts title="matcher.ts"
-import { createMatcher, fashionRerank } from "@samesake/server";
+import { createMatcher, llmRerank } from "@samesake/server";
 import { geminiEmbed } from "./embed.ts";
 import { geminiGenerate } from "./generate.ts";
 
 const matcher = createMatcher({
-  databaseUrl: process.env.DATABASE_URL!,
-  apiKey: process.env.API_KEY!,
+  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
+  apiKey: process.env.SAMESAKE_API_KEY!,
   embed: geminiEmbed,
   generate: geminiGenerate,
-  rerank: fashionRerank(geminiGenerate, { model: "gemini-3.1-flash-lite" }),
+  rerank: llmRerank(geminiGenerate, { model: "gemini-3.1-flash-lite" }),
 });
 ```
 
@@ -137,6 +137,6 @@ For OpenAI, swap `@ai-sdk/openai` and use `gpt-4.1-mini` for generate/judge and 
 
 ## Related
 
-- [Reranking](/reference/reranking/) — wire a remote `RerankFn` or `fashionRerank`
+- [Reranking](/reference/reranking/) — wire a remote `RerankFn` or `llmRerank`
 - [Relevance judge](/reference/relevance-judge/) — what `generate` must support for eval
 - [Build a search experience](/start/build-a-search-experience/) — end-to-end mental model

@@ -2,11 +2,11 @@
 
 Reference implementation of Samesake's visual-commerce wedge: fashion search for shoppers who use image inspiration, vague intent, constraints, and inventory reality instead of exact product names.
 
-This example reproduces the ingest-first hybrid search pipeline and serves a spike-compatible `/search/v2` endpoint for the external eval harness. Read the public proof page first: [`docs/fashion-search-proof.md`](../../docs/fashion-search-proof.md).
+This example reproduces the ingest-first hybrid search pipeline and serves a spike-compatible `/search/v2` endpoint for the external eval harness. Read the public proof page first: [`docs/shop-search-proof.md`](../../docs/shop-search-proof.md).
 
 ## Prerequisites
 
-- `.env` at repo root with `DATABASE_URL` (Neon + pgvector) and `GEMINI_API_KEY`
+- `.env` at repo root with `SAMESAKE_DATABASE_URL` (Neon + pgvector) and `GEMINI_API_KEY`
 - LK dataset snapshots at `project-search-web-search/research/dataset/raw/` (54 JSON files)
 
 ## Commands
@@ -23,7 +23,7 @@ bun --env-file=../../.env serve.ts           # HTTP on :8788 with /search/v2
 First-class fashion API:
 
 ```bash
-curl -X POST http://localhost:8788/v1/projects/fashionparity/collections/products/fashion-search \
+curl -X POST http://localhost:8788/v1/projects/fashionparity/collections/products/shop-search \
   -H "authorization: Bearer $API_KEY" \
   -H "content-type: application/json" \
   -d '{

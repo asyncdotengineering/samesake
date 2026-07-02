@@ -75,7 +75,7 @@ import { localStorageAdapter } from "@porulle/adapter-local-storage";
 export default defineConfig({
   storeName: "Samesake Fashion Playground",
   database: { provider: "postgresql" },
-  databaseAdapter: postgresAdapter({ connectionString: process.env.DATABASE_URL! }),
+  databaseAdapter: postgresAdapter({ connectionString: process.env.SAMESAKE_DATABASE_URL! }),
   storage: localStorageAdapter({ basePath: "./.data/media", baseUrl: "http://localhost:3000/assets" }),
   email: consoleEmailAdapter(),
   auth: { requireEmailVerification: false, apiKeys: { enabled: true }, trustedOrigins: ["http://localhost:3000"],
@@ -98,11 +98,11 @@ Porulle ships its Drizzle schema as a re-export barrel, so one entry covers ever
 ```ts title="drizzle.config.ts"
 export default { dialect: "postgresql",
   schema: ["./node_modules/@porulle/core/dist/kernel/database/schema.js"],
-  dbCredentials: { url: process.env.DATABASE_URL! } };
+  dbCredentials: { url: process.env.SAMESAKE_DATABASE_URL! } };
 ```
 
 ```bash
-psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;"
+psql "$SAMESAKE_DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;"
 bun run db:push   # bunx drizzle-kit push
 ```
 
@@ -233,14 +233,14 @@ Each search makes one Gemini embedding call (~0.5–1s) plus the Postgres hybrid
 
 The app is a standard Next.js app, so `vercel` deploys it as-is. Two things matter for serverless:
 
-- **Use Neon's pooled connection string** for `DATABASE_URL` (the `-pooler` host) — serverless functions open many short-lived connections.
+- **Use Neon's pooled connection string** for `SAMESAKE_DATABASE_URL` (the `-pooler` host) — serverless functions open many short-lived connections.
 - The routes are `runtime = "nodejs"` and build lazily (no DB at build), so the build never needs the database.
 
 ```bash
 cd apps/playground
 vercel link --yes --scope <your-scope>
 # production env (pooler host!)
-printf '%s' "$NEON_POOLER_URL" | vercel env add DATABASE_URL production
+printf '%s' "$NEON_POOLER_URL" | vercel env add SAMESAKE_DATABASE_URL production
 printf '%s' "$GEMINI_API_KEY"  | vercel env add GEMINI_API_KEY production
 printf '%s' "$API_KEY"         | vercel env add API_KEY production
 printf '%s' "$BETTER_AUTH_SECRET" | vercel env add BETTER_AUTH_SECRET production

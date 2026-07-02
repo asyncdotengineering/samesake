@@ -11,6 +11,8 @@ export interface SearchCacheKey {
   limit: number;
   offset: number;
   facets: unknown;
+  /** HNSW recall dial — different values return different candidate sets. */
+  efSearch?: number | null;
 }
 
 function stableKey(key: SearchCacheKey): string {
@@ -25,6 +27,7 @@ function stableKey(key: SearchCacheKey): string {
     key.limit,
     key.offset,
     JSON.stringify(key.facets ?? []),
+    key.efSearch ?? "",
   ].join("|");
 }
 

@@ -180,6 +180,17 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return resp as T;
 }
 
+async function del<T>(path: string, body: unknown): Promise<T> {
+  const r = await fetch(`${URL}${path}`, {
+    method: "DELETE",
+    headers: { ...header(), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const resp = await r.json();
+  if (!r.ok) fail(`DELETE ${path} failed: ${JSON.stringify(resp)}`);
+  return resp as T;
+}
+
 // ── Commands ────────────────────────────────────────────────────────────
 async function cmdHelp(): Promise<void> {
   console.log(`
@@ -235,6 +246,8 @@ SEARCH PIPELINE
   enrich         --project=NAME --collection=COL          Run enrichment pipeline on pending docs
                  [--concurrency=N] [--limit=N]
   index          --project=NAME --collection=COL          Embed + populate filter columns
+  remove         --project=NAME --collection=COL --ids=ID1,ID2
+                                                          Delete documents by id
   search-explain --project=NAME --collection=COL --q=QUERY [--json]
                                                           Per-channel search ranking breakdown
   calibrate-search --project=NAME --collection=COL --queries=FILE.json [--limit=N] [--json]
@@ -256,7 +269,7 @@ GLOBAL ENV
 
 EXAMPLES
   # Deploy pipeline: migrate first, then start the app.
-  samesake migrate --db=$DATABASE_URL --schema=public
+  samesake migrate --db=$SAMESAKE_DATABASE_URL --schema=public
   bun apps/matcher/src/index.ts &
 
   # Author + use a project
@@ -633,6 +646,18 @@ async function cmdReviewCorrect(flags: Record<string, string>): Promise<void> {
   console.log(`✓ corrected ${body.corrected.join(", ")} on ${id} (doc re-indexes on next \`index\` run)`);
 }
 
+async function cmdRemove(flags: Record<string, string>): Promise<void> {
+  const project = flags.project ?? PROJECT ?? fail("--project is required");
+  const collection = flags.collection ?? fail("--collection is required");
+  const ids = (flags.ids ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!ids.length) fail("--ids is required (comma-separated document ids)");
+  const body = await del<{ removed: number }>(
+    `/v1/projects/${project}/collections/${collection}/documents`,
+    { ids }
+  );
+  console.log(`✓ removed ${body.removed} document${body.removed === 1 ? "" : "s"}`);
+}
+
 async function cmdIndex(flags: Record<string, string>): Promise<void> {
   const project = flags.project ?? PROJECT ?? fail("--project is required");
   const collection = flags.collection ?? fail("--collection is required");
@@ -688,8 +713,8 @@ async function cmdDev(flags: Record<string, string>): Promise<void> {
   const project = flags.project ?? PROJECT ?? fail("--project is required");
   const port = flags.port ? Number(flags.port) : 8788;
   const databaseUrl =
-    flags.db ?? process.env.DATABASE_URL ?? process.env.SAMESAKE_DATABASE_URL;
-  if (!databaseUrl) fail("DATABASE_URL required (or --db= / SAMESAKE_DATABASE_URL)");
+    flags.db ?? process.env.SAMESAKE_DATABASE_URL;
+  if (!databaseUrl) fail("SAMESAKE_DATABASE_URL required (or --db=)");
 
   const configAbs = resolve(configPath);
   const embed = await resolveDevEmbed(configPath);
@@ -796,9 +821,9 @@ async function cmdMigrate(flags: Record<string, string>): Promise<void> {
 
   if (isProjectMigrate) {
     const databaseUrl =
-      flags.db ?? process.env.DATABASE_URL ?? process.env.SAMESAKE_DATABASE_URL;
+      flags.db ?? process.env.SAMESAKE_DATABASE_URL;
     if (!databaseUrl) {
-      fail("--db=postgres://... required (or set DATABASE_URL / SAMESAKE_DATABASE_URL)");
+      fail("--db=postgres://... required (or set SAMESAKE_DATABASE_URL)");
     }
     const dryRun = flags.apply !== "true";
     const config = await loadProjectConfig(configPath!);
@@ -933,6 +958,7 @@ async function main(): Promise<void> {
     case "ingest": await cmdIngest(flags); break;
     case "enrich": await cmdEnrich(flags); break;
     case "index": await cmdIndex(flags); break;
+    case "remove": await cmdRemove(flags); break;
     case "search-explain": await cmdSearchExplain(flags); break;
     case "calibrate-search": await cmdCalibrateSearch(flags); break;
     case "rotate-key": await cmdRotateKey(flags); break;

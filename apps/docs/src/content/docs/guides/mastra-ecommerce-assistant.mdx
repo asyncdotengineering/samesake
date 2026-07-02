@@ -48,7 +48,7 @@ A standalone Bun app — no framework needed.
 "zod": "^4.4.3"
 ```
 
-You'll need a Postgres database with `pgvector` (Neon, Supabase, or local), plus a `DATABASE_URL`, a `GEMINI_API_KEY` (embeddings + NLQ), and an `OPENAI_API_KEY` (the agent). Put them in `apps/ecommerce-assistant/.env`.
+You'll need a Postgres database with `pgvector` (Neon, Supabase, or local), plus a `SAMESAKE_DATABASE_URL`, a `GEMINI_API_KEY` (embeddings + NLQ), and an `OPENAI_API_KEY` (the agent). Put them in `apps/ecommerce-assistant/.env`.
 
 ## 2. Declare the collections
 
@@ -125,8 +125,8 @@ let _matcher: ReturnType<typeof createMatcher> | null = null;
 export function getMatcher() {
   if (_matcher) return _matcher;
   _matcher = createMatcher({
-    databaseUrl: process.env.DATABASE_URL!,
-    apiKey: process.env.API_KEY ?? "dev-key-please-change",
+    databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
+    apiKey: process.env.SAMESAKE_API_KEY ?? "dev-key-please-change",
     migrate: "eager",
     embed: geminiEmbed,
     generate: geminiGenerate,
@@ -276,7 +276,7 @@ The seed pulls the same demo data the recipe uses — the public `weaviate/agent
 
 <Steps>
 
-1. **Install and configure.** Fill `apps/ecommerce-assistant/.env` (`DATABASE_URL`, `GEMINI_API_KEY`, `OPENAI_API_KEY`).
+1. **Install and configure.** Fill `apps/ecommerce-assistant/.env` (`SAMESAKE_DATABASE_URL`, `GEMINI_API_KEY`, `OPENAI_API_KEY`).
 
    ```bash
    bun install

@@ -5,9 +5,9 @@ import type { Company, CatalogPart } from "../../shared/types.ts";
 const ROOT = join(import.meta.dir, "../..");
 const REPO_ROOT = join(ROOT, "../..");
 
-/** Load DATABASE_URL + GEMINI_API_KEY from the repo-root .env if not already set. */
+/** Load SAMESAKE_DATABASE_URL + GEMINI_API_KEY from the repo-root .env if not already set. */
 export function loadEnv(): void {
-  if (process.env.DATABASE_URL && process.env.GEMINI_API_KEY) return;
+  if (process.env.SAMESAKE_DATABASE_URL && process.env.GEMINI_API_KEY) return;
   try {
     const env = readFileSync(join(REPO_ROOT, ".env"), "utf8");
     for (const line of env.split("\n")) {
@@ -17,7 +17,7 @@ export function loadEnv(): void {
       if (eq === -1) continue;
       const k = t.slice(0, eq).trim();
       const v = t.slice(eq + 1).trim();
-      if (k === "DATABASE_URL" || k === "GEMINI_API_KEY") process.env[k] ??= v;
+      if (k === "SAMESAKE_DATABASE_URL" || k === "GEMINI_API_KEY") process.env[k] ??= v;
     }
   } catch {
     /* no .env — rely on the ambient environment */

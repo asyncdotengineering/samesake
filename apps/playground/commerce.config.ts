@@ -2,7 +2,7 @@ import { consoleEmailAdapter, defineConfig } from "@porulle/core";
 import { postgresAdapter } from "@porulle/adapter-postgres";
 import { localStorageAdapter } from "@porulle/adapter-local-storage";
 
-const DATABASE_URL = process.env.DATABASE_URL!;
+const SAMESAKE_DATABASE_URL = process.env.SAMESAKE_DATABASE_URL!;
 
 // Porulle is the commerce backend for the fashion playground. samesake reads this
 // catalog (via /api/catalog/entities) and powers search. One Next.js process serves both.
@@ -11,7 +11,7 @@ export default defineConfig({
   version: "1.0.0",
 
   database: { provider: "postgresql" },
-  databaseAdapter: postgresAdapter({ connectionString: DATABASE_URL }),
+  databaseAdapter: postgresAdapter({ connectionString: SAMESAKE_DATABASE_URL }),
 
   storage: localStorageAdapter({
     basePath: "./.data/media",

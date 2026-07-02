@@ -16,7 +16,8 @@ import type { MatchService } from "./core/match.ts";
 import type { SearchService } from "./core/search.ts";
 import type { CalibrateSearchService } from "./core/calibrate-search.ts";
 import type { AgentToolsService } from "./core/agent-tools.ts";
-import type { FashionSearchService } from "./core/fashion-search.ts";
+import type { ShopSearchService } from "./core/shop-search.ts";
+import type { CatalogSyncService } from "./core/catalog-sync.ts";
 import type { IngestService } from "./core/ingest.ts";
 import type { EnrichPipelineService } from "./core/enrich-pipeline.ts";
 import type { ReviewService } from "./core/review.ts";
@@ -39,7 +40,8 @@ export interface AppDeps {
     search: SearchService;
     calibrateSearch: CalibrateSearchService;
     agentTools: AgentToolsService;
-    fashionSearch: FashionSearchService;
+    shopSearch: ShopSearchService;
+    catalogSync: CatalogSyncService;
     ingest: IngestService;
     enrich: EnrichPipelineService;
     review: ReviewService;
@@ -222,9 +224,10 @@ export function buildApp(deps: AppDeps): Hono {
     limit: z.number().optional(),
     offset: z.number().optional(),
     facets: z.array(z.string()).optional(),
+    efSearch: z.number().int().min(10).max(1000).optional(),
   });
 
-  const FashionSearchBody = z.object({
+  const ShopSearchBody = z.object({
     q: z.string().optional(),
     image: z.object({
       url: z.string().optional(),
@@ -248,7 +251,7 @@ export function buildApp(deps: AppDeps): Hono {
     recoverNoResults: z.boolean().optional(),
   });
 
-  const FashionSyncBody = z.object({
+  const CatalogSyncBody = z.object({
     type: z.enum([
       "product.upsert",
       "product.delete",
@@ -288,6 +291,10 @@ export function buildApp(deps: AppDeps): Hono {
     ),
   });
 
+  const RemoveDocumentsBody = z.object({
+    ids: z.array(z.string()).min(1),
+  });
+
   app.post("/v1/projects/:project/rotate-key", async (c) => {
     requireMasterKey(c);
     const { project } = c.req.param();
@@ -310,6 +317,17 @@ export function buildApp(deps: AppDeps): Hono {
       return c.json(
         await services.ingest.upsertDocuments(project, collection, body.documents)
       );
+    }
+  );
+
+  app.delete(
+    "/v1/projects/:project/collections/:collection/documents",
+    zValidator("json", RemoveDocumentsBody),
+    async (c) => {
+      const { project, collection } = c.req.param();
+      await requireProjectKey(c, project);
+      const body = c.req.valid("json");
+      return c.json(await services.ingest.removeDocuments(project, collection, body.ids));
     }
   );
 
@@ -386,6 +404,7 @@ export function buildApp(deps: AppDeps): Hono {
           limit: body.limit,
           offset: body.offset,
           facets: body.facets,
+          efSearch: body.efSearch,
         })
       );
     }
@@ -407,6 +426,7 @@ export function buildApp(deps: AppDeps): Hono {
           mode: body.mode,
           limit: body.limit,
           offset: body.offset,
+          efSearch: body.efSearch,
         })
       );
     }
@@ -422,6 +442,9 @@ export function buildApp(deps: AppDeps): Hono {
       })
     ),
     limit: z.number().optional(),
+    // Judge model routed through the matcher's `generate` fn. Required (different family
+    // than the enrich pipeline) when queries have no labels and the collection is enriched.
+    judgeModel: z.string().optional(),
   });
 
   app.post(
@@ -436,6 +459,7 @@ export function buildApp(deps: AppDeps): Hono {
           queries: body.queries as Parameters<CalibrateSearchService["evaluateSearch"]>[2]["queries"],
           config: body.config as Parameters<CalibrateSearchService["evaluateSearch"]>[2]["config"],
           limit: body.limit,
+          judge: body.judgeModel ? { model: body.judgeModel } : undefined,
         })
       );
     }
@@ -452,6 +476,7 @@ export function buildApp(deps: AppDeps): Hono {
         await services.calibrateSearch.calibrateSearch(project, collection, {
           queries: body.queries as Parameters<CalibrateSearchService["calibrateSearch"]>[2]["queries"],
           limit: body.limit,
+          judge: body.judgeModel ? { model: body.judgeModel } : undefined,
         })
       );
     }
@@ -544,26 +569,26 @@ export function buildApp(deps: AppDeps): Hono {
   );
 
   app.post(
-    "/v1/projects/:project/collections/:collection/fashion-search",
-    zValidator("json", FashionSearchBody),
+    "/v1/projects/:project/collections/:collection/shop-search",
+    zValidator("json", ShopSearchBody),
     async (c) => {
       const { project, collection } = c.req.param();
       await requireProjectKey(c, project);
       const body = c.req.valid("json");
       return c.json(
-        await services.fashionSearch.fashionSearch(project, collection, body as Parameters<typeof services.fashionSearch.fashionSearch>[2])
+        await services.shopSearch.shopSearch(project, collection, body as Parameters<typeof services.shopSearch.shopSearch>[2])
       );
     }
   );
 
   app.post(
-    "/v1/projects/:project/collections/:collection/fashion-sync",
-    zValidator("json", FashionSyncBody),
+    "/v1/projects/:project/collections/:collection/catalog-sync",
+    zValidator("json", CatalogSyncBody),
     async (c) => {
       const { project, collection } = c.req.param();
       await requireProjectKey(c, project);
       const body = c.req.valid("json");
-      return c.json(await services.fashionSearch.syncFashionCatalogEvent(project, collection, body));
+      return c.json(await services.catalogSync.syncCatalogEvent(project, collection, body));
     }
   );
 

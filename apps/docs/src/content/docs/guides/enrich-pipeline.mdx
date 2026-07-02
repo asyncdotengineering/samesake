@@ -50,16 +50,16 @@ Each target guide below shows the same spine:
 Keep the three main stages as **separate durable steps**. That's how you get per-stage retries, per-stage timing in your observability tool, and the guarantee that a flaky embed call doesn't force you to re-fetch your whole catalog.
 
 ```ts title="matcher.ts — shared setup"
-import { createMatcher, fashionRerank } from "@samesake/server";
+import { createMatcher, llmRerank } from "@samesake/server";
 import { products } from "./catalog.ts";
 import { geminiEmbed, geminiGenerate } from "./gemini.ts";
 
 export const matcher = createMatcher({
-  databaseUrl: process.env.DATABASE_URL!,
-  apiKey: process.env.API_KEY!,
+  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
+  apiKey: process.env.SAMESAKE_API_KEY!,
   embed: geminiEmbed,                       // gemini-embedding-2
   generate: geminiGenerate,                 // gemini-3.1-flash-lite
-  rerank: fashionRerank(geminiGenerate),
+  rerank: llmRerank(geminiGenerate),
 });
 
 await matcher.apply("market", { entities: [], collections: [products] });

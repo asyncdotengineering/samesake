@@ -2,7 +2,7 @@
 // structured `styles` attribute the fashion preset tags (shipped in @samesake/core 2.5.0).
 // LLM-driven, so the assertion is lenient: parsed `styles` must OVERLAP the expected set.
 //
-//   DATABASE_URL=… GEMINI_API_KEY=… bun eval-vibes.ts
+//   SAMESAKE_DATABASE_URL=… GEMINI_API_KEY=… bun eval-vibes.ts
 //
 // Known limitation: gemini-3.1-flash-lite degrades the WHOLE NLQ parse to nothing on very short
 // (2-word) queries — vibe or not (verified: "streetwear hoodie", "quiet luxury", "cottagecore

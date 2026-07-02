@@ -7,7 +7,7 @@ import { createDbFromUrl } from "../src/db/client.ts";
 import { __setImageTransport } from "../src/core/fetch-image.ts";
 import { stubEmbed } from "./fixtures.ts";
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
 
 const IMAGE_URL = "https://93.184.216.34/look.jpg";

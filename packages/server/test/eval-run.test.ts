@@ -7,11 +7,11 @@ import { sql } from "drizzle-orm";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { constraintViolations } from "../src/core/eval/metrics.ts";
-import { makeLlmJudge } from "../src/core/eval/judge.ts";
+import { JUDGE_PROMPT_HASH, makeLlmJudge } from "../src/core/eval/judge.ts";
 import { stubEmbed, testProductsCollection } from "./fixtures.ts";
 import type { GenerateFn } from "../src/types.ts";
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
 
 describeIf("eval run", () => {
@@ -26,8 +26,7 @@ describeIf("eval run", () => {
     return {
       grades: ids.map((id, i) => ({
         id,
-        grade: i === 0 ? 2 : 1,
-        facets: { category: 2 },
+        esci: i === 0 ? "E" : "S",
         reason: "stub",
       })),
     };
@@ -115,7 +114,7 @@ describeIf("eval run", () => {
     const judge = makeLlmJudge(stubJudgeGenerate, { version: "run-v1" });
     const queries = [
       { id: "q1", type: "keyword", query: "red dress" },
-      { id: "q2", type: "price", query: "dress under 5000", constraints: { max_price: 5000 } },
+      { id: "q2", type: "price", query: "dress under 5000", constraints: { price: { $lte: 5000 } } },
       { id: "q3", type: "broad", query: "jeans" },
     ];
 
@@ -133,7 +132,7 @@ describeIf("eval run", () => {
     expect(loose.perQuery).toHaveLength(3);
     expect(loose.aggregate.byType.keyword?.hitAtK).toBe(1);
     const raw = await readFile(loose.artifactPath, "utf8");
-    expect(JSON.parse(raw).judgeVersion).toBe("run-v1");
+    expect(JSON.parse(raw).judgeVersion).toBe(`run-v1@${JUDGE_PROMPT_HASH}`);
 
     const strict = await matcher.runEval(projectSlug, "products", {
       queries,
@@ -149,12 +148,10 @@ describeIf("eval run", () => {
   });
 
   test("test:eval-constraint-objective counts price violations without judge", () => {
+    const hit = (id: string, data: Record<string, unknown>) => ({ id, value: (f: string) => data[f] });
     const violations = constraintViolations(
-      [
-        { id: "a", price: 8000, category: "dresses" },
-        { id: "b", price: 4000, category: "dresses" },
-      ],
-      { max_price: 5000 }
+      [hit("a", { price: 8000, category: "dresses" }), hit("b", { price: 4000, category: "dresses" })],
+      { price: { $lte: 5000 } }
     );
     expect(violations).toBe(1);
   });

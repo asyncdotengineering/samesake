@@ -30,7 +30,7 @@ const IDENT = /^[a-z_][a-z0-9_]{0,62}$/i;
  *   // CI script (run before `vercel deploy` / `wrangler deploy` / etc.):
  *   import { prepareMigrations } from "@samesake/server";
  *   await prepareMigrations({
- *     databaseUrl: process.env.DATABASE_URL!,
+ *     databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
  *     schema: "public",
  *   });
  */

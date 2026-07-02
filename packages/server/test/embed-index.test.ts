@@ -11,7 +11,7 @@ import {
 } from "../src/core/embed-index.ts";
 import { stubEmbed } from "./fixtures.ts";
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
 
 describe("embed-index helpers", () => {
@@ -166,7 +166,9 @@ describeIf("embed-index integration", () => {
       .split(",")
       .map(Number);
     const norm = Math.sqrt(vec.reduce((s, x) => s + x * x, 0));
-    expect(norm).toBeCloseTo(1, 4);
+    // halfvec (fp16) storage quantizes components — the round-tripped norm is
+    // unit-length only to ~1e-3.
+    expect(norm).toBeCloseTo(1, 3);
   });
 
   test("re-index only stale docs after enrich update", async () => {

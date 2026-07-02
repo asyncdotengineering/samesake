@@ -12,16 +12,16 @@ This is the **zero-dependency** option. It's perfect for local dev and fine for 
 ## Shared matcher setup
 
 ```ts title="matcher.ts"
-import { createMatcher, fashionRerank } from "@samesake/server";
+import { createMatcher, llmRerank } from "@samesake/server";
 import { products } from "./catalog.ts";
 import { geminiEmbed, geminiGenerate } from "./gemini.ts";
 
 export const matcher = createMatcher({
-  databaseUrl: process.env.DATABASE_URL!,
-  apiKey: process.env.API_KEY!,
+  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
+  apiKey: process.env.SAMESAKE_API_KEY!,
   embed: geminiEmbed,
   generate: geminiGenerate,
-  rerank: fashionRerank(geminiGenerate),
+  rerank: llmRerank(geminiGenerate),
 });
 
 await matcher.apply("market", { entities: [], collections: [products] });

@@ -6,9 +6,9 @@ import { loadEnv, company, PROJECT } from "./config.ts";
 import { makeMatcher, setupCatalog } from "./catalog.ts";
 
 loadEnv();
-const url = process.env.DATABASE_URL;
+const url = process.env.SAMESAKE_DATABASE_URL;
 if (!url) {
-  console.error("DATABASE_URL required (set it in the repo-root .env)");
+  console.error("SAMESAKE_DATABASE_URL required (set it in the repo-root .env)");
   process.exit(1);
 }
 if (!process.env.GEMINI_API_KEY) {

@@ -7,7 +7,7 @@ import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed } from "./fixtures.ts";
 import { SearchResultCache, type SearchCacheKey } from "../src/core/search-cache.ts";
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
 
 const cacheCollection = collection("things", {

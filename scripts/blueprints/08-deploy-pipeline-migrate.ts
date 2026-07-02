@@ -7,7 +7,7 @@
 // provider API keys.
 //
 // In CI / a deploy script:
-//   1. `samesake migrate --db=$DATABASE_URL` (or `prepareMigrations({...})`)
+//   1. `samesake migrate --db=$SAMESAKE_DATABASE_URL` (or `prepareMigrations({...})`)
 //   2. Deploy the app
 //   3. App boots with `migrate: "manual"` — no migrations on the hot path
 import { prepareMigrations } from "../../packages/server/src/index.ts";

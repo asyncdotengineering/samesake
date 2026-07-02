@@ -118,6 +118,11 @@ export interface SearchOpts {
    * `variantGroup`. Set false to return every variant.
    */
   diversify?: boolean;
+  /**
+   * HNSW recall/latency dial (pgvector `hnsw.ef_search`, clamped to 10–1000).
+   * Higher = better ANN recall, slower query. Omit for the pgvector default (40).
+   */
+  efSearch?: number;
 }
 
 // Second-stage rerank: how many first-stage candidates to hand the reranker.
@@ -139,6 +144,7 @@ interface Retrieval {
   vector: number[] | null;
   spaceSegments: Awaited<ReturnType<typeof buildQuerySpaceSegments>> | null;
   spaceVector: number[] | null;
+  efSearch: number | null;
 }
 
 const MAX_OFFSET = 200;
@@ -166,6 +172,7 @@ function resultCacheKey(project: string, collection: string, opts: SearchOpts): 
     limit: opts.limit ?? 20,
     offset: opts.offset ?? 0,
     facets: opts.facets ?? [],
+    efSearch: opts.efSearch ?? null,
   };
 }
 
@@ -239,6 +246,7 @@ async function runHybridQuery(
   relevanceFloor: number | null,
   limit: number,
   offset: number,
+  efSearch: number | null,
   mode: HybridRunMode = "search"
 ): Promise<{
   rows: Array<Record<string, unknown>>;
@@ -335,13 +343,13 @@ async function runHybridQuery(
 
     if (hasCos && vecRef) {
       const cosCol = needCosFloor
-        ? `, (1 - (embedding <=> ${vecRef}::vector))::float AS cos`
+        ? `, (1 - (embedding <=> ${vecRef}::halfvec))::float AS cos`
         : "";
       ctes.push(`sem AS (
-        SELECT id, row_number() OVER (ORDER BY embedding <=> ${vecRef}::vector) AS rn${cosCol}
+        SELECT id, row_number() OVER (ORDER BY embedding <=> ${vecRef}::halfvec) AS rn${cosCol}
         FROM ${table}
         WHERE embedding IS NOT NULL AND ${where}
-        ORDER BY embedding <=> ${vecRef}::vector
+        ORDER BY embedding <=> ${vecRef}::halfvec
         LIMIT ${CANDIDATES}
       )`);
       rankLegs.push({ cte: "sem", alias: "s", weight: weights.cosine });
@@ -349,10 +357,10 @@ async function runHybridQuery(
 
     if (hasSpc && spcRef) {
       ctes.push(`spc AS (
-        SELECT id, row_number() OVER (ORDER BY space_vec <=> ${spcRef}::vector) AS rn
+        SELECT id, row_number() OVER (ORDER BY space_vec <=> ${spcRef}::halfvec) AS rn
         FROM ${table}
         WHERE space_vec IS NOT NULL AND ${where}
-        ORDER BY space_vec <=> ${spcRef}::vector
+        ORDER BY space_vec <=> ${spcRef}::halfvec
         LIMIT ${CANDIDATES}
       )`);
       rankLegs.push({ cte: "spc", alias: "p", weight: weights.spaces });
@@ -442,7 +450,28 @@ async function runHybridQuery(
     }
   }
 
-  const rows = await ctx.storage.client("parameterized search query").unsafe(query, params);
+  // ANN session settings: iterative scans (pgvector 0.8+) keep filtered vector
+  // queries from under-returning (HNSW post-filter starvation); ef_search is the
+  // caller's recall/latency dial. SET LOCAL scopes both to this transaction.
+  const settings: string[] = [];
+  if (hasCos || hasSpc) {
+    const pgv = await ctx.storage.pgvectorVersion();
+    if (pgv) {
+      if (pgv[0] > 0 || pgv[1] >= 8) {
+        settings.push(`SET LOCAL hnsw.iterative_scan = 'relaxed_order'`);
+      }
+      if (efSearch != null) {
+        const ef = Math.max(10, Math.min(1000, Math.floor(efSearch)));
+        settings.push(`SET LOCAL hnsw.ef_search = ${ef}`);
+      }
+    }
+  }
+  const rows = await ctx.storage.unsafeWithSettings(
+    "parameterized search query",
+    settings,
+    query,
+    params
+  );
   const totalCandidates =
     mode === "explain"
       ? rows.length
@@ -607,6 +636,7 @@ export function makeSearchService(
       vector,
       spaceSegments,
       spaceVector,
+      efSearch: opts.efSearch ?? null,
     };
   }
 
@@ -646,6 +676,7 @@ export function makeSearchService(
       effectiveFloor,
       limit,
       r.offset,
+      r.efSearch,
       mode
     );
 
@@ -670,6 +701,7 @@ export function makeSearchService(
         effectiveFloor,
         limit,
         r.offset,
+        r.efSearch,
         mode
       );
       rows = retry.rows;

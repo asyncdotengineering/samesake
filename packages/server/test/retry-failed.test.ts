@@ -17,7 +17,7 @@ import { collectionTableName } from "../src/core/db-utils.ts";
 import { DEFAULT_MAX_ATTEMPTS } from "../src/core/pipeline-failure.ts";
 import { stubEmbed } from "./fixtures.ts";
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
 
 const baseCollection = collection("products", {

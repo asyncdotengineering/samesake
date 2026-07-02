@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { PostgresAdapter } from "../src/db/storage-adapter.ts";
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
 
 // Pins the atomicity guarantee that applyProject relies on: a throw inside the

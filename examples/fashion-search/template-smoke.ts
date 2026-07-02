@@ -41,8 +41,8 @@ const DOCS = [
 ];
 
 async function main() {
-  if (!process.env.DATABASE_URL || !process.env.GEMINI_API_KEY) throw new Error("DATABASE_URL and GEMINI_API_KEY required");
-  const matcher = createMatcher({ databaseUrl: process.env.DATABASE_URL, apiKey: process.env.GEMINI_API_KEY, migrate: "eager", embed: geminiEmbed, generate: geminiGenerate });
+  if (!process.env.SAMESAKE_DATABASE_URL || !process.env.GEMINI_API_KEY) throw new Error("SAMESAKE_DATABASE_URL and GEMINI_API_KEY required");
+  const matcher = createMatcher({ databaseUrl: process.env.SAMESAKE_DATABASE_URL, apiKey: process.env.GEMINI_API_KEY, migrate: "eager", embed: geminiEmbed, generate: geminiGenerate });
   await matcher.migrate();
   const applied = await matcher.apply(SLUG, { entities: [], collections: [smoke] });
   await matcher.pushDocuments(SLUG, COLL, DOCS);
@@ -51,7 +51,7 @@ async function main() {
   while ((await matcher.index(SLUG, COLL, { limit: 50 })).indexed > 0) {}
 
   console.log("=== enriched attributes (from the core template) ===");
-  const { db, close } = createDbFromUrl(process.env.DATABASE_URL!);
+  const { db, close } = createDbFromUrl(process.env.SAMESAKE_DATABASE_URL!);
   const rows = await db.execute<{ id: string; data: unknown; enriched: unknown }>(sql.raw(`SELECT id, data, enriched FROM ${applied.schema}.c_${COLL} ORDER BY id`));
   const colorsById: Record<string, string[]> = {};
   for (const r of rows) {

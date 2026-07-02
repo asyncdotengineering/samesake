@@ -10,7 +10,7 @@
 // is the declarative *content*: taxonomy, enums, two-stage schemas, prompts, embed-doc composer,
 // and NLQ defaults.
 import { z } from "zod";
-import type { CollectionFieldDef, DerivedDocContext, IndexingDef, PipelineDef, SpaceDef, StageDef } from "../types.ts";
+import type { CollectionFieldDef, CollectionSearchDef, DerivedDocContext, IndexingDef, PipelineDef, SpaceDef, StageDef } from "../types.ts";
 
 // ── Taxonomy + controlled vocabulary ────────────────────────────────────
 export const fashionTaxonomy = [
@@ -407,6 +407,13 @@ export function fashionSearchFields(opts: { brandPath?: string } = {}): Record<s
   };
 }
 
+// CollectionSearchDef fragment: which filters shopSearch's no-results recovery may drop, in
+// order. Gender and brand are deliberately absent — never show men's items on a women's query
+// or another brand on a brand query just to fill the page. Spread into your `search` def.
+export function fashionSearchDefaults(): Pick<CollectionSearchDef, "relaxableFilters"> {
+  return { relaxableFilters: ["colors", "material", "fit", "styles", "category", "price"] };
+}
+
 // Visual + price + category + freshness spaces (no `style` text-space — that duplicates the
 // cosine doc channel and would blow pgvector's 2000-d HNSW limit; see CHANGELOG).
 export function fashionSpaces(opts: { visual?: boolean; priceMax?: number } = {}): Record<string, SpaceDef> {
@@ -459,5 +466,6 @@ export const fashion = {
   extractSchema: fashionExtractSchema,
   extractInstructions: FASHION_EXTRACT_INSTRUCTIONS,
   nlq: { instructions: FASHION_NLQ_INSTRUCTIONS, schema: fashionNlqSchema },
+  searchDefaults: fashionSearchDefaults,
   evalAttributes: fashionEvalAttributes,
 };

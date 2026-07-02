@@ -8,5 +8,5 @@ export default defineConfig({
   dialect: "postgresql",
   schema: ["./node_modules/@porulle/core/dist/kernel/database/schema.js"],
   out: "./drizzle",
-  dbCredentials: { url: process.env.DATABASE_URL! },
+  dbCredentials: { url: process.env.SAMESAKE_DATABASE_URL! },
 });

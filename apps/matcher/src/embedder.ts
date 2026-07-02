@@ -17,7 +17,7 @@ export function makeGeminiEmbedder(apiKey: string | undefined): EmbedFn {
   if (!apiKey) {
     return async () => {
       throw new Error(
-        "[apps/matcher] GOOGLE_GENERATIVE_AI_API_KEY is not set; embedding requests will fail. " +
+        "[apps/matcher] GEMINI_API_KEY is not set; embedding requests will fail. " +
         "Either set the env var, or swap embedder.ts for a different provider."
       );
     };
@@ -42,7 +42,7 @@ export function makeGeminiParser(apiKey: string | undefined): ParseFn {
   if (!apiKey) {
     return async () => {
       throw new Error(
-        "[apps/matcher] GOOGLE_GENERATIVE_AI_API_KEY is not set; parse requests will fail. " +
+        "[apps/matcher] GEMINI_API_KEY is not set; parse requests will fail. " +
         "Either set the env var, or swap embedder.ts for a different provider."
       );
     };

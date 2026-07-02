@@ -79,7 +79,7 @@ export async function cacheOrJudge(
       hits[i] = {
         id: cached.id,
         grade: cached.grade,
-        facets: cached.facets,
+        esci: cached.esci,
         reason: cached.reason,
       };
     } else {
@@ -93,7 +93,7 @@ export async function cacheOrJudge(
   const fresh = await judge.grade(query, misses);
   for (let j = 0; j < misses.length; j++) {
     const c = misses[j]!;
-    const graded = fresh[j] ?? { id: c.id, grade: 0 as const, facets: {}, reason: "judge-error" };
+    const graded = fresh[j] ?? { id: c.id, grade: 0 as const, esci: "I" as const, reason: "judge-error" };
     const key = judgeCacheKey(judge.version, query, c.text);
     await cache.set(key, graded, judge.version);
     hits[missIndexes[j]!] = graded;

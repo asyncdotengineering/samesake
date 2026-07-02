@@ -72,13 +72,6 @@ structured record below. Faithful extraction is your only job — you do
 not match, deduplicate, or judge.
 </role>`;
 
-/**
- * @deprecated Use PRODUCT_PARSE_SCHEMA_CONTRACT + your own role/examples
- * via the entity's parse.instructions override. Kept as an alias for
- * 0.4.x callers; will be removed in 0.7.x.
- */
-export const DEFAULT_PRODUCT_PARSE_INSTRUCTIONS = DEFAULT_PRODUCT_PARSE_BODY;
-
 export interface ParseOptions {
   model?: string;
   instructions?: string;

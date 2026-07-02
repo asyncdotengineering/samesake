@@ -44,8 +44,8 @@ pnpm add @samesake/core @samesake/server
 </Tabs>
 
 ```bash title=".env"
-DATABASE_URL=postgres://localhost:5432/samesake_dev
-API_KEY=dev-key-please-change
+SAMESAKE_DATABASE_URL=postgres://localhost:5432/samesake_dev
+SAMESAKE_API_KEY=dev-key-please-change
 ```
 
 ## Build it
@@ -90,8 +90,8 @@ API_KEY=dev-key-please-change
    import { products } from "./catalog.ts";
 
    const matcher = createMatcher({
-     databaseUrl: process.env.DATABASE_URL!,
-     apiKey: process.env.API_KEY!,
+     databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
+     apiKey: process.env.SAMESAKE_API_KEY!,
      embed: async ({ text, dim }) => stubEmbed(text, dim), // swap for a real model later
    });
    ```

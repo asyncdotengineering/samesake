@@ -29,7 +29,7 @@ describe("pgvector HNSW dimension validation", () => {
     expect(() => entities.generateProjectDDL("ok", [customer])).not.toThrow();
   });
 
-  test("rejects collection embedding dimensions over the vector HNSW limit before DDL", () => {
+  test("rejects collection embedding dimensions over the halfvec HNSW limit before DDL", () => {
     const product = collection("products", {
       fields: { title: f.text({ searchable: true }) },
       indexing: {
@@ -39,11 +39,27 @@ describe("pgvector HNSW dimension validation", () => {
         },
         gate: gates.always,
       },
-      embeddings: { doc: { model: "too-large", dim: 2001 } },
+      embeddings: { doc: { model: "too-large", dim: 4001 } },
     });
 
     expect(() => collections.collectionTableDDL("project_bad", product)).toThrow(/products\.embeddings\.doc/);
-    expect(() => collections.collectionTableDDL("project_bad", product)).toThrow(/2001 exceeds pgvector HNSW vector limit of 2000/);
+    expect(() => collections.collectionTableDDL("project_bad", product)).toThrow(/4001 exceeds pgvector HNSW halfvec limit of 4000/);
+  });
+
+  test("collection embeddings between 2000 and 4000 dims are allowed (halfvec)", () => {
+    const product = collection("products", {
+      fields: { title: f.text({ searchable: true }) },
+      indexing: {
+        surfaces: {
+          embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => String(data.title ?? "").trim() },
+          fts_doc: { kind: "fts", build: ({ data }) => String(data.title ?? "").trim() },
+        },
+        gate: gates.always,
+      },
+      embeddings: { doc: { model: "big", dim: 3072 } },
+    });
+
+    expect(() => collections.collectionTableDDL("project_ok", product)).not.toThrow();
   });
 
   test("rejects entity embedding dimensions over the vector HNSW limit before DDL", () => {
@@ -54,6 +70,6 @@ describe("pgvector HNSW dimension validation", () => {
     });
 
     expect(() => entities.generateProjectDDL("bad", [customer])).toThrow(/customer\.embeddings\.name_emb/);
-    expect(() => entities.generateProjectDDL("bad", [customer])).toThrow(/halfvec/);
+    expect(() => entities.generateProjectDDL("bad", [customer])).toThrow(/2001 exceeds pgvector HNSW vector limit of 2000/);
   });
 });

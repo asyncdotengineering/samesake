@@ -29,7 +29,7 @@ shoes", and a multi-collection brand profile.
 ## Setup
 
 Requires Postgres with the `pgvector` extension (Neon, Supabase, or local). Copy `.env.example` to the
-repo root `.env` and fill in `DATABASE_URL`, `GEMINI_API_KEY`, and `OPENAI_API_KEY`.
+repo root `.env` and fill in `SAMESAKE_DATABASE_URL`, `GEMINI_API_KEY`, and `OPENAI_API_KEY`.
 
 ```bash
 bun install

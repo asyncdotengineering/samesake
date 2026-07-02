@@ -1,7 +1,7 @@
 {
   "version": 1,
   "country": "LK",
-  "notes": "Golden query set for fashion search eval. Types follow Baymard query taxonomy + research/industry findings. constraints.max_price enables objective violation metrics (LKR).",
+  "notes": "Golden query set for fashion search eval. Types follow Baymard query taxonomy + research/industry findings. constraints use the search filter vocabulary (price: {$lte: N}) for objective violation metrics (LKR).",
   "queries": [
     { "id": "kw-01", "type": "keyword", "query": "red dress" },
     { "id": "kw-02", "type": "keyword", "query": "denim jacket" },
@@ -32,11 +32,11 @@
     { "id": "use-09", "type": "use-case", "query": "something light for hot weather" },
     { "id": "use-10", "type": "use-case", "query": "resort wear for a holiday" },
 
-    { "id": "price-01", "type": "price", "query": "dress under 5000", "constraints": { "max_price": 5000 } },
-    { "id": "price-02", "type": "price", "query": "office shirt under 3000 rupees", "constraints": { "max_price": 3000 } },
-    { "id": "price-03", "type": "price", "query": "cheap casual tshirts", "constraints": { "max_price": 2500 } },
-    { "id": "price-04", "type": "price", "query": "party dress under 10000", "constraints": { "max_price": 10000 } },
-    { "id": "price-05", "type": "price", "query": "linen pants under 6000", "constraints": { "max_price": 6000 } },
+    { "id": "price-01", "type": "price", "query": "dress under 5000", "constraints": { "price": { "$lte": 5000 } } },
+    { "id": "price-02", "type": "price", "query": "office shirt under 3000 rupees", "constraints": { "price": { "$lte": 3000 } } },
+    { "id": "price-03", "type": "price", "query": "cheap casual tshirts", "constraints": { "price": { "$lte": 2500 } } },
+    { "id": "price-04", "type": "price", "query": "party dress under 10000", "constraints": { "price": { "$lte": 10000 } } },
+    { "id": "price-05", "type": "price", "query": "linen pants under 6000", "constraints": { "price": { "$lte": 6000 } } },
 
     { "id": "neg-01", "type": "negation", "query": "long dress but not bodycon" },
     { "id": "neg-02", "type": "negation", "query": "black top without prints" },

@@ -44,6 +44,7 @@ export type {
   SearchEvalQuery,
   SearchEvalConfig,
   SearchEvalResult,
+  SearchEvalJudge,
   CalibrateResult,
 } from "./core/calibrate-search.ts";
 export { scoreEnrichment } from "./core/evaluate-enrich.ts";
@@ -67,10 +68,20 @@ export type {
 export type {
   RelevanceJudge,
   JudgedHit,
-  FacetGrades,
+  EsciLabel,
 } from "./core/eval/judge.ts";
-export { makeLlmJudge, candidateSummary, FASHION_JUDGE_SYSTEM } from "./core/eval/judge.ts";
-export { fashionRerank } from "./core/rerank.ts";
+export {
+  makeLlmJudge,
+  candidateSummary,
+  judgeVersion,
+  modelFamily,
+  assertJudgeFamilySeparation,
+  ESCI_JUDGE_SYSTEM,
+  ESCI_GAIN,
+  ESCI_SOFT_POSITIVE_FLOOR,
+  JUDGE_PROMPT_HASH,
+} from "./core/eval/judge.ts";
+export { llmRerank } from "./core/rerank.ts";
 export type { RerankBlendWeights } from "./core/rerank.ts";
 export { DEFAULT_RERANK_BLEND_WEIGHTS } from "./core/rerank.ts";
 export { calibrateJudge, isJudgeTrusted } from "./core/eval/calibrate.ts";
@@ -87,7 +98,7 @@ export {
   agentFindProductsRequestSchema,
   agentFindProductsResponseSchema,
 } from "./core/agent-tools.ts";
-export type { FashionCatalogSyncEvent } from "./core/fashion-search.ts";
+export type { CatalogSyncEvent } from "./core/catalog-sync.ts";
 
 // Parse schema + default prompt — exported so consumers can:
 //   1. Type their parse function's return value against ParsedProduct
@@ -97,7 +108,7 @@ export type { FashionCatalogSyncEvent } from "./core/fashion-search.ts";
 export {
   ParsedProductSchema,
   type ParsedProduct,
-  DEFAULT_PRODUCT_PARSE_INSTRUCTIONS,
+  DEFAULT_PRODUCT_PARSE_BODY,
 } from "./core/parse.ts";
 
 // DDL emitter — pure utility, useful for consumers that maintain their own

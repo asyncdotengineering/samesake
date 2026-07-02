@@ -1,11 +1,16 @@
 ---
 title: Relevance judge
-description: makeLlmJudge — the graded LLM relevance judge that powers both offline eval and fashionRerank, with versioning, caching, and calibration.
+description: makeLlmJudge — the graded LLM relevance judge that powers both offline eval and llmRerank, with versioning, caching, and calibration.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-The relevance judge scores candidate products against a shopper query on a **0 / 1 / 2** scale with per-facet sub-grades. The same judge implementation powers both `matcher.runEval()` and [`fashionRerank`](/reference/reranking/) — one judge, two consumers.
+The relevance judge classifies candidate products against a shopper query on the 4-class **ESCI** rubric — **E**xact / **S**ubstitute / **C**omplement / **I**rrelevant, mapped to gains **3 / 2 / 1 / 0** (Substitute is a soft positive). The same judge implementation powers both `matcher.runEval()` and [`llmRerank`](/reference/reranking/) — one judge, two consumers.
+
+Two honesty rules are enforced by the framework:
+
+1. **Family separation** — an eval judge must come from a different model family than the collection's enrich pipeline (a Gemini judge grading Gemini-written `search_document`s flatters itself). `runEval` and `evaluateSearch` throw on a same-family (or undeclared) judge when the collection is enriched.
+2. **Prompt-pinned version** — the judge version embeds a content hash of the rubric (`esci-v1@<hash>`), so any prompt edit automatically invalidates cached grades.
 
 ## API
 
@@ -21,14 +26,15 @@ const judge = makeLlmJudge(generate, {
 
 // RelevanceJudge
 interface RelevanceJudge {
-  version: string;
+  version: string;      // "<tag>@<sha256(rubric)[:8]>"
+  model?: string;       // used for enrich/judge family separation
   grade(query: string, candidates: JudgeCandidate[]): Promise<JudgedHit[]>;
 }
 
 interface JudgedHit {
   id: string;
-  grade: 0 | 1 | 2;
-  facets: FacetGrades; // category, color, occasion, gender, style, material
+  grade: 0 | 1 | 2 | 3; // ESCI gain: E=3, S=2, C=1, I=0
+  esci: "E" | "S" | "C" | "I";
   reason: string;
 }
 ```
@@ -37,20 +43,19 @@ interface JudgedHit {
 
 The judge calls your `generate` with `model: opts.model`. Default `undefined` — your `generate` picks. No hardcoded model in the judge layer.
 
-To pin a model:
+To pin a model (declare it — `runEval` needs it for family separation):
 
 ```ts
-const judge = makeLlmJudge(generate, {
-  model: "gemini-3.1-flash-lite",
-  version: "fashion-judge-v2",
+const judge = makeLlmJudge(openaiGenerate, {
+  model: "gpt-4.1-mini", // cross-family vs a Gemini enrich pipeline
 });
 ```
 
 ## System prompt
 
-The judge uses `FASHION_JUDGE_SYSTEM` verbatim:
+The judge uses `ESCI_JUDGE_SYSTEM` verbatim:
 
-> You are a strict multilingual commerce search relevance judge. Score each candidate 0 (irrelevant), 1 (moderately relevant), or 2 (highly relevant). Match meaning, synonyms, and translations; do not require keyword overlap. Treat explicit shopper attributes such as product type, color, material, size, and use case as required constraints. If a candidate clearly has a conflicting attribute, score it 0. For normalized color fields, require the exact requested base color; neighboring shades are not matches unless the requested color is also present. Also score per-facet relevance (category, color, occasion, gender, style, material) as 0|1|2 and give a short reason.
+> You are a strict multilingual e-commerce search relevance judge. Classify each candidate against the shopper's query as exactly one of: **E (Exact)** — satisfies every explicit constraint in the query; **S (Substitute)** — not exact but a reasonable alternative for the same need; **C (Complement)** — typically bought or worn together with what was asked for; **I (Irrelevant)** — fails the intent or conflicts with an explicit attribute. A candidate with a conflicting required attribute (wrong base color, wrong gender, over an explicit price bound) is I, not S.
 
 ## User prompt shape
 
@@ -62,7 +67,7 @@ Candidate products:
 1. {candidate.text}
 2. {candidate.text}
 ...
-Return a grade 0|1|2 per candidate with facet sub-grades and a short reason. Keep the original candidate order.
+Return one ESCI class (E|S|C|I) per candidate with a short reason. Keep the original candidate order.
 ```
 
 Candidate text comes from `candidateSummary` when built from product data (title, brand, **price**, category, colors, occasions, styles, material, pattern, fit, description) or from the `text` field passed in (rerank path uses `rerankCandidateText`). Price is included so the judge can verify numeric constraints like "under 5000" — without it, numeric queries get under-graded (a judge that can't see the price can't confirm the bound).
@@ -81,22 +86,10 @@ The judge passes `judgeSchema` as `generate`'s `schema` (provider JSON / respons
         "type": "object",
         "properties": {
           "id": { "type": "string" },
-          "grade": { "type": "number", "enum": [0, 1, 2] },
-          "facets": {
-            "type": "object",
-            "properties": {
-              "category": { "type": "number", "enum": [0, 1, 2] },
-              "color": { "type": "number", "enum": [0, 1, 2] },
-              "occasion": { "type": "number", "enum": [0, 1, 2] },
-              "gender": { "type": "number", "enum": [0, 1, 2] },
-              "style": { "type": "number", "enum": [0, 1, 2] },
-              "material": { "type": "number", "enum": [0, 1, 2] }
-            },
-            "additionalProperties": false
-          },
+          "esci": { "type": "string", "enum": ["E", "S", "C", "I"] },
           "reason": { "type": "string" }
         },
-        "required": ["id", "grade", "reason"],
+        "required": ["id", "esci", "reason"],
         "additionalProperties": false
       }
     }
@@ -106,7 +99,7 @@ The judge passes `judgeSchema` as `generate`'s `schema` (provider JSON / respons
 }
 ```
 
-`parseJudgeOutput` maps the response back to `JudgedHit[]`, preserving candidate order. Missing or malformed rows get `grade: 0, reason: "judge-error"`.
+`parseJudgeOutput` maps the response back to `JudgedHit[]`, preserving candidate order. Missing or malformed rows get `grade: 0, esci: "I", reason: "judge-error"`.
 
 ## Mechanics
 
@@ -114,11 +107,11 @@ The judge passes `judgeSchema` as `generate`'s `schema` (provider JSON / respons
 
 **Cache (eval path):** `runEval` caches judge calls under `evals/.cache/` with key `sha1(judgeVersion|query|candidate.text)` (`judgeCacheKey` in `core/eval/cache.ts`). Re-runs over an unchanged golden set issue zero new judge calls.
 
-**Never throws:** generate errors, malformed output, or omitted candidates → `grade: 0, reason: "judge-error"`. The search and eval paths continue.
+**Never throws (grading):** generate errors, malformed output, or omitted candidates → `grade: 0, esci: "I", reason: "judge-error"`. The search and eval paths continue. (Family separation *does* throw — an eval that would lie should not run.)
 
 ## Versioning and calibration
 
-`version` (default `fashion-judge-v1`) is part of the cache key **and** the calibration unit. Change prompt or model → bump `version` → re-run `calibrateJudge` before trusting the judge to gate.
+`version` resolves to `<tag>@<sha256(ESCI_JUDGE_SYSTEM)[:8]>` (default tag `esci-v1`), so the rubric content is pinned into the cache key **and** the calibration unit — editing the prompt invalidates caches automatically. Changing the model still warrants re-running `calibrateJudge` before trusting the judge to gate.
 
 ```ts
 import { calibrateJudge, isJudgeTrusted } from "@samesake/server";
@@ -127,18 +120,18 @@ const result = await calibrateJudge(judge, humanLabels, { minLabels: 5 });
 const trusted = isJudgeTrusted(result); // default bar: F1 ≥ 0.80
 ```
 
-Calibration reports precision, recall, F1, and Cohen's κ (κ-primary for ordinal agreement). See [Eval gate — tune floor and exponents](/guides/eval-gate/).
+Calibration reports precision, recall, F1, and Cohen's κ on the 0–3 gains (κ-primary for ordinal agreement); the relevance floor defaults to 2 — Substitute or better counts as relevant. See [Eval gate — tune floor and exponents](/guides/eval-gate/).
 
 <Aside type="caution">
-Do not change ranking or gate thresholds based on an uncalibrated judge. Bump `version` whenever the rubric changes so stale cache entries cannot mix.
+Do not change ranking or gate thresholds based on an uncalibrated judge. The rubric hash handles prompt drift; pass a new `version` tag for model or methodology changes.
 </Aside>
 
 ## Two consumers
 
 | Consumer | Score mapping | Use |
 |----------|---------------|-----|
-| **Rerank** (`fashionRerank`) | `grade / 2 → [0, 1]` | Second-stage blend with RRF |
-| **Eval** (`runEval`) | raw `grade` | nDCG@K; `grade ≥ floor` for Hit@K; `facets` for decomposition |
+| **Rerank** (`llmRerank`) | `grade / 3 → [0, 1]` | Second-stage blend with RRF |
+| **Eval** (`runEval`) | raw `grade` (0–3) | nDCG@K; `grade ≥ floor` (default 2 = Substitute) for Hit@K/MRR |
 
 ## Related
 

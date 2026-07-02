@@ -6,7 +6,7 @@ import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed } from "./fixtures.ts";
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
 const indexingByTitle = {
   surfaces: {
@@ -236,7 +236,7 @@ describeIf("collection migrations", () => {
         AND a.attname = 'embedding' AND NOT a.attisdropped
     `));
     await close();
-    expect(col[0]!.coltype).toBe("vector(16)");
+    expect(col[0]!.coltype).toBe("halfvec(16)");
   });
 
   test("apply fails when indexing manifest references missing embedding", async () => {

@@ -10,7 +10,7 @@ import { fetchRemoteImageSafe, __setImageTransport } from "../src/core/fetch-ima
 import { encodeImage } from "../src/core/spaces.ts";
 import { stubEmbed } from "./fixtures.ts";
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
 
 function peakVector(dim: number, peak: number): number[] {

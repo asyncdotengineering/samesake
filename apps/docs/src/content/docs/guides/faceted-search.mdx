@@ -86,15 +86,15 @@ For a catalog that changes often, schedule that trio (or wire it to webhooks) so
 Pass the facet field names on `search`. samesake runs the same query and filters you would for results, then aggregates counts for each requested facet **on that narrowed set**:
 
 ```ts title="search.ts"
-import { createMatcher, fashionRerank } from "@samesake/server";
+import { createMatcher, llmRerank } from "@samesake/server";
 import { geminiEmbed, geminiGenerate } from "./gemini.ts";
 
 const matcher = createMatcher({
-  databaseUrl: process.env.DATABASE_URL!,
-  apiKey: process.env.API_KEY!,
+  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
+  apiKey: process.env.SAMESAKE_API_KEY!,
   embed: geminiEmbed,
   generate: geminiGenerate,
-  rerank: fashionRerank(geminiGenerate),
+  rerank: llmRerank(geminiGenerate),
 });
 
 const result = await matcher.search("shop", "products", {
@@ -195,7 +195,7 @@ Two latency knobs worth knowing:
 - **`rerank: false`** on hot paths skips the second-stage LLM judge when you want the snappiest first-stage RRF order.
 - **`weights`** per query lean harder on keywords vs meaning vs visual without reindexing.
 
-For production quality on fashion, keep `fashionRerank(geminiGenerate)` wired globally and only opt out on typeahead if profiling says you need to.
+For production quality on fashion, keep `llmRerank(geminiGenerate)` wired globally and only opt out on typeahead if profiling says you need to.
 
 ## Sensible defaults recap
 
@@ -204,7 +204,7 @@ For production quality on fashion, keep `fashionRerank(geminiGenerate)` wired gl
 | Field shapes + facet flags | `fashion.fields()` |
 | Enrich + gate | `fashion.enrichPipeline()` + `fashion.indexing()` |
 | Embeddings | `gemini-embedding-2`, dim 1536 |
-| Generate / judge / rerank | `gemini-3.1-flash-lite` via `fashionRerank(geminiGenerate)` |
+| Generate / judge / rerank | `gemini-3.1-flash-lite` via `llmRerank(geminiGenerate)` |
 | Visual signal | `fashion.spaces({ visual: true })` |
 
 Copy the provider adapters from [Providers](/reference/providers/), `apply` once, then the push → enrich → index loop above.

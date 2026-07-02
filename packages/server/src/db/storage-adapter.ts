@@ -2,7 +2,7 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { SQL } from "drizzle-orm";
 import type { CollectionDef } from "@samesake/core";
 import { computeFacets, type FacetResult } from "./postgres/facets.ts";
-import { getPgClient, type PgUnsafe } from "../core/db-utils.ts";
+import { getPgClient, getPgSql, type PgUnsafe } from "../core/db-utils.ts";
 
 /** Inputs for a facet aggregation over a collection's filtered candidate set. */
 export interface FacetQuery {
@@ -49,6 +49,18 @@ export interface StorageAdapter {
   upsertDocument(table: string, id: string, dataJson: string, contentHash: string): Promise<void>;
   /** Delete documents by id; returns how many were removed. */
   deleteDocuments(table: string, ids: string[]): Promise<number>;
+  /** Installed pgvector version as [major, minor], cached; null when absent. */
+  pgvectorVersion(): Promise<[number, number] | null>;
+  /**
+   * Run a parameterized query with `SET LOCAL` session settings scoped to it
+   * (one transaction). With no settings, behaves like `client().unsafe`.
+   */
+  unsafeWithSettings(
+    context: string,
+    settings: string[],
+    query: string,
+    params: unknown[]
+  ): Promise<Record<string, unknown>[]>;
 }
 
 /**
@@ -57,6 +69,8 @@ export interface StorageAdapter {
  * operations are migrated.
  */
 export class PostgresAdapter implements StorageAdapter {
+  #pgvectorVersion: [number, number] | null | undefined;
+
   constructor(private readonly handle: { db: PostgresJsDatabase; close: () => Promise<void> }) {}
 
   get db(): PostgresJsDatabase {
@@ -65,6 +79,31 @@ export class PostgresAdapter implements StorageAdapter {
 
   client(context = "query"): PgUnsafe {
     return getPgClient(this.handle.db, context);
+  }
+
+  async pgvectorVersion(): Promise<[number, number] | null> {
+    if (this.#pgvectorVersion !== undefined) return this.#pgvectorVersion;
+    const rows = await getPgClient(this.handle.db, "capabilities").unsafe(
+      `SELECT extversion FROM pg_extension WHERE extname = 'vector'`
+    );
+    const raw = rows[0]?.extversion;
+    const m = typeof raw === "string" ? raw.match(/^(\d+)\.(\d+)/) : null;
+    this.#pgvectorVersion = m ? [Number(m[1]), Number(m[2])] : null;
+    return this.#pgvectorVersion;
+  }
+
+  async unsafeWithSettings(
+    context: string,
+    settings: string[],
+    query: string,
+    params: unknown[]
+  ): Promise<Record<string, unknown>[]> {
+    const sql = getPgSql(this.handle.db, context);
+    if (!settings.length) return sql.unsafe(query, params);
+    return sql.begin(async (tx) => {
+      for (const s of settings) await tx.unsafe(s);
+      return tx.unsafe(query, params);
+    });
   }
 
   transaction<T>(fn: (tx: PostgresJsDatabase) => Promise<T>): Promise<T> {

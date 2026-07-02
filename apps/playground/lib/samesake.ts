@@ -41,8 +41,8 @@ let _matcher: ReturnType<typeof createMatcher> | null = null;
 export function getMatcher() {
   if (_matcher) return _matcher;
   _matcher = createMatcher({
-    databaseUrl: process.env.DATABASE_URL!,
-    apiKey: process.env.API_KEY!,
+    databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
+    apiKey: process.env.SAMESAKE_API_KEY!,
     migrate: "eager",
     embed: geminiEmbed,
     generate: geminiGenerate,

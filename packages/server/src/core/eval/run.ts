@@ -2,15 +2,24 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { MatcherCtx } from "../../types.ts";
 import type { SearchExplainResult, SearchHit, SearchService } from "../search.ts";
+import { getByPath } from "../db-utils.ts";
 import { cacheOrJudge, makeFileJudgeCache, type JudgeCache } from "./cache.ts";
-import { candidateSummary, type JudgedHit, type RelevanceJudge } from "./judge.ts";
+import {
+  assertJudgeFamilySeparation,
+  candidateSummary,
+  ESCI_SOFT_POSITIVE_FLOOR,
+  type JudgedHit,
+  type RelevanceJudge,
+} from "./judge.ts";
 import {
   constraintViolations,
   hitAtK,
   mrr,
   ndcgAtK,
   nullRate,
+  type ConstraintHit,
   type GoldenConstraints,
+  type Grade,
 } from "./metrics.ts";
 
 export type MetricKey =
@@ -25,14 +34,15 @@ export interface GoldenQuery {
   type: string;
   query: string;
   constraints?: GoldenConstraints;
-  grades?: Record<string, 0 | 1 | 2>;
+  grades?: Record<string, Grade>;
 }
 
 export interface EvalOpts {
   queries: GoldenQuery[];
   judge: RelevanceJudge;
   k?: number;
-  relevanceFloor?: 1 | 2;
+  /** ESCI gain a hit must reach to count as relevant. Default 2 — Substitute is a soft positive. */
+  relevanceFloor?: 1 | 2 | 3;
   thresholds?: Partial<Record<MetricKey, number>>;
   artifactDir?: string;
   cacheDir?: string;
@@ -59,21 +69,12 @@ export interface EvalResult {
   artifactPath: string;
 }
 
-function hitConstraintFields(hit: SearchHit): {
-  price?: number;
-  colors?: string[];
-  gender?: string;
-  category?: string;
-} {
-  const price = hit.price ?? hit.data?.price;
-  const colors = hit.colors ?? hit.data?.colors;
-  const gender = hit.gender ?? hit.data?.gender;
-  const category = hit.category ?? hit.data?.category;
+// Constraint fields resolve against whatever the collection schema declares: the hit's
+// projected columns first, then the raw document data by path.
+function constraintHit(hit: SearchHit): ConstraintHit {
   return {
-    price: typeof price === "number" ? price : price != null ? Number(price) : undefined,
-    colors: Array.isArray(colors) ? colors.map(String) : undefined,
-    gender: gender != null ? String(gender) : undefined,
-    category: category != null ? String(category) : undefined,
+    id: hit.id,
+    value: (field) => (field in hit ? hit[field] : getByPath(hit.data, field)),
   };
 }
 
@@ -168,7 +169,15 @@ export async function runEval(
   opts: EvalOpts
 ): Promise<EvalResult> {
   const k = opts.k ?? 10;
-  const floor = opts.relevanceFloor ?? 1;
+  const floor = opts.relevanceFloor ?? ESCI_SOFT_POSITIVE_FLOOR;
+
+  // Judge honesty gate: never grade a collection with a judge from the same model family
+  // that wrote its enrichment (self-preference bias inflates every metric downstream).
+  const def = await searchService.getCollectionDef(project, collection);
+  const enrichModels = (def?.enrich?.stages ?? []).map((s) => s.model);
+  if (enrichModels.length > 0) {
+    assertJudgeFamilySeparation(opts.judge.model, enrichModels);
+  }
   const cacheDir = opts.cacheDir ?? join(process.cwd(), "evals", ".cache");
   const artifactDir = opts.artifactDir ?? join(process.cwd(), "evals", "runs");
   const cache: JudgeCache = makeFileJudgeCache(cacheDir);
@@ -182,10 +191,7 @@ export async function runEval(
         cache: false,
       });
       const hits = result.hits.slice(0, k);
-      const violations = constraintViolations(
-        hits.map((h) => ({ id: h.id, ...hitConstraintFields(h) })),
-        q.constraints
-      );
+      const violations = constraintViolations(hits.map(constraintHit), q.constraints);
       const candidates = hits.map(candidateFromHit);
       const graded = await cacheOrJudge(opts.judge, q.query, candidates, cache);
       const grades = graded.map((g) => g.grade);

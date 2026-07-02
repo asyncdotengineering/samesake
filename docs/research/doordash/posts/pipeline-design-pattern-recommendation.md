@@ -1,0 +1,44 @@
+# Leveraging the Pipeline Design Pattern to Modularize Recommendation Services
+URL: https://careersatdoordash.com/blog/pipeline-design-pattern-recommendation/
+
+## Key mechanisms
+- **DAG workflow execution core (“Workflow”)**: Explore-page serving is modeled as a directed acyclic graph of jobs (operators), not imperative fan-out inside one orchestrator. Each job is a swappable module with shared framework support for guardrails, observability, and context propagation.
+- **Single-pass candidate retrieval (Figure 1)**: Candidate Retrieval fetches store/restaurant/promotion data **once for the entire explore page**, then hands candidates to downstream jobs. The old design repeated retrieval → ranking → hydration **per carousel**, causing duplicate downstream calls that did not scale as carousel count grew.
+- **Explicit operator chain (Figure 1)**: Candidate Retrieval → Content Grouping (collections for ranking/presentation) → Ranking (per-collection ML scores via resolved model ID + feature generation + prediction-service call) → Experience Decorator (deduped hydration: ETA, fees, images, ratings for the unique store set) → Layout Processor (presentation placeholders) → Post Processor (programmatic rank/trim across page elements).
+- **Recall/precision split**: Ranking was moved out of Search Service into Feed Service. Search becomes a **pure recall dependency**; Feed owns personalization precision. That unlocks ranking **within** collections and **across** carousels/store lists/banners (previously ranking was trapped inside each carousel’s retrieval scope).
+- **Cross-surface post-processing**: Post Processor ranks and trims **all** explore elements together so less-relevant carousels/lists can be dropped and page size reduced—not just reordering items inside one module.
+- **Pipeline-native observability (Figure 2)**: Workflow telemetry auto-captures each component’s context and results (“what happened and why”), layered on top of consumer analytics, exposed via a self-service interface for engineers and product stakeholders.
+- **Reported serving wins (no model/eval detail)**: After modularization—35% p95 latency reduction on the explore feed endpoint, 60% Feed Service CPU reduction, 80% Search Service QPS reduction, 50% Search Service CPU reduction, ~4,500 CPU cores saved overall. Ranking is described only as model-ID resolution + feature materialization + prediction-service scoring—no model names, dims, losses, retrieval indexes, or offline eval thresholds.
+
+## Learnings for samesake
+### L1: Make every load-bearing stage a named, non-bypassable operator  [maps: G3 | G6 | N/A]
+- DoorDash evidence: Common work (retrieval, ranking, hydration) was duplicated across carousels because stages lived inside imperative service code rather than as first-class pipeline jobs; modularization required extracting operators with standardized guardrails/telemetry.
+- Samesake action: Implement the RFC’s `PipelineDef.compose` + `PipelineDef.gate` inside `enrichOne` (`packages/server/src/core/enrich-pipeline.ts`) and treat `ingest → enrich(compose→gate) → index → search` as the only supported path—delete consumer-side `compose-embed.ts` / playground manual compose (RFC C4–C7). Add G6 columns (`pipeline_status`, `attempt_count`, `last_error`, `next_attempt_at`) so a skipped or failed operator leaves durable state instead of “`enriched_at IS NULL` with no reason.”
+- Why / caveat: DoorDash’s pain was **duplicate orchestration at page scale**; samesake’s analogue is **duplicate/skipped orchestration at catalog scale** (every example hand-rolling compose). The operator pattern transfers; the 4,500-core savings do not.
+
+### L2: Split first-stage recall from second-stage precision  [maps: G4 | G7 | N/A]
+- DoorDash evidence: Coupling ranking inside Search limited optimization to candidates already retrieved per carousel; moving ranking to Feed made Search recall-only and enabled cross-collection ranking and trimming in Post Processor.
+- Samesake action: Keep RRF over FTS + cosine + spaces + recency as the **recall/fusion layer** in `packages/server/src/core/search.ts`; promote rerank (`rerank_doc` + default `fashionRerank`) and normalized business/availability boosts (`CollectionSearchDef.rankingPolicy` in core, RFC C11–C13) as explicit **post-fusion precision stages**—not ad hoc constants in `fashion-search.ts` on raw RRF scores.
+- Why / caveat: Same architectural separation (recall vs precision), different mechanism—RRF+pgvector rerank vs DoorDash’s feature-store + prediction service. DoorDash gives no guidance on reranker choice; samesake still owns G4/Q1 (LLM vs visual rerank).
+
+### L3: Framework-level guardrails on operators, not scattered predicates  [maps: G2 | N/A]
+- DoorDash evidence: Individual operators get “standardized framework-level support for **guardrails**” rather than each service embedding its own validation logic.
+- Samesake action: Replace the fashion-specific skip in `embed-index.ts:339-345` (`is_apparel_product` / `category === 'other'`) with the template-supplied `gate()` that quarantines low-confidence/non-apparel rows (`pipeline_status='quarantined'`), nulls vectors, and excludes them from **all** search channels including FTS-on-title (RFC REQ-5b/REQ-6b). Confidence already exists in enrichment (`fashion.ts:132-133`, `review.ts`) but today is post-hoc only.
+- Why / caveat: DoorDash guardrails are unstated (likely timeouts/fallbacks/rate limits). The **placement** lesson transfers; the **fashion confidence floor (0.4)** remains samesake-specific per RFC Q4.
+
+### L4: Per-stage telemetry that explains outcomes, not just counters  [maps: G6 | NEW | N/A]
+- DoorDash evidence: Pipeline telemetry auto-captures workflow component context and results so engineers can answer “what happened and why,” via self-service tooling (Figure 2)—beyond traditional uptime monitoring.
+- Samesake action: Extend existing `ctx.observability` hooks in enrich/index/search with **structured, row-level pipeline events**: compose empty, gate quarantine reason, image revalidation change, retry backoff, error-rate abort (RFC G6). Surface aggregate + per-row status through the review endpoint and search `explain` mode (per-channel ranks already exist; add pipeline/quarantine context). Do not build DoorDash-scale self-serve BI—log + review API is enough at fashion-catalog scale.
+- Why / caveat: samesake already has search `explain` and some metrics (`nlq_degraded_total`, rerank warnings); the gap is **index-time/pipeline lifecycle explainability**, which timestamps alone (`ingested_at`/`enriched_at`/`indexed_at`) do not provide.
+
+### L5: Dedupe expensive hydration/fetch work across downstream consumers  [maps: G1 | G6 | N/A]
+- DoorDash evidence: Experience Decorator hydrates the **unique store set once** across all collections; Candidate Retrieval eliminated per-carousel duplicate fetches.
+- Samesake action: (a) Batch image fetch/embed in `embed-index.ts` with failure → `pipeline_status='failed'` (RFC M5), not zero-vector corruption; (b) scheduled `revalidateImages` conditional-GET pass instead of re-fetching every image on every ingest (RFC C9); (c) fold image validators into `stageCacheKey` so re-enrich after CDN swap does not hit URL-keyed 90-day stage cache (RFC M1). Mirror DoorDash’s “fetch once, use many” at **catalog/image** granularity, not carousel granularity.
+- Why / caveat: DoorDash dedupes **runtime request fan-out**; samesake dedupes **batch indexing + cache invalidation**. No transfer of their ETA/fee hydration pattern.
+
+## Applicability caveats
+- **Not an ML/search paper**: No embeddings, vector indexes, fusion formulas, reranker architecture, training losses, or offline eval—only “call prediction service with features.” Do not infer model or threshold choices from this post.
+- **Different product surface**: DoorDash optimizes a multi-module **explore feed layout** (carousels, banners, tiles); samesake is **single-vertical product search** over one catalog—cross-carousel Post Processor logic does not map to “rank search hits vs rank page modules.”
+- **Scale mismatch**: Reported wins (80% Search QPS cut, ~4,500 cores) come from eliminating **N× carousel fan-out** on a high-QPS consumer app; a fashion catalog indexer/search API will not see those magnitudes.
+- **Ranking semantics differ**: DoorDash ranking is ML feature-scoring for restaurants/stores; samesake’s precision layer is RRF + optional cross-encoder/LLM rerank + business boosts on **product SKUs**—the recall/precision *separation* transfers; their ranking *implementation* does not.
+- **Thin on guardrail specifics**: “Guardrails” and “telemetry” are named but not specified (no timeout budgets, fallback policies, or quality thresholds)—treat as architectural permission for the RFC’s gate/retry/observability work, not as a spec to copy.

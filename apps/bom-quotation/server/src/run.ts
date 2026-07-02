@@ -10,9 +10,9 @@ import { renderQuotationPdf } from "./pipeline/quote.ts";
 import type { CustomerRef } from "../../shared/types.ts";
 
 loadEnv();
-const url = process.env.DATABASE_URL;
+const url = process.env.SAMESAKE_DATABASE_URL;
 if (!url || !process.env.GEMINI_API_KEY) {
-  console.error("DATABASE_URL and GEMINI_API_KEY are required");
+  console.error("SAMESAKE_DATABASE_URL and GEMINI_API_KEY are required");
   process.exit(1);
 }
 

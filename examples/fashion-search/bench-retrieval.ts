@@ -158,9 +158,9 @@ const GATES: Array<{ domain: string; config: string; metric: "ndcg" | "recall"; 
 ];
 
 async function main() {
-  if (!process.env.DATABASE_URL || !process.env.GEMINI_API_KEY) throw new Error("DATABASE_URL and GEMINI_API_KEY required");
+  if (!process.env.SAMESAKE_DATABASE_URL || !process.env.GEMINI_API_KEY) throw new Error("SAMESAKE_DATABASE_URL and GEMINI_API_KEY required");
   const matcher = createMatcher({
-    databaseUrl: process.env.DATABASE_URL, apiKey: process.env.GEMINI_API_KEY,
+    databaseUrl: process.env.SAMESAKE_DATABASE_URL, apiKey: process.env.GEMINI_API_KEY,
     migrate: "eager", embed: geminiEmbed, generate: geminiGenerate,
   });
   await matcher.migrate();

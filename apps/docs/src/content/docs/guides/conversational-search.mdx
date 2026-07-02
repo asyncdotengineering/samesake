@@ -54,17 +54,24 @@ Currency symbols and commas are stripped (`"Rs 5,000"` → `5000`). Crucially, t
 Hard filters always win over semantic similarity. A gorgeous 5,200 dress that's a perfect semantic match for *"summer wedding"* is still dropped by `price ≤ 5000`. That's the point — the shopper drew a wall.
 </Aside>
 
-## You get this for free with the fashion preset
+## You get this for free with the fashion template
 
-`fashionSearchPreset` (and `fashion.nlq`) wire the parser, the schema, and the filterable fields for you:
+The `fashion` template (`fashion.nlq`) wires the parser, the schema, and the filterable fields for you:
 
 ```ts
-import { fashionSearchPreset } from "@samesake/core";
+import { collection, Channels, fashion } from "@samesake/core";
 
-const products = fashionSearchPreset({
-  textModel: "gemini-embedding-2",
-  textDim: 1536,
-  enrichmentModel: "gemini-3.1-flash-lite",
+const products = collection("products", {
+  fields: fashion.fields(),
+  indexing: fashion.indexing(),
+  embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
+  spaces: fashion.spaces(),
+  enrich: fashion.enrichPipeline(),
+  search: {
+    channels: [Channels.fts({ fields: ["title"] }), Channels.cosine({ embedding: "doc" }), Channels.spaces({})],
+    combiner: "rrf",
+    nlq: { instructions: fashion.nlq.instructions, schema: fashion.nlq.schema() },
+  },
 });
 ```
 

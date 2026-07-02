@@ -21,7 +21,7 @@ function contentHash(parts: unknown[]): string {
 }
 
 async function main() {
-  const sql = postgres(process.env.DATABASE_URL!, { max: 4 });
+  const sql = postgres(process.env.SAMESAKE_DATABASE_URL!, { max: 4 });
 
   const rows = await sql<
     { id: string; slug: string; title: string | null; metadata: Record<string, unknown> | null; price: number | null }[]

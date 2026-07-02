@@ -96,14 +96,14 @@ describe("spaces encodings", () => {
     expect(Math.sqrt(v[0]! ** 2 + v[1]! ** 2)).toBeCloseTo(1, 5);
   });
 
-  test("collection() rejects Σdims > 2000", () => {
+  test("collection() rejects Σdims > 4000 (halfvec limit)", () => {
     expect(() =>
       collection("big", {
         fields: { x: f.text() },
         indexing: { surfaces: {}, gate: gates.always },
         spaces: {
-          a: s.number({ field: "x", mode: "max", dims: 1001, min: 0, max: 1 }),
-          b: s.number({ field: "x", mode: "max", dims: 1000, min: 0, max: 1 }),
+          a: s.number({ field: "x", mode: "max", dims: 2001, min: 0, max: 1 }),
+          b: s.number({ field: "x", mode: "max", dims: 2000, min: 0, max: 1 }),
         },
       })
     ).toThrow(/pgvector HNSW limit/);

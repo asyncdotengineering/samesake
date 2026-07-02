@@ -12,7 +12,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import type { EmbedFn, ParseFn } from "../../packages/server/src/index.ts";
 
 const google = createGoogleGenerativeAI({
-  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? "",
+  apiKey: process.env.GEMINI_API_KEY ?? "",
 });
 
 export const blueprintEmbed: EmbedFn = async ({ text, model, dim, taskType }) => {

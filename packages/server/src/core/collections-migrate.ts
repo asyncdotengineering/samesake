@@ -136,6 +136,7 @@ export function planCollectionMigration(
       owner: `collection ${coll}`,
       field: `embeddings.${name}`,
       dimensions: def.dim,
+      columnType: "halfvec",
     });
   }
   const storedEmbCanon = JSON.stringify(canonicalEmbeddings(stored));
@@ -152,15 +153,15 @@ export function planCollectionMigration(
   const incomingDim = incomingEmbKeys.length ? Math.max(...Object.values(incomingEmb).map((e) => e.dim)) : 0;
 
   if (storedEmbKeys.length === 0 && incomingEmbKeys.length > 0) {
-    alterStatements.push(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS embedding vector(${incomingDim})`);
-    alterStatements.push(`CREATE INDEX IF NOT EXISTS ${indexName(coll, "emb_idx")} ON ${table} USING hnsw (embedding vector_cosine_ops)`);
-    plan.additions.push(`${coll}: add embedding vector(${incomingDim}) + HNSW`);
+    alterStatements.push(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS embedding halfvec(${incomingDim})`);
+    alterStatements.push(`CREATE INDEX IF NOT EXISTS ${indexName(coll, "emb_idx")} ON ${table} USING hnsw (embedding halfvec_cosine_ops)`);
+    plan.additions.push(`${coll}: add embedding halfvec(${incomingDim}) + HNSW`);
   } else if (storedDim > 0 && incomingDim > 0 && storedDim !== incomingDim) {
     plan.destructive.push(`${coll}.embedding: dimension change ${storedDim} → ${incomingDim}`);
     alterStatements.push(`DROP INDEX IF EXISTS ${indexName(coll, "emb_idx")}`);
     alterStatements.push(`ALTER TABLE ${table} DROP COLUMN IF EXISTS embedding`);
-    alterStatements.push(`ALTER TABLE ${table} ADD COLUMN embedding vector(${incomingDim})`);
-    alterStatements.push(`CREATE INDEX IF NOT EXISTS ${indexName(coll, "emb_idx")} ON ${table} USING hnsw (embedding vector_cosine_ops)`);
+    alterStatements.push(`ALTER TABLE ${table} ADD COLUMN embedding halfvec(${incomingDim})`);
+    alterStatements.push(`CREATE INDEX IF NOT EXISTS ${indexName(coll, "emb_idx")} ON ${table} USING hnsw (embedding halfvec_cosine_ops)`);
     reindex = true;
     plan.reindexRequired.push(`${coll}: embedding dimension changed — column recreated`);
   }
@@ -172,6 +173,7 @@ export function planCollectionMigration(
       owner: `collection ${coll}`,
       field: "spaces total",
       dimensions: incomingSpaceDim,
+      columnType: "halfvec",
     });
   }
   const storedSpaceHash = createHash("sha1").update(JSON.stringify(canonicalSpaces(stored))).digest("hex");
@@ -188,17 +190,17 @@ export function planCollectionMigration(
     plan.reindexRequired.push(`${coll}: spaces definition changed`);
   }
   if (storedSpaceDim === 0 && incomingSpaceDim > 0) {
-    alterStatements.push(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS space_vec vector(${incomingSpaceDim})`);
-    alterStatements.push(`CREATE INDEX IF NOT EXISTS ${indexName(coll, "space_vec_idx")} ON ${table} USING hnsw (space_vec vector_cosine_ops)`);
-    plan.additions.push(`${coll}: add space_vec vector(${incomingSpaceDim}) + HNSW`);
+    alterStatements.push(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS space_vec halfvec(${incomingSpaceDim})`);
+    alterStatements.push(`CREATE INDEX IF NOT EXISTS ${indexName(coll, "space_vec_idx")} ON ${table} USING hnsw (space_vec halfvec_cosine_ops)`);
+    plan.additions.push(`${coll}: add space_vec halfvec(${incomingSpaceDim}) + HNSW`);
     reindex = true;
     plan.reindexRequired.push(`${coll}: new spaces require backfill`);
   } else if (storedSpaceDim > 0 && incomingSpaceDim > 0 && storedSpaceDim !== incomingSpaceDim) {
     plan.destructive.push(`${coll}.space_vec: dimension change ${storedSpaceDim} → ${incomingSpaceDim}`);
     alterStatements.push(`DROP INDEX IF EXISTS ${indexName(coll, "space_vec_idx")}`);
     alterStatements.push(`ALTER TABLE ${table} DROP COLUMN IF EXISTS space_vec`);
-    alterStatements.push(`ALTER TABLE ${table} ADD COLUMN space_vec vector(${incomingSpaceDim})`);
-    alterStatements.push(`CREATE INDEX IF NOT EXISTS ${indexName(coll, "space_vec_idx")} ON ${table} USING hnsw (space_vec vector_cosine_ops)`);
+    alterStatements.push(`ALTER TABLE ${table} ADD COLUMN space_vec halfvec(${incomingSpaceDim})`);
+    alterStatements.push(`CREATE INDEX IF NOT EXISTS ${indexName(coll, "space_vec_idx")} ON ${table} USING hnsw (space_vec halfvec_cosine_ops)`);
     reindex = true;
     plan.reindexRequired.push(`${coll}: space_vec dimension changed — column recreated`);
   }

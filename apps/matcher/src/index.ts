@@ -1,13 +1,4 @@
 #!/usr/bin/env bun
-if (!process.env.SAMESAKE_DATABASE_URL && process.env.DATABASE_URL) {
-  process.env.SAMESAKE_DATABASE_URL = process.env.DATABASE_URL;
-}
-if (!process.env.SAMESAKE_API_KEY) {
-  process.env.SAMESAKE_API_KEY = process.env.API_KEY ?? "dev-key-please-change";
-}
-if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY && process.env.GEMINI_API_KEY) {
-  process.env.GOOGLE_GENERATIVE_AI_API_KEY = process.env.GEMINI_API_KEY;
-}
 import { z } from "zod";
 import { createMatcher, createDbFromUrl } from "@samesake/server";
 import { makeGeminiEmbedder, makeGeminiParser } from "./embedder.ts";
@@ -22,7 +13,7 @@ const Env = z.object({
   SAMESAKE_PORT: z.coerce.number().int().positive().default(3030),
   SAMESAKE_SCHEMA: z.string().regex(/^[a-z_][a-z0-9_]+$/i).default("public"),
   SAMESAKE_PROJECT_PREFIX: z.string().regex(/^[a-z_][a-z0-9_]+$/i).default("project_"),
-  GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
+  GEMINI_API_KEY: z.string().optional(),
 });
 
 const env = Env.parse(process.env);
@@ -34,8 +25,8 @@ const matcher = createMatcher({
   apiKey: env.SAMESAKE_API_KEY,
   schema: env.SAMESAKE_SCHEMA,
   projectPrefix: env.SAMESAKE_PROJECT_PREFIX,
-  embed: makeGeminiEmbedder(env.GOOGLE_GENERATIVE_AI_API_KEY),
-  parse: makeGeminiParser(env.GOOGLE_GENERATIVE_AI_API_KEY),
+  embed: makeGeminiEmbedder(env.GEMINI_API_KEY),
+  parse: makeGeminiParser(env.GEMINI_API_KEY),
   migrate: "eager",
 });
 

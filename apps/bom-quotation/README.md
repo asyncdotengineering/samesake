@@ -31,7 +31,7 @@ BOM (PDF / XLSX)
 
 ## Run
 
-Requires `DATABASE_URL` (Postgres + pgvector) and `GEMINI_API_KEY` — already in the
+Requires `SAMESAKE_DATABASE_URL` (Postgres + pgvector) and `GEMINI_API_KEY` — already in the
 repo-root `.env`.
 
 ```bash

@@ -3,7 +3,7 @@
 // range facet) and use matcher.facets() — the query-free aggregation — to roll the buckets up.
 // No search query, no catalog: just classify → push → facet.
 //
-// Run: DATABASE_URL=… bun run src/samesake.ts
+// Run: SAMESAKE_DATABASE_URL=… bun run src/samesake.ts
 import { collection, f, Channels, gates } from "@samesake/core";
 import { createMatcher } from "@samesake/server";
 import { CISCO_BOM } from "../data/cisco-bom.ts";
@@ -25,8 +25,8 @@ const lines = collection(LINES, {
   search: { channels: [Channels.fts({ fields: ["part_number"], weight: 1 })], combiner: "rrf" },
 });
 
-const db = process.env.DATABASE_URL;
-if (!db) throw new Error("set DATABASE_URL to run the samesake rollup");
+const db = process.env.SAMESAKE_DATABASE_URL;
+if (!db) throw new Error("set SAMESAKE_DATABASE_URL to run the samesake rollup");
 
 const m = createMatcher({ databaseUrl: db, apiKey: "cisco-bom-demo-key", migrate: "eager", embed: async () => [] });
 await m.migrate();

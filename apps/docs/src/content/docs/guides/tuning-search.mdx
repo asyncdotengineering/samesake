@@ -144,7 +144,7 @@ normalized relevance (`relevance^α × availability × business × …`) with op
 `minRelevanceFloor`. Hard axes multiply; soft axes add. Reach for these only after the
 data and signals are right — re-weighting noise just reshuffles noise.
 
-Default reranking uses **`fashionRerank(generate)`** when wired on the matcher — a position-aware
+Default reranking uses **`llmRerank(generate)`** when wired on the matcher — a position-aware
 **blend** with first-stage RRF, not a full replace. Pass `rerank: false` per query to force pure RRF.
 See [Reranking](/reference/reranking/) and [Relevance judge](/reference/relevance-judge/) for the full contract.
 
