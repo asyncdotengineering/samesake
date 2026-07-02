@@ -20,7 +20,7 @@ const SKIP_INDEX = args.includes("--skip-index");
 const CONCURRENCY = argN("concurrency", 12);
 
 async function countRows(schema: string, where = "true"): Promise<number> {
-  const { db, close } = createDbFromUrl(process.env.DATABASE_URL!);
+  const { db, close } = createDbFromUrl(process.env.SAMESAKE_DATABASE_URL!);
   const table = `${schema}.c_${COLLECTION}`;
   const rows = await db.execute<{ count: number }>(
     sql.raw(`SELECT count(*)::int AS count FROM ${table} WHERE ${where}`)
@@ -30,8 +30,8 @@ async function countRows(schema: string, where = "true"): Promise<number> {
 }
 
 async function main() {
-  if (!process.env.DATABASE_URL || !process.env.GEMINI_API_KEY) {
-    throw new Error("DATABASE_URL and GEMINI_API_KEY required");
+  if (!process.env.SAMESAKE_DATABASE_URL || !process.env.GEMINI_API_KEY) {
+    throw new Error("SAMESAKE_DATABASE_URL and GEMINI_API_KEY required");
   }
 
   const matcher = createFashionMatcher();

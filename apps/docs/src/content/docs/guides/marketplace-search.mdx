@@ -49,16 +49,16 @@ Every `filterable` attribute the preset declares (category, gender, colors, pric
 ## Step 2 — Wire the matcher (with the relevance double-check on)
 
 ```ts title="matcher.ts"
-import { createMatcher, fashionRerank } from "@samesake/server";
+import { createMatcher, llmRerank } from "@samesake/server";
 import { products } from "./catalog.ts";
 import { geminiEmbed, geminiGenerate } from "./gemini.ts"; // your two model fns — see Providers
 
 export const matcher = createMatcher({
-  databaseUrl: process.env.DATABASE_URL!,
-  apiKey: process.env.API_KEY!,
+  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
+  apiKey: process.env.SAMESAKE_API_KEY!,
   embed: geminiEmbed,                    // gemini-embedding-2
   generate: geminiGenerate,              // gemini-3.1-flash-lite — reads products + parses queries + judges relevance
-  rerank: fashionRerank(geminiGenerate), // re-checks the top results, on by default once wired
+  rerank: llmRerank(geminiGenerate), // re-checks the top results, on by default once wired
 });
 
 await matcher.apply("market", { entities: [], collections: [products] });
@@ -133,20 +133,31 @@ const parsed = await geminiGenerate({
 //            max_price: 5000, exclude_colors: ["pink"] }
 
 // 2. Search by the meaning, with the constraints enforced as filters
-const { hits } = await matcher.fashionSearch("market", "products", {
+const { hits } = await matcher.shopSearch("market", "products", {
   q: parsed.semantic_query,
   filters: { available: true, max_price: parsed.max_price, exclude_colors: parsed.exclude_colors },
   limit: 20,
 });
 ```
 
-A pink 6,000 dress can be the most beautiful match in your catalog and it still won't show — because price and colour were walls, and `fashionSearch` pushes them into the database as real conditions. The meaning only decides the *order* of the dresses that were allowed through. That's the rule from the very top, working exactly as promised.
+A pink 6,000 dress can be the most beautiful match in your catalog and it still won't show — because price and colour were walls, and `shopSearch` pushes them into the database as real conditions. The meaning only decides the *order* of the dresses that were allowed through. That's the rule from the very top, working exactly as promised.
 
-And because `fashionRerank` is wired, the top handful get a final "is this *actually* a garden-party dress?" pass from a model — blended with the retrieval order, never blindly replacing it ([Reranking](/reference/reranking/)).
+And because `llmRerank` is wired, the top handful get a final "is this *actually* a garden-party dress?" pass from a model — blended with the retrieval order, never blindly replacing it ([Reranking](/reference/reranking/)).
+
+<Aside type="note">
+**Zero-result recovery is opt-in.** Pass `recoverNoResults: true` and, when a query dead-ends, `shopSearch` retries once with the filters your collection declared in `search.relaxableFilters` dropped — reported back as `fallback.relaxedFilters` so the UI can say "we loosened colour and price". A collection that declares nothing relaxes nothing. The fashion preset ships a sane list you can spread in:
+
+```ts
+search: { ...fashion.searchDefaults(), /* channels, rankingPolicy, … */ }
+// relaxableFilters: colors, material, fit, styles, category, price —
+// gender and brand deliberately excluded: never fill the page with men's
+// items on a women's query, or another brand on a brand query.
+```
+</Aside>
 
 ## Step 5 — Improve on numbers, not vibes
 
-On a marketplace you'll constantly be tempted to fiddle — change a weight, swap a model, tighten the gate. Don't guess whether it helped. samesake ships an offline grader: a frozen set of real queries, scored for relevance by the same model that reranks. Change something, re-run, compare the numbers; if relevance drops, you don't ship it.
+On a marketplace you'll constantly be tempted to fiddle — change a weight, swap a model, tighten the gate. Don't guess whether it helped. samesake ships an offline grader: a frozen set of real queries, scored on the 4-class ESCI rubric by an LLM judge from a **different model family** than your enrich pipeline — `runEval` refuses a judge that would grade its own homework. Change something, re-run, compare the numbers; if relevance drops, you don't ship it.
 
 ```ts
 const result = await matcher.runEval("market", "products", { queries: golden, judge, k: 10 });

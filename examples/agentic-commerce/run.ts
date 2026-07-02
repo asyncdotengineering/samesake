@@ -54,12 +54,12 @@ const products = collection(COLLECTION, {
 });
 
 async function main() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error("DATABASE_URL is required for the agentic commerce demo");
+  if (!process.env.SAMESAKE_DATABASE_URL) {
+    throw new Error("SAMESAKE_DATABASE_URL is required for the agentic commerce demo");
   }
   const restoreFetch = mockImageFetch();
   const matcher = createMatcher({
-    databaseUrl: process.env.DATABASE_URL,
+    databaseUrl: process.env.SAMESAKE_DATABASE_URL,
     apiKey: API_KEY,
     migrate: "eager",
     embed,
@@ -136,7 +136,7 @@ async function main() {
     restoreFetch();
     await matcher.close();
     if (schemaName) {
-      const { db, close } = createDbFromUrl(process.env.DATABASE_URL!);
+      const { db, close } = createDbFromUrl(process.env.SAMESAKE_DATABASE_URL!);
       await db.execute(sql.raw(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`));
       await close();
     }

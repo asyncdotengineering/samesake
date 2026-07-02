@@ -61,6 +61,7 @@ export {
   fashionEnums,
   fashionEnrichPipeline,
   fashionSearchFields,
+  fashionSearchDefaults,
   fashionSpaces,
   composeFashionEmbedDoc,
   composeFashionRerankDoc,
@@ -306,6 +307,8 @@ type CollectionInput<
     /** Declared field whose value groups product variants; results collapse to one per group. */
     variantGroup?: NoInfer<keyof TFields & string>;
     rankingPolicy?: RankingPolicy;
+    /** Filter keys shopSearch's no-results recovery may drop, in order. Nothing relaxes unless declared. */
+    relaxableFilters?: readonly string[];
     /** Absolute cosine floor (0–1) a semantic-only hit must clear; FTS keyword matches are exempt. Suppresses no-match padding. */
     relevanceFloor?: number;
     nlq?: {

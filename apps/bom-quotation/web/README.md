@@ -4,7 +4,7 @@ TanStack Start frontend for the BOM → quotation pipeline.
 
 ## Prerequisites
 
-- API env vars in the repo-root `.env`: `DATABASE_URL`, `GEMINI_API_KEY`
+- API env vars in the repo-root `.env`: `SAMESAKE_DATABASE_URL`, `GEMINI_API_KEY`
 - Catalog bootstrapped: `bun run setup` (from `apps/bom-quotation`)
 
 ## Run

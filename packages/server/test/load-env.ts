@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-if (!process.env.DATABASE_URL) {
+if (!process.env.SAMESAKE_DATABASE_URL) {
   try {
     const envPath = join(import.meta.dir, "../../../.env");
     const env = readFileSync(envPath, "utf8");
@@ -12,8 +12,8 @@ if (!process.env.DATABASE_URL) {
       if (eq === -1) continue;
       const key = trimmed.slice(0, eq);
       const val = trimmed.slice(eq + 1);
-      if (key === "DATABASE_URL" && !process.env.DATABASE_URL) {
-        process.env.DATABASE_URL = val;
+      if (key === "SAMESAKE_DATABASE_URL" && !process.env.SAMESAKE_DATABASE_URL) {
+        process.env.SAMESAKE_DATABASE_URL = val;
       }
     }
   } catch {

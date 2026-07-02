@@ -12,7 +12,7 @@ describe("eval cache", () => {
     const generate: GenerateFn = async () => {
       calls += 1;
       return {
-        grades: [{ id: "a", grade: 2, facets: { color: 2 }, reason: "match" }],
+        grades: [{ id: "a", esci: "E", reason: "match" }],
       };
     };
 

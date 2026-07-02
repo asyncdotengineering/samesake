@@ -6,8 +6,8 @@ import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { getMatcher, PROJECT, SCHEMA, products, brands } from "./samesake.ts";
 
-const db = process.env.DATABASE_URL;
-if (!db) throw new Error("DATABASE_URL required");
+const db = process.env.SAMESAKE_DATABASE_URL;
+if (!db) throw new Error("SAMESAKE_DATABASE_URL required");
 
 const dump = join(import.meta.dir, "../data/seed.sql.gz");
 

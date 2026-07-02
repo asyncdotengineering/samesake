@@ -19,7 +19,7 @@ import { createFashionMatcher, COLLECTION } from "./samesake.config.ts";
 const SLUG = process.env.BENCH_PROJECT ?? "fashionparity";
 const GOLDEN = join(import.meta.dir, "..", "..", "evals", "golden-queries-fashion-lk.json");
 
-type GoldenQuery = { id: string; type: string; query: string; constraints?: { max_price?: number } };
+type GoldenQuery = { id: string; type: string; query: string; constraints?: { price?: { $lte?: number } } };
 
 const pct = (a: number[], p: number) => (a.length ? [...a].sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor((a.length - 1) * p))] : 0);
 const mean = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
@@ -39,7 +39,7 @@ async function main() {
     const latencyMs = Math.round(performance.now() - t0);
     const hits = res.hits as unknown as Record<string, unknown>[];
     const top5 = hits.slice(0, 5).map((h) => Number(h.price)).filter((p) => Number.isFinite(p));
-    const maxPrice = gq.constraints?.max_price;
+    const maxPrice = gq.constraints?.price?.$lte;
     const violationsAt5 = maxPrice != null && top5.length ? top5.filter((p) => p > maxPrice).length / top5.length : undefined;
     rows.push({
       id: gq.id, type: gq.type, query: gq.query, n: hits.length, latencyMs,

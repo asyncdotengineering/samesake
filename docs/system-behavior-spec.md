@@ -191,9 +191,9 @@ Auth: Bearer master key or per-project key.
   circuit breaker. Quarantine (`gate_reason`) is queryable via review endpoints.
 - In-process TTL search cache, opt-in, invalidated on ingest/index/sync. No cross-process cache.
 - Observability: `/v1/metrics`, structured logger seam, `searchExplain`.
-- Env contract has drifted: root `.env.example` uses `SAMESAKE_DATABASE_URL` /
-  `GOOGLE_GENERATIVE_AI_API_KEY`; docs quickstart uses `DATABASE_URL` / `API_KEY`;
-  `apps/matcher/src/index.ts:2–10` ships a shim mapping between the two conventions.
+- Env contract is canonical: `SAMESAKE_DATABASE_URL` / `SAMESAKE_API_KEY` everywhere, provider
+  keys as the provider names them (`GEMINI_API_KEY`, `OPENAI_API_KEY`). No fallback aliases;
+  the former `apps/matcher` mapping shim is deleted.
 
 ## 10. Structural facts an owner must know
 
@@ -203,7 +203,7 @@ Auth: Bearer master key or per-project key.
    on collection search; `apps/bom-quotation` is the only match consumer.
 2. **StorageAdapter is a declared half-migration** (`db/storage-adapter.ts`, issue #59): ~10
    methods relocated; 8 core modules still execute raw SQL through the `client()` escape hatch
-   (search 5×, embed-index 6×, fashion-search 4×, enrich 3×, review 3×, revalidate-images 3×,
+   (search 5×, embed-index 6×, shop-search/catalog-sync 4×, enrich 3×, review 3×, revalidate-images 3×,
    evaluate-enrich 1×, projects 1×). Postgres is the only implemented backend; names are hardwired.
 3. **Two parallel fashion authoring APIs**: the live `fashion.*` template
    (`sdk/src/templates/fashion.ts`) vs the legacy `fashionAttributes` / `fashionAttributeSchema` /
@@ -212,11 +212,13 @@ Auth: Bearer master key or per-project key.
 4. **Test-only public API**: `matcher.indexDocuments` (`search.ts:474`) bypasses the real pipeline
    (manual insert with precomputed embeddings); callers are exclusively `packages/server/test/*`,
    yet it ships on the public Matcher surface.
-5. **Fashion leaks through the generic core**: root SDK/server export fashion symbols
-   (`sdk/src/index.ts`, `createMatcher.ts` exposes `fashionSearch`, `app-builder.ts:492` exposes
-   `/fashion-search`); eval constraint fields are fashion-hardcoded.
+5. **Fashion leak — resolved (P0-3)**: the storefront facade is now vertical-neutral
+   (`shopSearch` / `/shop-search`, `syncCatalogEvent` / `/catalog-sync`); no-results relaxation is
+   declared per collection via `CollectionSearchDef.relaxableFilters` (fashion template supplies
+   its list via `fashion.searchDefaults()`); eval constraints use the search filter vocabulary.
+   A test gate (`test/defashion-gate.test.ts`) fails on any fashion symbol in `src/core/*`.
 6. **Duplicated helpers across facades**: ranking-policy merge implemented twice (`ranking.ts` and
-   `fashion-search.ts`), plus re-implemented `hitValue`/`asArray`/`intersects` in three modules.
+   `shop-search.ts`), plus re-implemented `hitValue`/`asArray`/`intersects` in three modules.
 7. **Un-calibrated placeholder constants**: `relevanceExponent` (1), `FASHION_CONFIDENCE_FLOOR`
    (0.5) — both flagged in-code for eval-driven tuning.
 8. **Deprecated alias still exported**: `DEFAULT_PRODUCT_PARSE_INSTRUCTIONS` (`core/parse.ts:~76`,

@@ -145,7 +145,7 @@ async function runReenrich(tag: string): Promise<void> {
   const gold = await loadGold();
   const ids = gold.products.map((p) => p.id);
 
-  const src = createDbFromUrl(process.env.DATABASE_URL!);
+  const src = createDbFromUrl(process.env.SAMESAKE_DATABASE_URL!);
   const raw = (await (src.db as unknown as { session: { client: { unsafe: (s: string, p: unknown[]) => Promise<Array<Record<string, unknown>>> } } }).session.client.unsafe(
     `SELECT id, data FROM project_demo_store.c_products WHERE id = ANY($1)`,
     [ids]
@@ -159,7 +159,7 @@ async function runReenrich(tag: string): Promise<void> {
   const TEMP = "enrich_eval";
   await matcher.apply(TEMP, { entities: [], collections: [productsCollection] });
   // Clean slate so enrich re-processes every row (enrich skips rows whose enriched_at is set).
-  const tmp = createDbFromUrl(process.env.DATABASE_URL!);
+  const tmp = createDbFromUrl(process.env.SAMESAKE_DATABASE_URL!);
   await (tmp.db as unknown as { session: { client: { unsafe: (s: string) => Promise<unknown> } } }).session.client.unsafe(`TRUNCATE project_${TEMP}.c_products`);
   await tmp.close();
 

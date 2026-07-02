@@ -70,16 +70,16 @@ That's a *lot* of good behaviour for not a lot of typing — because the preset 
 The `matcher` holds your database connection and your two model functions. We'll also switch on a second-stage **re-ranker** — a quick "is this *actually* relevant?" pass over the top results — because for fashion it's worth it.
 
 ```ts title="search.ts"
-import { createMatcher, fashionRerank } from "@samesake/server";
+import { createMatcher, llmRerank } from "@samesake/server";
 import { products } from "./catalog.ts";
 import { geminiEmbed, geminiGenerate } from "./gemini.ts"; // your two model fns — see Providers
 
 const matcher = createMatcher({
-  databaseUrl: process.env.DATABASE_URL!,
-  apiKey: process.env.API_KEY!,
+  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
+  apiKey: process.env.SAMESAKE_API_KEY!,
   embed: geminiEmbed,                       // turns text/images into vectors (gemini-embedding-2)
   generate: geminiGenerate,                 // reads products + judges relevance (gemini-3.1-flash-lite)
-  rerank: fashionRerank(geminiGenerate),    // the relevance double-check, on by default once wired
+  rerank: llmRerank(geminiGenerate),    // the relevance double-check, on by default once wired
 });
 
 await matcher.apply("shop", { entities: [], collections: [products] });

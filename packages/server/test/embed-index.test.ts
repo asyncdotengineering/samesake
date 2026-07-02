@@ -11,7 +11,7 @@ import {
 } from "../src/core/embed-index.ts";
 import { stubEmbed } from "./fixtures.ts";
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
 
 describe("embed-index helpers", () => {

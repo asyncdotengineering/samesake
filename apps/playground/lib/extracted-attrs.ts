@@ -15,7 +15,7 @@ export type ExtractedAttrs = {
 
 export async function readExtractedAttrs(schemaName: string, ids: string[]): Promise<ExtractedAttrs[]> {
   if (!ids.length) return [];
-  const sql = postgres(process.env.DATABASE_URL!, { max: 2 });
+  const sql = postgres(process.env.SAMESAKE_DATABASE_URL!, { max: 2 });
   try {
     const rows = await sql.unsafe<{ id: string; data: unknown; enriched: unknown }[]>(
       `SELECT id, data, enriched FROM ${schemaName}.c_${COLLECTION} WHERE id = ANY($1::text[])`,

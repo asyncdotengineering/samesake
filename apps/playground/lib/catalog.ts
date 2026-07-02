@@ -13,7 +13,7 @@ export type Product = {
 
 let _sql: ReturnType<typeof postgres> | null = null;
 function db() {
-  if (!_sql) _sql = postgres(process.env.DATABASE_URL!, { max: 3 });
+  if (!_sql) _sql = postgres(process.env.SAMESAKE_DATABASE_URL!, { max: 3 });
   return _sql;
 }
 

@@ -6,7 +6,7 @@ import { createMatcher, createDbFromUrl, indicPhonetic } from "@samesake/server"
 import { contact } from "./samesake.config.ts";
 
 function loadEnv(): void {
-  if (process.env.DATABASE_URL) return;
+  if (process.env.SAMESAKE_DATABASE_URL) return;
   try {
     const env = readFileSync(join(import.meta.dir, "../../.env"), "utf8");
     for (const line of env.split("\n")) {
@@ -16,11 +16,11 @@ function loadEnv(): void {
       if (eq === -1) continue;
       const key = trimmed.slice(0, eq);
       const val = trimmed.slice(eq + 1);
-      if (key === "DATABASE_URL" || key === "SAMESAKE_DATABASE_URL") {
-        process.env.DATABASE_URL ??= val;
+      if (key === "SAMESAKE_DATABASE_URL" || key === "SAMESAKE_DATABASE_URL") {
+        process.env.SAMESAKE_DATABASE_URL ??= val;
       }
-      if (key === "GOOGLE_GENERATIVE_AI_API_KEY") {
-        process.env.GOOGLE_GENERATIVE_AI_API_KEY ??= val;
+      if (key === "GEMINI_API_KEY") {
+        process.env.GEMINI_API_KEY ??= val;
       }
     }
   } catch {
@@ -36,9 +36,9 @@ function stubEmbed(text: string, dim: number): number[] {
 
 async function main(): Promise<void> {
   loadEnv();
-  const databaseUrl = process.env.DATABASE_URL ?? process.env.SAMESAKE_DATABASE_URL;
+  const databaseUrl = process.env.SAMESAKE_DATABASE_URL ?? process.env.SAMESAKE_DATABASE_URL;
   if (!databaseUrl) {
-    console.error("DATABASE_URL is required");
+    console.error("SAMESAKE_DATABASE_URL is required");
     process.exit(1);
   }
 

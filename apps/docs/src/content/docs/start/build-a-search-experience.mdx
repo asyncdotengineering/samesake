@@ -93,8 +93,8 @@ import { createMatcher } from "@samesake/server";
 import { products } from "./catalog.ts";
 
 const matcher = createMatcher({
-  databaseUrl: process.env.DATABASE_URL!,
-  apiKey: process.env.API_KEY!,
+  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
+  apiKey: process.env.SAMESAKE_API_KEY!,
   // your embedding function — call any model you like, return the vector
   embed: async ({ text, dim }) => myEmbed(text, dim),
 });

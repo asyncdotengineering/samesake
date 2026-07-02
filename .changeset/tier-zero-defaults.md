@@ -21,6 +21,45 @@ Tier-0 retrieval defaults baked in, and the zero-config indexing path is fixed.
 - `DEFAULT_PRODUCT_PARSE_INSTRUCTIONS` (deprecated since 0.7.x) is removed; use
   `DEFAULT_PRODUCT_PARSE_BODY`.
 
+**Breaking (de-fashioned core — rename, no behavior change unless noted):**
+
+- `matcher.fashionSearch` / `POST …/fashion-search` → `matcher.shopSearch` / `POST …/shop-search`;
+  `matcher.syncFashionCatalogEvent` / `POST …/fashion-sync` → `matcher.syncCatalogEvent` /
+  `POST …/catalog-sync`. Types: `FashionSearchRequest/Response/Explanation/ImageInput` →
+  `ShopSearch*`, `FashionPersonalizationContext` → `ShopperContext`, `FashionCatalogSyncEvent` →
+  `CatalogSyncEvent`; `FashionRankingPolicy` is deleted (use `RankingPolicy`).
+- **Behavior change:** `shopSearch`'s `recoverNoResults` relaxes nothing unless the collection
+  declares `search.relaxableFilters` (new on `CollectionSearchDef`). The fashion template supplies
+  its list via `fashion.searchDefaults()` / `fashionSearchDefaults()` — spread it into your
+  `search` def to keep the old fashion relax behavior.
+- `fashionRerank` → `llmRerank` (score mapping is now ESCI `grade/3`).
+- Catalog-sync deletes route through `removeDocuments`; `DELETE …/documents` (body `{ ids }`) and
+  the CLI `samesake remove --ids=…` expose document deletion on every surface.
+
+**Breaking (judge honesty — evals re-grade from scratch):**
+
+- The LLM relevance judge is now 4-class ESCI (Exact=3 / Substitute=2 / Complement=1 /
+  Irrelevant=0; Substitute is a soft positive — default `relevanceFloor` is 2). `JudgedHit.grade`
+  is `0|1|2|3` with an `esci` label; facet sub-grades (`FacetGrades`) are removed.
+  `FASHION_JUDGE_SYSTEM` → `ESCI_JUDGE_SYSTEM`.
+- Judge versions are content-pinned: `makeLlmJudge` versions resolve to `<tag>@<sha256(rubric)[:8]>`,
+  so prompt edits auto-invalidate cached grades (file cache and the persisted search-judge cache).
+- **Same-family enrich+judge is rejected.** `runEval` and `evaluateSearch`/`calibrateSearch` throw
+  when a collection has an enrich pipeline and the judge model is missing or from the same model
+  family (self-preference bias). Declare a cross-family judge: in-process via
+  `evaluateSearch(…, { judge: { model, generate? } })` / `makeLlmJudge(gen, { model })`, over HTTP
+  via the new `judgeModel` body field on `…/search/evaluate` and `…/search/calibrate`.
+- Golden-query `constraints` now use the search filter vocabulary
+  (`{ "price": { "$lte": 5000 }, "colors": { "$exclude": ["black"] } }`) checked against whatever
+  fields the collection schema declares — the price/color/gender/category hardcoding is gone.
+
+**Breaking (one env contract):**
+
+- Canonical env vars everywhere: `SAMESAKE_DATABASE_URL` and `SAMESAKE_API_KEY`. The bare
+  `DATABASE_URL` / `API_KEY` fallbacks and the `apps/matcher` mapping shim are deleted — no
+  aliases. Provider keys keep their provider-canonical names (`GEMINI_API_KEY`,
+  `OPENAI_API_KEY`); `GOOGLE_GENERATIVE_AI_API_KEY` is no longer read.
+
 **Fixed:**
 
 - Collections without an enrich pipeline indexed nothing since the S1c indexing migration

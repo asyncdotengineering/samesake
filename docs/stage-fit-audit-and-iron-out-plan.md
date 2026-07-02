@@ -65,6 +65,38 @@ at any installation yet.
     hard filter returns every match despite adversarial vectors; setweight A-beats-B proven;
     halfvec column type asserted. Changeset: `.changeset/tier-zero-defaults.md` (major).
 
+### P0 session (2026-07-02) — P0-1/3/4/5 shipped (265/265 tests, tsc clean, all 3 release-gate examples pass)
+
+11. **P0-1 `removeDocuments` on every surface**: HTTP `DELETE …/documents` (body `{ids}`) + CLI
+    `samesake remove --ids=…` join the existing in-process method; catalog-sync deletes now route
+    through it. Proof: `test/remove-documents.test.ts` push → index → search finds → HTTP delete →
+    search returns nothing (both surfaces).
+12. **P0-3 de-fashioned the core**: `fashionSearch`/`/fashion-search` → vertical-neutral
+    `shopSearch`/`/shop-search` (+ `syncCatalogEvent`/`/catalog-sync`, split into
+    `core/catalog-sync.ts`); no-results relaxation is collection-declared
+    (`CollectionSearchDef.relaxableFilters`, template fragment `fashion.searchDefaults()`); eval
+    constraints are schema-driven in the search filter vocabulary (`{price:{$lte:N}}`), golden
+    files migrated. Grep gate shipped as `test/defashion-gate.test.ts` — zero fashion symbols in
+    `src/core/*`. SDK types renamed (`ShopSearch*`, `ShopperContext`, `CatalogSyncEvent`);
+    `FashionRankingPolicy` deleted; `fashionRerank` → `llmRerank`.
+13. **P0-4 judge honesty**: shared 4-class ESCI rubric (E=3/S=2 soft positive/C=1/I=0,
+    default floor 2) across `makeLlmJudge` and `evaluateSearch`; judge version content-hashed
+    (`esci-v1@<sha256(rubric)[:8]>`) so prompt edits invalidate caches; same-family enrich+judge
+    rejected in `runEval` + `evaluateSearch`/`calibrateSearch` (+ HTTP `judgeModel` field).
+    Retrieval flatness vs tier0post is proven deterministically: the entire retrieval path
+    (search.ts, search-query.ts logic, search-filter, embed, ranking, nlq, db/) is untouched this
+    session and the eval matcher wires no reranker — same code + same index ⇒ identical topIds.
+    The judged cross-family baseline (gpt-4.1-mini over the Gemini-enriched corpus) is
+    **minted**: `evals/runs/2026-07-02T16-01-22-852Z-search-p0honesty.json` — mean grade@5
+    1.881, nDCG@5 0.901, no-results 0% (flat-or-better vs tier0post 1.878/0.902; topIds
+    61/62 identical, the one delta being embedding float jitter on a pure-semantic query).
+    This artifact is the honest baseline for future gates.
+14. **P0-5 one env contract**: `SAMESAKE_DATABASE_URL` / `SAMESAKE_API_KEY` canonical across
+    `.env.example`, README, docs, examples, apps, tests, CLI; `apps/matcher` shim deleted;
+    provider keys provider-named (`GEMINI_API_KEY`, `OPENAI_API_KEY`);
+    `GOOGLE_GENERATIVE_AI_API_KEY` no longer read. No fallback aliases.
+    All folded into `.changeset/tier-zero-defaults.md` (pending major).
+
 ## 3. The iron-out backlog (ordered; each item names its proof)
 
 ### P0 — correctness & honesty (the product's claims must be true)

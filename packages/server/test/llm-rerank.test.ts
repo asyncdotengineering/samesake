@@ -4,11 +4,11 @@ import { sql } from "drizzle-orm";
 import { collection, f, Channels, gates, type CollectionDef } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
-import { fashionRerank } from "../src/core/rerank.ts";
+import { llmRerank } from "../src/core/rerank.ts";
 import type { GenerateFn } from "../src/types.ts";
 import { stubEmbed } from "./fixtures.ts";
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
 
 const coll = collection("products", {
@@ -32,7 +32,7 @@ const coll = collection("products", {
   },
 }) as CollectionDef & { name: string };
 
-describeIf("fashionRerank", () => {
+describeIf("llmRerank", () => {
   const slug = `t_${Math.random().toString(36).slice(2, 10)}`;
   let schemaName = "";
   let matcher: ReturnType<typeof createMatcher>;
@@ -40,8 +40,8 @@ describeIf("fashionRerank", () => {
 
   const stubGenerate: GenerateFn = async () => ({
     grades: [
-      { id: "good", grade: 2, facets: {}, reason: "match" },
-      { id: "bad", grade: 0, facets: {}, reason: "miss" },
+      { id: "good", esci: "E", reason: "match" },
+      { id: "bad", esci: "I", reason: "miss" },
     ],
   });
 
@@ -61,7 +61,7 @@ describeIf("fashionRerank", () => {
       migrate: "eager",
       embed: async ({ text, dim }) => stubEmbed(text, dim),
       generate: stubGenerate,
-      rerank: fashionRerank(stubGenerate),
+      rerank: llmRerank(stubGenerate),
     });
     await matcher.migrate();
     await matcher.apply(slug, { entities: [], collections: [coll] });
@@ -97,7 +97,7 @@ describeIf("fashionRerank", () => {
     await matcherNoRerank?.close();
   });
 
-  test("fashionRerank(stubGenerate) promotes judged-relevant hit", async () => {
+  test("llmRerank(stubGenerate) promotes judged-relevant hit", async () => {
     const res = await matcher.search(slug, "products", { q: "red dress", limit: 2 });
     expect(res.hits[0]!.id).toBe("good");
   });
@@ -114,12 +114,12 @@ describeIf("fashionRerank", () => {
   });
 });
 
-describe("fashionRerank unit", () => {
+describe("llmRerank unit", () => {
   test("maps judge grades to [0,1] scores", async () => {
     const generate: GenerateFn = async () => ({
-      grades: [{ id: "a", grade: 2, facets: {}, reason: "ok" }],
+      grades: [{ id: "a", esci: "E", reason: "ok" }],
     });
-    const rerank = fashionRerank(generate);
+    const rerank = llmRerank(generate);
     const out = await rerank({
       query: "q",
       candidates: [{ id: "a", text: "t", data: {}, score: 0.1 }],

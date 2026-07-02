@@ -38,7 +38,7 @@ async function main() {
   // cleanup the whole temp project (leave the R2 object; harmless)
   const { createDbFromUrl } = await import("@samesake/server");
   const { sql } = await import("drizzle-orm");
-  const { db, close } = createDbFromUrl(process.env.DATABASE_URL!);
+  const { db, close } = createDbFromUrl(process.env.SAMESAKE_DATABASE_URL!);
   await db.execute(sql.raw(`DROP SCHEMA IF EXISTS ${applied.schema} CASCADE`));
   await db.execute(sql.raw(`DELETE FROM samesake_projects WHERE slug = '${PROJECT}'`));
   await close();

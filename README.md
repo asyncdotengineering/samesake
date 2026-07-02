@@ -48,8 +48,8 @@ const products = collection("products", {
 });
 
 const matcher = createMatcher({
-  databaseUrl: process.env.DATABASE_URL!,
-  apiKey: process.env.API_KEY!,
+  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
+  apiKey: process.env.SAMESAKE_API_KEY!,
   embed: async ({ text, dim }) => /* your embed fn */,
 });
 
@@ -221,7 +221,7 @@ Search and match share embeddings, Postgres caches, and per-project runtime DDL.
 
 ```bash
 bun install
-cp .env.example .env   # DATABASE_URL + API keys
+cp .env.example .env   # SAMESAKE_DATABASE_URL + API keys
 
 # Search (no LLM)
 bun examples/hello-search/run.ts

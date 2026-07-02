@@ -15,7 +15,7 @@ quarantine behaviour **without spending any enrichment LLM calls**.
 ```bash
 # 1. Bootstrap samesake's system tables once (any of: run the app, the CLI, or matcher.migrate()).
 # 2. Load the seed:
-psql "$DATABASE_URL" -f examples/fashion-search/datasets/demo-store-seed.sql
+psql "$SAMESAKE_DATABASE_URL" -f examples/fashion-search/datasets/demo-store-seed.sql
 ```
 
 This creates schema `project_demo_store`, loads the 50 enriched + embedded rows,
@@ -52,7 +52,7 @@ Regenerate the seed after a collection-schema change:
 cd examples/fashion-search
 SPACES_VISUAL=0 bun --env-file=../../.env rebuild-demo-store.ts   # rebuilds project_demo_store
 # then re-dump (pg_dump >= server version), strip pg18 \restrict lines, rename slug → demo_store:
-pg_dump "$DATABASE_URL" --schema=project_demo_store --no-owner --no-privileges --no-comments \
+pg_dump "$SAMESAKE_DATABASE_URL" --schema=project_demo_store --no-owner --no-privileges --no-comments \
   | sed '/^\\restrict/d; /^\\unrestrict/d' > /tmp/schema.sql
 # prepend the CREATE EXTENSION / DROP SCHEMA header and append the samesake_projects row (see git history).
 ```

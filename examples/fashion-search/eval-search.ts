@@ -1,7 +1,7 @@
 /**
  * Search-relevance eval on the REAL corpus (fashionparity, ~5.5k products), scored framework-direct
- * via matcher.evaluateSearch — the LLM-as-judge (gemini-3.1-flash-lite) grades each hit 0–3, exactly
- * the method BENCHMARKS uses. Nothing about ranking is hand-rolled here; this runner only groups the
+ * via matcher.evaluateSearch — the ESCI LLM-as-judge (gpt-4.1-mini, cross-family vs the Gemini
+ * enrichment) grades each hit E/S/C/I → 3/2/1/0. Nothing about ranking is hand-rolled here; this runner only groups the
  * framework's per-query output into buckets and writes a phase-tagged artifact for pre/post compare.
  *
  *   bun --env-file=../../.env eval-search.ts --phase=baseline      # before Phase-1 fixes
@@ -14,6 +14,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createFashionMatcher, productsCollection } from "./samesake.config.ts";
 import { STAGE2_MODEL, EMB_MODEL } from "./gemini.ts";
+import { JUDGE_MODEL, openaiGenerate } from "./openai.ts";
 
 const REPO_ROOT = join(import.meta.dir, "..", "..");
 const RUNS_DIR = join(REPO_ROOT, "evals", "runs");
@@ -26,13 +27,15 @@ const args = process.argv.slice(2);
 const flag = (k: string, d: string) => (args.find((a) => a.startsWith(`--${k}=`))?.split("=")[1] ?? d);
 const PHASE = flag("phase", "baseline");
 const K = Number(flag("limit", "5"));
+const QUERIES = Number(flag("queries", "0")); // 0 = all
 
 interface Q { id: string; type: string; query: string }
 
 async function loadQueries(): Promise<Q[]> {
   const g = JSON.parse(await readFile(GOLDEN, "utf8")) as { queries: Q[] };
   const t = JSON.parse(await readFile(TYPO, "utf8")) as { queries: Q[] };
-  return [...g.queries, ...t.queries];
+  const all = [...g.queries, ...t.queries];
+  return QUERIES > 0 ? all.slice(0, QUERIES) : all;
 }
 
 function mean(xs: number[]): number {
@@ -53,6 +56,7 @@ async function main(): Promise<void> {
   const res = await matcher.evaluateSearch(PROJECT, COLLECTION, {
     queries: queries.map((q) => ({ q: q.query })),
     limit: K,
+    judge: { model: JUDGE_MODEL, generate: openaiGenerate },
   });
 
   // Group the framework's per-query output into query-type buckets.
@@ -88,7 +92,7 @@ async function main(): Promise<void> {
     project: PROJECT,
     collection: COLLECTION,
     k: K,
-    models: { embed: EMB_MODEL, judge_and_generate: STAGE2_MODEL },
+    models: { embed: EMB_MODEL, generate: STAGE2_MODEL, judge: JUDGE_MODEL },
     overall,
     buckets: bucketRows,
     perQuery,
@@ -102,7 +106,7 @@ async function main(): Promise<void> {
   const md = [
     `# Search eval — ${PHASE} (${PROJECT}, k=${K})`,
     ``,
-    `Judge+generate: \`${STAGE2_MODEL}\` · embed: \`${EMB_MODEL}\` · ${overall.queries} queries · ${overall.judged} judgments`,
+    `Judge: \`${JUDGE_MODEL}\` (cross-family) · generate: \`${STAGE2_MODEL}\` · embed: \`${EMB_MODEL}\` · ${overall.queries} queries · ${overall.judged} judgments`,
     ``,
     `**Overall:** mean grade@${K} ${overall.meanGrade} · nDCG@${K} ${overall.ndcg} · no-results ${(overall.noResultRate * 100).toFixed(0)}%`,
     ``,

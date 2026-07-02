@@ -1,13 +1,15 @@
-import type { RelevanceJudge } from "./judge.ts";
+import { ESCI_SOFT_POSITIVE_FLOOR, type RelevanceJudge } from "./judge.ts";
+import type { Grade } from "./metrics.ts";
 
 export interface HumanLabel {
   query: string;
   id: string;
-  grade: 0 | 1 | 2;
+  /** ESCI gain: 3=Exact, 2=Substitute, 1=Complement, 0=Irrelevant. */
+  grade: Grade;
 }
 
 export interface CalibrateOpts {
-  relevanceFloor?: 1 | 2;
+  relevanceFloor?: 1 | 2 | 3;
   minLabels?: number;
   trustF1Bar?: number;
 }
@@ -27,7 +29,7 @@ function binaryRelevant(grade: number, floor: number): boolean {
 function cohensKappa(human: number[], pred: number[]): number {
   const n = human.length;
   if (n === 0) return 0;
-  const categories = [0, 1, 2];
+  const categories = [0, 1, 2, 3];
   let agree = 0;
   for (let i = 0; i < n; i++) {
     if (human[i] === pred[i]) agree += 1;
@@ -68,7 +70,7 @@ export async function calibrateJudge(
   if (humanLabels.length < minLabels) {
     throw new Error("insufficient calibration set");
   }
-  const floor = opts.relevanceFloor ?? 1;
+  const floor = opts.relevanceFloor ?? ESCI_SOFT_POSITIVE_FLOOR;
 
   const byQuery = new Map<string, HumanLabel[]>();
   for (const row of humanLabels) {

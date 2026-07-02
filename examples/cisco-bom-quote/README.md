@@ -87,7 +87,7 @@ The rules are the reliable core. samesake adds two things on top:
 - **`matcher.facets()`** — push the classified lines into a collection and roll the buckets up with
   the query-free aggregation (no SQL against an internal table). See `src/samesake.ts`:
   ```bash
-  DATABASE_URL=… bun run src/samesake.ts
+  SAMESAKE_DATABASE_URL=… bun run src/samesake.ts
   ```
 - **The enrich pipeline** — for the long tail the prefix rules miss (an OEM you haven't ruled, an
   oddly-named SKU), samesake's LLM enrichment classifies it from the *description* into the same

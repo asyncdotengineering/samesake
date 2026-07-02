@@ -1,6 +1,6 @@
 ---
 title: Reranking
-description: Second-stage reranking in samesake — position-aware blend with first-stage RRF, the RerankFn contract, fashionRerank, and remote adapter examples.
+description: Second-stage reranking in samesake — position-aware blend with first-stage RRF, the RerankFn contract, llmRerank, and remote adapter examples.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -78,19 +78,18 @@ interface RerankRequest {
 
 Returned scores **must** be in `[0, 1]`. The search layer clamps at the boundary via `clamp01` — this is a **floor**, not a normalizer. If your cross-encoder returns raw logits, squash them yourself before returning.
 
-## `fashionRerank` — fashion default, opt-in
+## `llmRerank` — LLM-judge rerank, opt-in
 
-`fashionRerank` wraps [`makeLlmJudge`](/reference/relevance-judge/) and maps `grade {0,1,2} → score/2`. It is **not** bundled or auto-on — wire it explicitly:
+`llmRerank` wraps [`makeLlmJudge`](/reference/relevance-judge/) and maps the ESCI gain `{0..3} → score/3`. It is **not** bundled or auto-on — wire it explicitly:
 
 ```ts
-import { createMatcher, fashionRerank } from "@samesake/server";
+import { createMatcher, llmRerank } from "@samesake/server";
 
 const matcher = createMatcher({
   embed: myEmbed,
   generate: myGenerate,
-  rerank: fashionRerank(myGenerate, {
+  rerank: llmRerank(myGenerate, {
     model: "gemini-3.1-flash-lite",
-    version: "fashion-judge-v2",
   }),
 });
 ```
@@ -224,7 +223,7 @@ collection("products", {
 
 ## Related
 
-- [Relevance judge](/reference/relevance-judge/) — the LLM judge behind `fashionRerank` and `runEval`
+- [Relevance judge](/reference/relevance-judge/) — the LLM judge behind `llmRerank` and `runEval`
 - [Eval gate](/guides/eval-gate/) — measure rerank impact on the golden set
 - [Tuning search relevance](/guides/tuning-search/) — when to reach for rerank vs weights
 

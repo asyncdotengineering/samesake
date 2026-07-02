@@ -26,7 +26,7 @@ async function main() {
   // cleanup
   const { createDbFromUrl } = await import("@samesake/server");
   const { sql } = await import("drizzle-orm");
-  const { db, close } = createDbFromUrl(process.env.DATABASE_URL!);
+  const { db, close } = createDbFromUrl(process.env.SAMESAKE_DATABASE_URL!);
   await db.execute(sql.raw(`DELETE FROM ${applied.schema}.c_${COLLECTION} WHERE id = 'smoke-red-dress'`));
   await close();
   await matcher.close();

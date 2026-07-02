@@ -377,6 +377,12 @@ export interface CollectionSearchDef {
   /** Post-fusion ranking boosts applied after rerank (when present). */
   rankingPolicy?: RankingPolicy;
   /**
+   * Filter keys shopSearch's `recoverNoResults` may drop (in this order) when a filtered
+   * query returns zero hits. Core relaxes nothing unless the collection declares this —
+   * load-bearing constraints (e.g. gender, brand) stay hard by omission.
+   */
+  relaxableFilters?: string[];
+  /**
    * Minimum query–document cosine similarity (0–1) a semantic-only hit must clear
    * to survive; hits that also match via FTS keywords are exempt. Suppresses
    * no-match padding — a query with no real match returns few/no results instead
@@ -543,7 +549,7 @@ export interface ConstraintTrace {
   budgetHints: Record<string, "cheap" | "premium">;
 }
 
-export interface FashionSearchImageInput {
+export interface ShopSearchImageInput {
   /** Remote image URL. The server fetches it through the same hardened image guard used for indexing. */
   url?: string;
   /** Base64 image bytes for callers that do not want Samesake to fetch a URL. */
@@ -555,9 +561,8 @@ export interface FashionSearchImageInput {
   productId?: string;
 }
 
-export interface FashionRankingPolicy extends RankingPolicy {}
-
-export interface FashionPersonalizationContext {
+/** Request-scoped shopper preferences applied as a re-ranking axis — never persisted. */
+export interface ShopperContext {
   size?: string;
   priceBand?: { min?: number; max?: number };
   preferredBrands?: string[];
@@ -567,13 +572,13 @@ export interface FashionPersonalizationContext {
   colorAffinity?: Record<string, number>;
 }
 
-export interface FashionSearchRequest<S extends string = string> {
+export interface ShopSearchRequest<S extends string = string> {
   q?: string;
-  image?: FashionSearchImageInput;
+  image?: ShopSearchImageInput;
   filters?: Record<string, unknown>;
   weights?: SearchWeightsInput<S>;
-  rankingPolicy?: FashionRankingPolicy;
-  personalization?: FashionPersonalizationContext;
+  rankingPolicy?: RankingPolicy;
+  personalization?: ShopperContext;
   limit?: number;
   offset?: number;
   debug?: boolean;
@@ -581,18 +586,18 @@ export interface FashionSearchRequest<S extends string = string> {
   recoverNoResults?: boolean;
 }
 
-export interface FashionSearchExplanation {
+export interface ShopSearchExplanation {
   hitId: string;
   factors: Record<string, number | boolean | string | null>;
   appliedFilters: string[];
 }
 
-export interface FashionSearchResponse {
+export interface ShopSearchResponse {
   hits: Array<Record<string, unknown> & { id: string; score: number }>;
   parsed?: Record<string, unknown>;
   appliedFilters: Record<string, unknown>;
   constraintTrace?: ConstraintTrace;
-  explanations?: FashionSearchExplanation[];
+  explanations?: ShopSearchExplanation[];
   fallback?: {
     reason: "no_results" | "low_confidence";
     relaxedFilters: string[];

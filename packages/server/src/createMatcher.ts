@@ -43,7 +43,8 @@ import { makeRevalidateImagesService } from "./core/revalidate-images.ts";
 import { makeReviewService } from "./core/review.ts";
 import { makeEmbedIndexService } from "./core/embed-index.ts";
 import { makeRetryService } from "./core/retry.ts";
-import { makeFashionSearchService } from "./core/fashion-search.ts";
+import { makeShopSearchService } from "./core/shop-search.ts";
+import { makeCatalogSyncService } from "./core/catalog-sync.ts";
 import { makeCalibrateService } from "./core/calibrate.ts";
 import { makeCalibrateSearchService } from "./core/calibrate-search.ts";
 import { makeEvaluateEnrichService } from "./core/evaluate-enrich.ts";
@@ -87,8 +88,8 @@ export interface Matcher {
   findSimilarProducts: ReturnType<typeof makeAgentToolsService>["findSimilarProducts"];
   agentToolDescriptors: ReturnType<typeof makeAgentToolsService>["toolDescriptors"];
   agentToolsOpenApi: ReturnType<typeof makeAgentToolsService>["openApi"];
-  fashionSearch: ReturnType<typeof makeFashionSearchService>["fashionSearch"];
-  syncFashionCatalogEvent: ReturnType<typeof makeFashionSearchService>["syncFashionCatalogEvent"];
+  shopSearch: ReturnType<typeof makeShopSearchService>["shopSearch"];
+  syncCatalogEvent: ReturnType<typeof makeCatalogSyncService>["syncCatalogEvent"];
   indexDocuments: ReturnType<typeof makeSearchService>["indexDocuments"];
   ingest: ReturnType<typeof makeIngestService>["ingestCollection"];
   pushDocuments: ReturnType<typeof makeIngestService>["upsertDocuments"];
@@ -249,7 +250,8 @@ export function createMatcher(config: MatcherConfig): Matcher {
   const evalService = makeEvalService(ctx, searchService);
   const agentToolsService = makeAgentToolsService(ctx, projectsService, searchService);
   const ingestService = makeIngestService(ctx, projectsService);
-  const fashionSearchService = makeFashionSearchService(ctx, projectsService, searchService, ingestService);
+  const shopSearchService = makeShopSearchService(ctx, projectsService, searchService);
+  const catalogSyncService = makeCatalogSyncService(ctx, projectsService, ingestService);
   const enrichService = makeEnrichPipelineService(ctx, projectsService);
   const revalidateImagesService = makeRevalidateImagesService(ctx, projectsService);
   const reviewService = makeReviewService(ctx, projectsService);
@@ -271,7 +273,8 @@ export function createMatcher(config: MatcherConfig): Matcher {
       search: searchService,
       calibrateSearch: calibrateSearchService,
       agentTools: agentToolsService,
-      fashionSearch: fashionSearchService,
+      shopSearch: shopSearchService,
+      catalogSync: catalogSyncService,
       ingest: ingestService,
       enrich: enrichService,
       review: reviewService,
@@ -322,8 +325,8 @@ export function createMatcher(config: MatcherConfig): Matcher {
     findSimilarProducts: agentToolsService.findSimilarProducts,
     agentToolDescriptors: agentToolsService.toolDescriptors,
     agentToolsOpenApi: agentToolsService.openApi,
-    fashionSearch: fashionSearchService.fashionSearch,
-    syncFashionCatalogEvent: fashionSearchService.syncFashionCatalogEvent,
+    shopSearch: shopSearchService.shopSearch,
+    syncCatalogEvent: catalogSyncService.syncCatalogEvent,
     indexDocuments: searchService.indexDocuments,
     ingest: ingestService.ingestCollection,
     pushDocuments: ingestService.upsertDocuments,

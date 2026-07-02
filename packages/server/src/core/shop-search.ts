@@ -1,35 +1,23 @@
+// Storefront search facade: one call that layers ranking policy, request-scoped shopper
+// personalization, and declared no-results recovery on top of the core search engine.
+// Vertical-neutral — everything catalog-specific (relaxable filters, ranking policy) comes
+// from the collection's `search` def, which vertical templates pre-fill.
 import type {
   CollectionDef,
-  FashionPersonalizationContext,
-  FashionRankingPolicy,
-  FashionSearchImageInput,
-  FashionSearchRequest,
-  FashionSearchResponse,
+  RankingPolicy,
+  ShopperContext,
+  ShopSearchImageInput,
+  ShopSearchRequest,
+  ShopSearchResponse,
   SearchWeightsInput,
 } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import type { SearchHit, SearchService, SearchOpts, SearchFilters } from "./search.ts";
-import type { IngestService } from "./ingest.ts";
 import { collectionTableName, getByPath } from "./db-utils.ts";
 import { applyRankingPolicy } from "./ranking.ts";
-import { sanitiseIdent } from "./schema-gen.ts";
-import { searchResultCache } from "./search-cache.ts";
 
 type FactorValue = number | boolean | string | null;
-
-export interface FashionCatalogSyncEvent {
-  type:
-    | "product.upsert"
-    | "product.delete"
-    | "variant.upsert"
-    | "inventory.update"
-    | "price.update"
-    | "image.update";
-  id: string;
-  data?: Record<string, unknown>;
-  changes?: Record<string, unknown>;
-}
 
 function hitValue(hit: SearchHit, key: string): unknown {
   if (key in hit) return hit[key];
@@ -51,14 +39,14 @@ function normalizeFilters(filters?: Record<string, unknown>): SearchFilters {
   return { ...(filters ?? {}) } as SearchFilters;
 }
 
-type ResolvedFashionRankingPolicy = FashionRankingPolicy & {
-  weights: Required<NonNullable<FashionRankingPolicy["weights"]>>;
+type ResolvedRankingPolicy = RankingPolicy & {
+  weights: Required<NonNullable<RankingPolicy["weights"]>>;
   businessField: string;
   boostAvailable: boolean;
   buryUnavailable: boolean;
 };
 
-function defaultRankingPolicy(hasImage: boolean, hasPersonalization: boolean): ResolvedFashionRankingPolicy {
+function defaultRankingPolicy(hasImage: boolean, hasPersonalization: boolean): ResolvedRankingPolicy {
   return {
     weights: {
       relevance: 1,
@@ -75,10 +63,10 @@ function defaultRankingPolicy(hasImage: boolean, hasPersonalization: boolean): R
 }
 
 function mergeRankingPolicy(
-  policy: FashionRankingPolicy | undefined,
+  policy: RankingPolicy | undefined,
   hasImage: boolean,
   hasPersonalization: boolean
-): ResolvedFashionRankingPolicy {
+): ResolvedRankingPolicy {
   const base = defaultRankingPolicy(hasImage, hasPersonalization);
   return {
     weights: { ...base.weights, ...(policy?.weights ?? {}) },
@@ -91,7 +79,7 @@ function mergeRankingPolicy(
 function buildWeights(
   def: CollectionDef,
   q: string,
-  image: FashionSearchImageInput | undefined,
+  image: ShopSearchImageInput | undefined,
   override: SearchWeightsInput | undefined
 ): SearchWeightsInput | undefined {
   const weights: SearchWeightsInput = { ...(override ?? {}) };
@@ -112,7 +100,9 @@ function buildWeights(
   return Object.keys(weights).length ? weights : undefined;
 }
 
-function personalize(hit: SearchHit, ctx?: FashionPersonalizationContext): number {
+// Reads commerce-generic hit fields (brand/price/size/styles/colors); a hit simply
+// contributes nothing on fields its schema does not declare.
+function personalize(hit: SearchHit, ctx?: ShopperContext): number {
   if (!ctx) return 0;
   let score = 0;
   const brand = String(hitValue(hit, "brand") ?? "").toLowerCase();
@@ -145,8 +135,8 @@ function personalize(hit: SearchHit, ctx?: FashionPersonalizationContext): numbe
 
 function rankHits(
   hits: SearchHit[],
-  policy: ResolvedFashionRankingPolicy,
-  personalization: FashionPersonalizationContext | undefined,
+  policy: ResolvedRankingPolicy,
+  personalization: ShopperContext | undefined,
   visualById: Map<string, number>
 ): { hits: SearchHit[]; factors: Map<string, Record<string, FactorValue>> } {
   return applyRankingPolicy(hits, policy, {
@@ -158,10 +148,13 @@ function rankHits(
   });
 }
 
-function relaxFilters(filters: SearchFilters): { filters: SearchFilters; relaxed: string[] } {
+function relaxFilters(
+  filters: SearchFilters,
+  relaxable: string[]
+): { filters: SearchFilters; relaxed: string[] } {
   const next = { ...filters };
   const relaxed: string[] = [];
-  for (const key of ["colors", "material", "fit", "styles", "category", "price"]) {
+  for (const key of relaxable) {
     if (key in next) {
       delete next[key];
       relaxed.push(key);
@@ -181,22 +174,21 @@ function visualCosines(explain: Awaited<ReturnType<SearchService["searchExplain"
   return out;
 }
 
-export function makeFashionSearchService(
+export function makeShopSearchService(
   ctx: MatcherCtx,
   projectsService: ProjectsService,
-  searchService: SearchService,
-  ingestService: IngestService
+  searchService: SearchService
 ) {
   async function resolveProductImage(
     projectSlug: string,
     collectionName: string,
-    image: FashionSearchImageInput | undefined
+    image: ShopSearchImageInput | undefined
   ): Promise<SearchOpts["image"] | undefined> {
     if (!image?.productId) return image;
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
     const table = collectionTableName(project.schema_name, collectionName);
-    const rows = await ctx.storage.client("fashion-search").unsafe(
+    const rows = await ctx.storage.client("shop-search").unsafe(
       `SELECT data FROM ${table} WHERE id = $1 LIMIT 1`,
       [image.productId]
     );
@@ -213,18 +205,18 @@ export function makeFashionSearchService(
     };
   }
 
-  async function fashionSearch(
+  async function shopSearch(
     projectSlug: string,
     collectionName: string,
-    req: FashionSearchRequest
-  ): Promise<FashionSearchResponse> {
+    req: ShopSearchRequest
+  ): Promise<ShopSearchResponse> {
     const started = Date.now();
     const def = await searchService.getCollectionDef(projectSlug, collectionName);
     if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
 
     const q = req.q?.trim() ?? "";
     const image = await resolveProductImage(projectSlug, collectionName, req.image);
-    if (!q && !image) throw new Error("fashionSearch requires q or image");
+    if (!q && !image) throw new Error("shopSearch requires q or image");
 
     const filters = normalizeFilters(req.filters);
     const weights = buildWeights(def, q, image, req.weights);
@@ -251,11 +243,11 @@ export function makeFashionSearchService(
     } else {
       base = await searchService.search(projectSlug, collectionName, opts);
     }
-    let fallback: FashionSearchResponse["fallback"];
+    let fallback: ShopSearchResponse["fallback"];
     let appliedFilters = filters;
 
     if (base.hits.length === 0 && req.recoverNoResults) {
-      const relaxed = relaxFilters(filters);
+      const relaxed = relaxFilters(filters, def.search?.relaxableFilters ?? []);
       if (relaxed.relaxed.length) {
         const relaxedOpts = { ...opts, filters: relaxed.filters };
         if (wantExplain) {
@@ -273,7 +265,7 @@ export function makeFashionSearchService(
     const policy = mergeRankingPolicy(req.rankingPolicy, !!image, !!req.personalization);
     const ranked = rankHits(base.hits, policy, req.personalization, visualCosines(explain));
 
-    const response: FashionSearchResponse = {
+    const response: ShopSearchResponse = {
       hits: ranked.hits,
       parsed: base.parsed,
       appliedFilters,
@@ -311,51 +303,7 @@ export function makeFashionSearchService(
     return response;
   }
 
-  async function syncFashionCatalogEvent(
-    projectSlug: string,
-    collectionName: string,
-    event: FashionCatalogSyncEvent
-  ): Promise<{ synced: boolean; action: "upserted" | "deleted"; needsReindex: boolean }> {
-    const project = await projectsService.getProject(projectSlug);
-    if (!project) throw new Error(`project "${projectSlug}" not found`);
-    const def = await projectsService.getCollectionDef(projectSlug, collectionName);
-    if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
-    const table = collectionTableName(project.schema_name, collectionName);
-
-    if (event.type === "product.delete") {
-      await ctx.storage.client("fashion-sync").unsafe(`DELETE FROM ${table} WHERE id = $1`, [event.id]);
-      searchResultCache.invalidateProjectCollection(projectSlug, collectionName);
-      return { synced: true, action: "deleted", needsReindex: false };
-    }
-
-    const rows = await ctx.storage.client("fashion-sync").unsafe(
-      `SELECT data FROM ${table} WHERE id = $1 LIMIT 1`,
-      [event.id]
-    );
-    const existing = (rows[0]?.data ?? {}) as Record<string, unknown>;
-    const data = { ...existing, ...(event.data ?? {}), ...(event.changes ?? {}) };
-    await ingestService.upsertDocuments(projectSlug, collectionName, [{ id: event.id, data }]);
-    const setFragments: string[] = [];
-    const params: unknown[] = [event.id];
-    for (const [fieldName, fieldDef] of Object.entries(def.fields)) {
-      const path = fieldDef.path ?? fieldName;
-      if (path.startsWith("enriched.")) continue;
-      const value = getByPath(data, path);
-      if (value === undefined) continue;
-      params.push(value);
-      setFragments.push(`${sanitiseIdent(fieldName)} = $${params.length}`);
-    }
-    if (setFragments.length) {
-      await ctx.storage.client("fashion-sync").unsafe(
-        `UPDATE ${table} SET ${setFragments.join(", ")} WHERE id = $1`,
-        params
-      );
-    }
-    const needsReindex = ["product.upsert", "variant.upsert", "image.update"].includes(event.type);
-    return { synced: true, action: "upserted", needsReindex };
-  }
-
-  return { fashionSearch, syncFashionCatalogEvent };
+  return { shopSearch };
 }
 
-export type FashionSearchService = ReturnType<typeof makeFashionSearchService>;
+export type ShopSearchService = ReturnType<typeof makeShopSearchService>;

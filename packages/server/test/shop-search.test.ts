@@ -1,14 +1,14 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels, s } from "../../sdk/src/index.ts";
+import { collection, f, Channels, s, fashionSearchDefaults } from "../../sdk/src/index.ts";
 import { ftsIndexingByTitle } from "./fixtures.ts";
 import type { EmbedRequest } from "../src/types.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { __setImageTransport } from "../src/core/fetch-image.ts";
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
 
 function peakVector(dim: number, peak: number): number[] {
@@ -43,7 +43,7 @@ function mockFetch(responseFor: (url: string) => Response) {
   return () => __setImageTransport(null);
 }
 
-const fashionCollection = collection("products", {
+const shopCollection = collection("products", {
   fields: {
     title: f.text({ searchable: true }),
     brand: f.text({ filterable: true, facet: true }),
@@ -73,10 +73,11 @@ const fashionCollection = collection("products", {
       Channels.spaces({ weight: 1 }),
     ],
     defaultSpaceWeights: { intent: 1, visual: 1, price: 0.2 },
+    ...fashionSearchDefaults(),
   },
 });
 
-describeIf("fashionSearch product surface", () => {
+describeIf("shopSearch product surface", () => {
   const projectSlug = `t_${Math.random().toString(36).slice(2, 10)}`;
   const redUrl = "https://example.com/red-dress.jpg";
   const blueUrl = "https://example.com/blue-dress.jpg";
@@ -99,7 +100,7 @@ describeIf("fashionSearch product surface", () => {
     await matcher.migrate();
     const r = await matcher.apply(projectSlug, {
       entities: [],
-      collections: [fashionCollection],
+      collections: [shopCollection],
     });
     schemaName = r.schema;
     await matcher.pushDocuments(projectSlug, "products", [
@@ -169,7 +170,7 @@ describeIf("fashionSearch product surface", () => {
   });
 
   test("accepts image plus intent while preserving hard filters and explanations", async () => {
-    const result = await matcher.fashionSearch(projectSlug, "products", {
+    const result = await matcher.shopSearch(projectSlug, "products", {
       q: "summer dress",
       image: { url: redUrl },
       filters: { available: true },
@@ -195,7 +196,7 @@ describeIf("fashionSearch product surface", () => {
   });
 
   test("personalization reorders without violating hard filters", async () => {
-    const result = await matcher.fashionSearch(projectSlug, "products", {
+    const result = await matcher.shopSearch(projectSlug, "products", {
       q: "dress",
       filters: { available: true },
       personalization: {
@@ -214,8 +215,8 @@ describeIf("fashionSearch product surface", () => {
     expect(result.explanations?.[0]?.factors).toHaveProperty("personalization");
   });
 
-  test("recovers no-results by relaxing fashion filters transparently", async () => {
-    const result = await matcher.fashionSearch(projectSlug, "products", {
+  test("recovers no-results by relaxing declared relaxable filters transparently", async () => {
+    const result = await matcher.shopSearch(projectSlug, "products", {
       q: "dress",
       filters: { available: true, category: "skirts", colors: ["purple"], material: "denim" },
       recoverNoResults: true,
@@ -235,14 +236,14 @@ describeIf("fashionSearch product surface", () => {
   });
 
   test("catalog sync updates filter columns for inventory and price changes", async () => {
-    const synced = await matcher.syncFashionCatalogEvent(projectSlug, "products", {
+    const synced = await matcher.syncCatalogEvent(projectSlug, "products", {
       type: "price.update",
       id: "red",
       changes: { price: 60, available: false },
     });
     expect(synced).toEqual({ synced: true, action: "upserted", needsReindex: false });
 
-    const result = await matcher.fashionSearch(projectSlug, "products", {
+    const result = await matcher.shopSearch(projectSlug, "products", {
       q: "red dress",
       filters: { available: true, price: { $lte: 70 } },
       limit: 5,

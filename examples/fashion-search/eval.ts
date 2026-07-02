@@ -219,11 +219,11 @@ function localSearch(products: Product[], query: EvalQuery): SearchRun {
 
 async function remoteSearch(products: Product[], query: EvalQuery): Promise<SearchRun> {
   const base = process.env.FASHION_SEARCH_BASE;
-  const apiKey = process.env.API_KEY ?? process.env.GEMINI_API_KEY;
+  const apiKey = process.env.SAMESAKE_API_KEY ?? process.env.GEMINI_API_KEY;
   if (!base || !apiKey) return localSearch(products, query);
 
   const started = Date.now();
-  const res = await fetch(`${base.replace(/\/$/, "")}/v1/projects/${PROJECT}/collections/${COLLECTION}/fashion-search`, {
+  const res = await fetch(`${base.replace(/\/$/, "")}/v1/projects/${PROJECT}/collections/${COLLECTION}/shop-search`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -238,7 +238,7 @@ async function remoteSearch(products: Product[], query: EvalQuery): Promise<Sear
       recoverNoResults: true,
     }),
   });
-  if (!res.ok) throw new Error(`fashion-search eval request failed ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new Error(`shop-search eval request failed ${res.status}: ${await res.text()}`);
   const body = await res.json() as {
     hits: Array<Record<string, unknown>>;
     fallback?: { reason: string; relaxedFilters: string[] };
@@ -308,7 +308,7 @@ async function main() {
     ])
   );
   const report = {
-    engine: process.env.FASHION_SEARCH_BASE ? "remote-fashion-search" : "local-deterministic-fixture",
+    engine: process.env.FASHION_SEARCH_BASE ? "remote-shop-search" : "local-deterministic-fixture",
     project: PROJECT,
     collection: COLLECTION,
     generatedAt: new Date().toISOString(),

@@ -6,7 +6,7 @@ import type { EmbedFn } from "@samesake/server";
 // `dim` drives outputDimensionality (1536 for the text doc space, 768 for the visual space).
 const KEY = () => process.env.GEMINI_API_KEY ?? "";
 
-export const geminiEmbed: EmbedFn = async ({ text, image, dim }) => {
+export const geminiEmbed: EmbedFn = async ({ text, image, dim, taskType }) => {
   let part: { text?: string; inline_data?: { mime_type: string; data: string } };
 
   if (image && (image.bytes || image.url)) {
@@ -31,6 +31,7 @@ export const geminiEmbed: EmbedFn = async ({ text, image, dim }) => {
         model: "models/gemini-embedding-2",
         content: { parts: [part] },
         outputDimensionality: dim,
+        ...(taskType ? { taskType } : {}),
       }),
     }
   );

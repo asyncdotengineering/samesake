@@ -4,7 +4,7 @@
  * search-credibility / quarantine behaviour WITHOUT spending any enrichment LLM calls.
  *
  * Seed it (one time):
- *   psql "$DATABASE_URL" -f datasets/demo-store-seed.sql
+ *   psql "$SAMESAKE_DATABASE_URL" -f datasets/demo-store-seed.sql
  *
  * Then run this to see credible intent search + quarantined negatives:
  *   bun --env-file=../../.env seed-demo-store.ts

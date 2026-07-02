@@ -12,16 +12,16 @@ See [Running the enrich pipeline durably](/guides/enrich-pipeline/) for the five
 ## Matcher setup
 
 ```ts title="lib/matcher.ts"
-import { createMatcher, fashionRerank } from "@samesake/server";
+import { createMatcher, llmRerank } from "@samesake/server";
 import { products } from "../catalog.ts";
 import { geminiEmbed, geminiGenerate } from "../gemini.ts";
 
 export const matcher = createMatcher({
-  databaseUrl: process.env.DATABASE_URL!,
-  apiKey: process.env.API_KEY!,
+  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
+  apiKey: process.env.SAMESAKE_API_KEY!,
   embed: geminiEmbed,
   generate: geminiGenerate,
-  rerank: fashionRerank(geminiGenerate),
+  rerank: llmRerank(geminiGenerate),
 });
 ```
 
@@ -48,8 +48,8 @@ export async function syncCatalog() {
 async function pushStep() {
   "use step";
 
-  if (!process.env.DATABASE_URL) {
-    throw new FatalError("DATABASE_URL is not set");
+  if (!process.env.SAMESAKE_DATABASE_URL) {
+    throw new FatalError("SAMESAKE_DATABASE_URL is not set");
   }
 
   const rows = await fetchChangedRows();

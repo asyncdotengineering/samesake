@@ -49,7 +49,7 @@ function defaultSpaceWeights(def: CollectionDef): Record<string, number> {
 
 // Intent mode: keyword is a tiebreaker, never a primary signal. Capped at this fraction of
 // the semantic (cosine) weight so a keyword-only match can break ties among semantically
-// retrieved items but cannot outrank one. Eval-backed (examples/fashion-search/eval-configs-lk):
+// retrieved items but cannot outrank one. Eval-backed (eval-configs-lk artifacts, LK corpus):
 // at this cap, intent relevance@3 holds vs flat weights and exactness queries are preserved,
 // while keyword-decoy pollution drops out.
 const KEYWORD_TIEBREAK = 0.3;
@@ -260,7 +260,7 @@ export async function buildQueryImageVectors(
   if (image.url) {
     const fetched = await fetchRemoteImageSafe(image.url);
     if (!fetched.ok) {
-      throw new Error(`fashion image query fetch failed: ${fetched.reason}`);
+      throw new Error(`image query fetch failed: ${fetched.reason}`);
     }
     bytes = fetched.bytes;
     mimeType = fetched.contentType;

@@ -28,12 +28,13 @@ describe("eval metrics", () => {
     expect(nullRate([true, false, true])).toBeCloseTo(2 / 3);
     expect(nullRate([])).toBe(0);
 
+    const hit = (id: string, data: Record<string, unknown>) => ({ id, value: (f: string) => data[f] });
     const violations = constraintViolations(
       [
-        { id: "a", price: 4000, colors: ["red"], gender: "women", category: "dresses" },
-        { id: "b", price: 6000, colors: ["blue"], gender: "women", category: "dresses" },
+        hit("a", { price: 4000, colors: ["red"], gender: "women", category: "dresses" }),
+        hit("b", { price: 6000, colors: ["blue"], gender: "women", category: "dresses" }),
       ],
-      { max_price: 5000, exclude_colors: ["blue"], gender: "women", category: "dresses" }
+      { price: { $lte: 5000 }, colors: { $exclude: ["blue"] }, gender: "women", category: "dresses" }
     );
     expect(violations).toBe(1);
   });

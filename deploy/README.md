@@ -13,7 +13,7 @@ No Docker is required for local development or Fly deployment. An optional `Dock
 fly launch --no-deploy --config deploy/fly.toml.example
 fly secrets set SAMESAKE_DATABASE_URL="postgres://..."
 fly secrets set SAMESAKE_API_KEY="$(openssl rand -hex 24)"
-fly secrets set GOOGLE_GENERATIVE_AI_API_KEY="..."
+fly secrets set GEMINI_API_KEY="..."
 fly deploy --config deploy/fly.toml.example
 ```
 

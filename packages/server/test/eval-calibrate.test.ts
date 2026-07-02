@@ -18,9 +18,10 @@ describe("eval calibrate", () => {
   test("test:eval-calibrate reports F1 and kappa", async () => {
     const generate: GenerateFn = async ({ prompt }) => {
       const ids = [...prompt.matchAll(/id: ([a-z])/g)].map((m) => m[1]);
+      const byGrade = ["I", "C", "S", "E"] as const;
       const grades = ids.map((id) => {
         const human = labels.find((l) => l.id === id);
-        return { id, grade: human?.grade ?? 0, reason: "stub" };
+        return { id, esci: byGrade[human?.grade ?? 0], reason: "stub" };
       });
       return { grades };
     };

@@ -14,17 +14,17 @@ See [Running the enrich pipeline durably](/guides/enrich-pipeline/) for the five
 Your matcher runs inside the Worker (or calls out to a Node service that holds it — same matcher calls either way). For a Worker-hosted matcher, keep the database URL and API key in secrets:
 
 ```ts title="src/matcher.ts"
-import { createMatcher, fashionRerank } from "@samesake/server";
+import { createMatcher, llmRerank } from "@samesake/server";
 import { products } from "./catalog.ts";
 import { geminiEmbed, geminiGenerate } from "./gemini.ts";
 
 export function createCatalogMatcher(env: Env) {
   return createMatcher({
-    databaseUrl: env.DATABASE_URL,
+    databaseUrl: env.SAMESAKE_DATABASE_URL,
     apiKey: env.API_KEY,
     embed: geminiEmbed,
     generate: geminiGenerate,
-    rerank: fashionRerank(geminiGenerate),
+    rerank: llmRerank(geminiGenerate),
   });
 }
 ```
@@ -41,7 +41,7 @@ import { createCatalogMatcher } from "../matcher.ts";
 import { fetchChangedRows } from "../catalog-source.ts";
 
 type Env = {
-  DATABASE_URL: string;
+  SAMESAKE_DATABASE_URL: string;
   API_KEY: string;
 };
 

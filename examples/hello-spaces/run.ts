@@ -7,7 +7,7 @@ import { products } from "./samesake.config.ts";
 import { stubEmbed } from "./stub-embed.ts";
 
 function loadEnv(): void {
-  if (process.env.DATABASE_URL) return;
+  if (process.env.SAMESAKE_DATABASE_URL) return;
   try {
     const env = readFileSync(join(import.meta.dir, "../../.env"), "utf8");
     for (const line of env.split("\n")) {
@@ -17,7 +17,7 @@ function loadEnv(): void {
       if (eq === -1) continue;
       const key = trimmed.slice(0, eq);
       const val = trimmed.slice(eq + 1);
-      if (key === "DATABASE_URL") process.env.DATABASE_URL = val;
+      if (key === "SAMESAKE_DATABASE_URL") process.env.SAMESAKE_DATABASE_URL = val;
     }
   } catch {
     /* no .env */
@@ -34,9 +34,9 @@ const DOCS = [
 
 async function main(): Promise<void> {
   loadEnv();
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
   if (!databaseUrl) {
-    console.error("DATABASE_URL is required (set in .env or environment)");
+    console.error("SAMESAKE_DATABASE_URL is required (set in .env or environment)");
     process.exit(1);
   }
 

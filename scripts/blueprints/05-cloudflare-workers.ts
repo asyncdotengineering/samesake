@@ -21,7 +21,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
 interface WorkerEnv {
-  DATABASE_URL: string;
+  SAMESAKE_DATABASE_URL: string;
   SAMESAKE_API_KEY: string;
   GEMINI_API_KEY?: string;
 }
@@ -48,7 +48,7 @@ function getMatcher(env: WorkerEnv): Matcher {
       // In a real CF Worker, swap to drizzle-orm/neon-serverless. Shown
       // with postgres-js here only because that's what the workspace has;
       // the contract is identical.
-      db: drizzle(postgres(env.DATABASE_URL)),
+      db: drizzle(postgres(env.SAMESAKE_DATABASE_URL)),
       apiKey: env.SAMESAKE_API_KEY,
       embed: makeWorkerEmbed(env),
       // CF Workers can't use top-level await reliably; "lazy" is the only

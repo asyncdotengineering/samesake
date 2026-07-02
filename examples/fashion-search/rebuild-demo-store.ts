@@ -39,7 +39,7 @@ console.log("\nindexing…");
 while ((await matcher.index(PROJECT, COLL, { limit: 50 })).indexed > 0) {}
 
 // ---- pipeline outcome: what got indexed vs quarantined ----
-const { db, close } = createDbFromUrl(process.env.DATABASE_URL!);
+const { db, close } = createDbFromUrl(process.env.SAMESAKE_DATABASE_URL!);
 const rows = (await db.execute(
   sql.raw(
     `SELECT id, data->>'title' AS title, pipeline_status, gate_reason,
