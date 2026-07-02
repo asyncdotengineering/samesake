@@ -134,6 +134,22 @@ at any installation yet.
 
 **P1 is complete.** Next: P2 (marketplace wedge).
 
+### P2 session (2026-07-03) — P2-1 tenancy shipped (313/313 tests)
+
+24. **P2-1 tenancy for collections**: `CollectionDef.scopes` → indexed `scope_<key>` columns +
+    MANDATORY scope on every surface (push/connectors/search/facets/explain/get/grep/remove/
+    eval; HTTP bodies + `scope.<key>=` GET params; CLI `--scope k=v`); cross-tenant id-takeover
+    guard; scope-keyed search cache; scopes change = destructive migration. Isolation proof:
+    `test/tenancy.test.ts` (12 tests — identical titles in two tenants never leak either
+    direction). Design: scopes are hard isolation ("whose catalog"); vendor-in-marketplace stays
+    a facet; ids remain collection-unique (composite-PK autonomy deferred until demanded).
+    Bonus root-cause fix: score-drop cliff baseline can be raised (never lowered) by anchored
+    hits — junk tails behind keyword matches now cut; eval-verified retrieval-neutral on the
+    real corpus (topIds 67/67 identical, p2tenancy baseline minted).
+
+Remaining P2: offer dedup (2), enrichment ROI upgrades (3), staged rollout (4), training-pair
+export (5).
+
 ## 3. The iron-out backlog (ordered; each item names its proof)
 
 ### P0 — correctness & honesty (the product's claims must be true)

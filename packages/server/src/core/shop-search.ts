@@ -228,6 +228,7 @@ export function makeShopSearchService(
       weights,
       limit: Math.min(Math.max(limit, 1), 100),
       offset: req.offset,
+      scope: req.scope,
     };
 
     // One retrieval yields both hits and (when requested) the explain breakdown.

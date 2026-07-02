@@ -45,10 +45,20 @@ export interface StorageAdapter {
   markDead(table: string, maxAttempts: number): Promise<number>;
   /** Failed rows due for retry (under max attempts). */
   retryableRows(table: string, maxAttempts: number, limit: number): Promise<Array<Record<string, unknown>>>;
-  /** Upsert a source document (content-hash-aware `updated_at`). */
-  upsertDocument(table: string, id: string, dataJson: string, contentHash: string): Promise<void>;
-  /** Delete documents by id; returns how many were removed. */
-  deleteDocuments(table: string, ids: string[]): Promise<number>;
+  /**
+   * Upsert a source document (content-hash-aware `updated_at`). `scopeCols`
+   * maps scope column name → value; on id conflict with a DIFFERENT scope the
+   * upsert is rejected (cross-tenant id takeover).
+   */
+  upsertDocument(
+    table: string,
+    id: string,
+    dataJson: string,
+    contentHash: string,
+    scopeCols?: Record<string, string>
+  ): Promise<void>;
+  /** Delete documents by id (constrained to `scopeCols` when given); returns how many were removed. */
+  deleteDocuments(table: string, ids: string[], scopeCols?: Record<string, string>): Promise<number>;
   /** Installed pgvector version as [major, minor], cached; null when absent. */
   pgvectorVersion(): Promise<[number, number] | null>;
   /**
@@ -174,10 +184,25 @@ export class PostgresAdapter implements StorageAdapter {
     );
   }
 
-  async upsertDocument(table: string, id: string, dataJson: string, contentHash: string): Promise<void> {
-    await getPgClient(this.handle.db, "ingest").unsafe(
-      `INSERT INTO ${table} (id, data, content_hash, ingested_at, updated_at)
-       VALUES ($1, $2::jsonb, $3, now(), now())
+  async upsertDocument(
+    table: string,
+    id: string,
+    dataJson: string,
+    contentHash: string,
+    scopeCols?: Record<string, string>
+  ): Promise<void> {
+    const scopeEntries = Object.entries(scopeCols ?? {});
+    const scopeColSql = scopeEntries.map(([c]) => `, ${c}`).join("");
+    const scopeValSql = scopeEntries.map((_, i) => `, $${4 + i}`).join("");
+    // Cross-tenant takeover guard: on id conflict the update only applies when
+    // the existing row belongs to the SAME scope. A skipped update (WHERE
+    // false) returns no row — detected below and rejected loudly.
+    const scopeGuard = scopeEntries.length
+      ? ` WHERE ${scopeEntries.map(([c]) => `${table}.${c} = EXCLUDED.${c}`).join(" AND ")}`
+      : "";
+    const rows = await getPgClient(this.handle.db, "ingest").unsafe(
+      `INSERT INTO ${table} (id, data, content_hash, ingested_at, updated_at${scopeColSql})
+       VALUES ($1, $2::jsonb, $3, now(), now()${scopeValSql})
        ON CONFLICT (id) DO UPDATE SET
          data = EXCLUDED.data,
          content_hash = EXCLUDED.content_hash,
@@ -196,13 +221,24 @@ export class PostgresAdapter implements StorageAdapter {
          enriched = CASE
            WHEN ${table}.content_hash <> EXCLUDED.content_hash THEN NULL
            ELSE ${table}.enriched
-         END`,
-      [id, dataJson, contentHash]
+         END${scopeGuard}
+       RETURNING id`,
+      [id, dataJson, contentHash, ...scopeEntries.map(([, v]) => v)]
     );
+    if (scopeEntries.length > 0 && rows.length === 0) {
+      throw new Error(
+        `document "${id}" already exists under a different scope — ids are unique per collection, not per scope`
+      );
+    }
   }
 
-  async deleteDocuments(table: string, ids: string[]): Promise<number> {
-    const result = await getPgClient(this.handle.db, "ingest").unsafe(`DELETE FROM ${table} WHERE id = ANY($1)`, [ids]);
+  async deleteDocuments(table: string, ids: string[], scopeCols?: Record<string, string>): Promise<number> {
+    const scopeEntries = Object.entries(scopeCols ?? {});
+    const scopeSql = scopeEntries.map(([c], i) => ` AND ${c} = $${2 + i}`).join("");
+    const result = await getPgClient(this.handle.db, "ingest").unsafe(
+      `DELETE FROM ${table} WHERE id = ANY($1)${scopeSql}`,
+      [ids, ...scopeEntries.map(([, v]) => v)]
+    );
     return (result as { count?: number }).count ?? 0;
   }
 }

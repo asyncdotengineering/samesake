@@ -73,10 +73,14 @@ export function applyCutoff<T>(
   let cliffAt = -1;
   for (let i = 0; i < evidence.length; i++) {
     const e = evidence[i]!;
-    // Only semantic-only hits move the baseline: an FTS-anchored hit with a low
-    // cosine is kept on lexical evidence but must not lower the cliff bar for
-    // the semantic tail behind it.
-    if (e.cos == null || e.ftsPresent) continue;
+    if (e.cos == null) continue;
+    // An FTS-anchored hit may RAISE the cliff baseline (its cosine is real
+    // evidence of where quality sits) but never lower it — a keyword match
+    // with a junk cosine must not shelter the semantic tail behind it.
+    if (e.ftsPresent) {
+      prev = prev == null ? e.cos : Math.max(prev, e.cos);
+      continue;
+    }
     if (prev != null && e.cos < prev * (1 - maxDrop)) {
       cliffAt = i;
       break;

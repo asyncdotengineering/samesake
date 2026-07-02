@@ -13,6 +13,8 @@ export interface SearchCacheKey {
   facets: unknown;
   /** HNSW recall dial — different values return different candidate sets. */
   efSearch?: number | null;
+  /** Tenancy scope — different tenants must never share a cache entry. */
+  scope?: unknown;
 }
 
 function stableKey(key: SearchCacheKey): string {
@@ -28,6 +30,7 @@ function stableKey(key: SearchCacheKey): string {
     key.offset,
     JSON.stringify(key.facets ?? []),
     key.efSearch ?? "",
+    JSON.stringify(key.scope ?? {}),
   ].join("|");
 }
 

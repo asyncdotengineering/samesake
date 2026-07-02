@@ -14,6 +14,7 @@ import { assembleQueryVector, weightedSegmentCosines } from "./spaces.ts";
 import { searchResultCache, type SearchCacheKey } from "./search-cache.ts";
 import { buildFilterSql, type FilterCompileOpts, type SearchFilters } from "./search-filter.ts";
 import { applyCutoff, type CutoffEvidence } from "./cutoff.ts";
+import { appendScopeSql, resolveScope } from "./scope.ts";
 import {
   buildQueryImageVectors,
   buildQuerySpaceSegments,
@@ -127,6 +128,12 @@ export interface SearchOpts {
    * Higher = better ANN recall, slower query. Omit for the pgvector default (40).
    */
   efSearch?: number;
+  /**
+   * Tenancy scope. REQUIRED (all declared keys) when the collection declares
+   * `scopes` — every query runs inside exactly one scope; there is no
+   * cross-scope search. Rejected on unscoped collections.
+   */
+  scope?: Record<string, string>;
 }
 
 // Second-stage rerank: how many first-stage candidates to hand the reranker.
@@ -140,6 +147,8 @@ interface Retrieval {
   q: string;
   weights: ChannelWeights;
   offset: number;
+  /** Sanitised scope column → value (empty for unscoped collections). */
+  scopeCols: Record<string, string>;
   nlq: Awaited<ReturnType<typeof parseNlq>>;
   explicitFilters: SearchFilters;
   mergedFilters: SearchFilters;
@@ -177,6 +186,7 @@ function resultCacheKey(project: string, collection: string, opts: SearchOpts): 
     offset: opts.offset ?? 0,
     facets: opts.facets ?? [],
     efSearch: opts.efSearch ?? null,
+    scope: opts.scope ?? {},
   };
 }
 
@@ -251,6 +261,7 @@ async function runHybridQuery(
   limit: number,
   offset: number,
   efSearch: number | null,
+  scopeCols: Record<string, string>,
   mode: HybridRunMode = "search"
 ): Promise<{
   rows: Array<Record<string, unknown>>;
@@ -282,11 +293,17 @@ async function runHybridQuery(
   const vecRef = hasCos && vector ? addParam(toVectorLiteral(vector)) : null;
   const spcRef = hasSpc && spaceVector ? addParam(toVectorLiteral(spaceVector)) : null;
 
+  // Tenancy: the scope is a structural guard on every leg, alongside
+  // pipeline-status visibility — not a caller filter.
+  const scopeCond = Object.entries(scopeCols)
+    .map(([col, v]) => `${col} = ${addParam(v)}`)
+    .join(" AND ");
+  const visibility = scopeCond
+    ? `(pipeline_status = 'ready' OR pipeline_status IS NULL) AND ${scopeCond}`
+    : "(pipeline_status = 'ready' OR pipeline_status IS NULL)";
+
   const compiled = buildFilterSql(filters, def, filterOpts, params.length + 1);
-  const where =
-    compiled.where === "true"
-      ? "(pipeline_status = 'ready' OR pipeline_status IS NULL)"
-      : `${compiled.where} AND (pipeline_status = 'ready' OR pipeline_status IS NULL)`;
+  const where = compiled.where === "true" ? visibility : `${compiled.where} AND ${visibility}`;
   params.push(...compiled.params);
 
   const limitRef = addParam(limit);
@@ -575,6 +592,8 @@ export function makeSearchService(
     const q = opts.q?.trim() ?? "";
     if (!q && !opts.image) throw new Error("search requires a non-empty q or image");
 
+    const scopeCols = resolveScope(def, collectionName, opts.scope, "search");
+
     const offset = Math.min(Math.max(opts.offset ?? 0, 0), MAX_OFFSET);
     const hasImage = !!opts.image;
     const mode: SearchMode = opts.mode ?? (hasImage ? "similar" : "intent");
@@ -644,6 +663,7 @@ export function makeSearchService(
       q,
       weights,
       offset,
+      scopeCols,
       nlq,
       explicitFilters,
       mergedFilters,
@@ -693,6 +713,7 @@ export function makeSearchService(
       limit,
       r.offset,
       r.efSearch,
+      r.scopeCols,
       mode
     );
 
@@ -718,6 +739,7 @@ export function makeSearchService(
         limit,
         r.offset,
         r.efSearch,
+        r.scopeCols,
         mode
       );
       rows = retry.rows;
@@ -737,11 +759,12 @@ export function makeSearchService(
     let facets: SearchResult["facets"];
     if (opts.facets?.length) {
       const compiled = buildFilterSql(r.mergedFilters, r.def, r.filterOpts, 1);
+      const scoped = appendScopeSql(compiled.where, compiled.params, r.scopeCols);
       facets = await ctx.storage.facets({
         table: collectionTableName(r.project.schema_name, r.collectionName),
         def: r.def,
-        where: compiled.where,
-        params: compiled.params,
+        where: scoped.where,
+        params: scoped.params,
         facetNames: opts.facets,
       });
     }
@@ -1025,19 +1048,21 @@ export function makeSearchService(
   async function facets(
     projectSlug: string,
     collectionName: string,
-    opts: { filters?: SearchFilters; facets: string[] }
+    opts: { filters?: SearchFilters; facets: string[]; scope?: Record<string, string> }
   ): Promise<Record<string, import("../db/postgres/facets.ts").FacetResult>> {
     if (!opts.facets?.length) return {};
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
     const def = await getCollectionDef(projectSlug, collectionName);
     if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
+    const scopeCols = resolveScope(def, collectionName, opts.scope, "facets");
     const compiled = buildFilterSql(opts.filters ?? {}, def, { soft: false }, 1);
+    const scoped = appendScopeSql(compiled.where, compiled.params, scopeCols);
     return ctx.storage.facets({
       table: collectionTableName(project.schema_name, collectionName),
       def,
-      where: compiled.where,
-      params: compiled.params,
+      where: scoped.where,
+      params: scoped.params,
       facetNames: opts.facets,
     });
   }
@@ -1051,20 +1076,23 @@ export function makeSearchService(
     projectSlug: string,
     collectionName: string,
     id: string,
-    opts: { offset?: number; maxChars?: number } = {}
+    opts: { offset?: number; maxChars?: number; scope?: Record<string, string> } = {}
   ): Promise<{ id: string; data: unknown; doc: string | null; enriched: unknown; indexedAt: unknown } | null> {
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
-    if (!(await getCollectionDef(projectSlug, collectionName))) {
+    const def = await getCollectionDef(projectSlug, collectionName);
+    if (!def) {
       throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
     }
+    const scopeCols = resolveScope(def, collectionName, opts.scope, "getDocument");
+    const scoped = appendScopeSql("id = $1", [id], scopeCols);
     const table = collectionTableName(project.schema_name, collectionName);
     const rows = (await ctx.storage
       .client("get document")
-      .unsafe(`SELECT id, data, doc, enriched, indexed_at FROM ${table} WHERE id = $1 LIMIT 1`, [id])) as Record<
-      string,
-      unknown
-    >[];
+      .unsafe(
+        `SELECT id, data, doc, enriched, indexed_at FROM ${table} WHERE ${scoped.where} LIMIT 1`,
+        scoped.params
+      )) as Record<string, unknown>[];
     if (!rows.length) return null;
     const r = rows[0]!;
     let doc = (r.doc as string | null) ?? null;
@@ -1084,9 +1112,9 @@ export function makeSearchService(
     projectSlug: string,
     collectionName: string,
     id: string,
-    opts: { pattern: string; context?: number; maxMatches?: number }
+    opts: { pattern: string; context?: number; maxMatches?: number; scope?: Record<string, string> }
   ): Promise<{ id: string; matches: { match: string; start: number; end: number; context: string }[] } | null> {
-    const doc = await getDocument(projectSlug, collectionName, id);
+    const doc = await getDocument(projectSlug, collectionName, id, { scope: opts.scope });
     if (!doc) return null;
     const text = doc.doc && doc.doc.trim() ? doc.doc : JSON.stringify(doc.data ?? {});
     let re: RegExp;

@@ -166,6 +166,37 @@ console.log(result.aggregate, "pass:", result.pass);
 
 That's how you tune a marketplace without playing whack-a-mole. See [Eval gate](/guides/eval-gate/).
 
+## Multi-store isolation — `scopes`
+
+Everything above is one marketplace: many sellers inside **one shared catalog**, where "vendor" is
+a facet shoppers can filter by. If instead you host **separate stores** — a SaaS where each
+merchant gets their own catalog, or one deployment serving several country storefronts — declare
+tenancy on the collection:
+
+```ts
+const products = collection("products", {
+  scopes: ["store_id"],   // "whose catalog is this row?"
+  // ...fields, embeddings, search as before
+});
+
+// Every write carries the scope…
+await matcher.pushDocuments("platform", "products", [
+  { id: "sku-1", scope: { store_id: "acme" }, data: { /* … */ } },
+]);
+
+// …and every read runs inside exactly one scope. There is no cross-scope search.
+const hits = await matcher.search("platform", "products", {
+  q: "red running shoes",
+  scope: { store_id: "acme" },
+});
+```
+
+The scope compiles to an indexed column plus a **mandatory** filter on every surface — search,
+facets, explain, document reads, deletes. Forgetting it is an error, not an unscoped query; an
+upsert that would overwrite another store's document id is rejected; connectors can pin a scope
+(`{ kind: "shopify", scope: { store_id: "acme" }, … }`) so one feed maps to one store. Use a facet
+field when shoppers should see everything; use a scope when a tenant must never see another's rows.
+
 ## What you ended up with
 
 - Every messy seller listing **enriched** into one consistent, filterable shape.

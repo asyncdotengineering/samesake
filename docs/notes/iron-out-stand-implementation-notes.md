@@ -255,6 +255,63 @@ debt removals. Autonomous IC mode.
   matches the app's real code (adapters, not raw fetch). Cutoff + multilingual sections were
   already added to tuning-search in the previous session. Docs build green: **31 pages**.
 
+## P2 session (2026-07-03) — tenancy for collections (P2-1)
+
+### Design decisions (before code)
+
+1. **Scope semantics = hard isolation** (the plan's words: "compiled to a scoped column +
+   mandatory filter"). `scopes: ["tenant_id"]` on a collection means every read/write surface
+   requires all scope keys; there is no cross-scope search. Vendor-within-one-marketplace
+   (shopper searches all vendors) remains a plain facet field as today — P2-2 offer-dedup will
+   operate *within* a scope. Scopes answer "whose catalog is this row", not "which brand".
+2. **`id` stays the sole primary key** (Option B). Scoped collections require collection-unique
+   ids (marketplace listing/SKU ids are global in practice). The isolation guarantee is enforced
+   at the boundaries instead of the PK: reads/deletes are mandatory-filtered, and an upsert that
+   would overwrite an id owned by a *different* scope is rejected (cross-tenant takeover
+   blocked). Rejected alternative: composite PK (scope, id) — more "right" for id-space
+   autonomy but ripples scope-threading through every pipeline row-update (enrich, embed-index,
+   retry, review, catalog-sync); revisit only on real adopter id-collision demand.
+3. **Column shape mirrors the entity side**: `scope_<key> text NOT NULL` + composite btree
+   index. Adding scopes to an existing collection is a destructive migration (existing rows
+   have no scope values).
+4. **Scope flows per-document on write** (`{ id, scope, data }`, matching entity seeds) and
+   per-call on read (`SearchOpts.scope`); connectors can declare a fixed `scope` (one feed =
+   one vendor). Pipelines (enrich/embed/retry) are scope-agnostic — they process rows; scope is
+   an attribution + access concern, not a processing concern.
+5. **Out of scope now**: per-scope quotas/keys (plan marks optional), cross-scope admin search,
+   per-scope relevance policy. Review endpoints stay unscoped (operator surface).
+
+### Implementation
+
+- Surfaces wired: schema-gen (`scope_<key> text NOT NULL` + composite index; key validation +
+  field-collision guard), migration differ (scopes change → destructive), storage adapter
+  (scope-aware upsert with takeover guard via `ON CONFLICT … DO UPDATE … WHERE same-scope
+  RETURNING id` — zero rows returned ⇒ cross-scope conflict ⇒ loud error; scoped deletes),
+  ingest (per-doc `scope`, connector-pinned scope via `ConnectorDef.scope`), search (mandatory
+  `SearchOpts.scope` resolved in `retrieve`, injected as a structural guard beside
+  pipeline-status visibility in every CTE), facets (both paths), getDocument/grepDocument,
+  shopSearch passthrough, evaluateSearch/calibrate (`SearchEvalQuery.scope`), search cache key
+  (scope-separated), HTTP routes (`scope` bodies + `scope.<key>=` GET params), CLI
+  (`remove`/`search-explain --scope k=v`). One resolver (`core/scope.ts`) so every surface fails
+  with the same message shape.
+- **Real bug found by the adversarial test**: the score-drop cutoff couldn't cut a semantic junk
+  tail behind an fts-anchored head — the P1 fix stopped anchored hits from LOWERING the cliff
+  baseline but also stopped them SETTING it (prev stayed null → no cliff). Rule now: anchored
+  hits may raise the baseline, never lower it. Cutoff unit tests still green.
+- **Eval verdict on the cutoff fix** (`p2tenancy` run, 1.91/0.913/0%): retrieval provably
+  unchanged on the real corpus — **topIds 67/67 identical** to the p1cutoff baseline; with
+  gemini embeddings no top-5 cosine falls 50% behind an anchored head, so the stricter tail rule
+  only bites degenerate embeddings (exactly the tenancy/unit test cases). The overall-number
+  movement vs 1.883/0.901 is residual judge-grade settlement from the pre-fix cache gap (p1cutoff
+  predates the awaited-write fix), not retrieval; runs from here compare byte-cleanly.
+- Proof: `test/tenancy.test.ts` (12 tests) — NOT NULL scope column asserted via
+  information_schema; push without/with-unknown scope rejected; scope on unscoped collection
+  rejected; **identical titles in two tenants never leak either direction**; unscoped search on
+  scoped collection rejected; facets scoped (foreign category absent); getDocument scoped
+  (foreign scope → null); scoped delete removes 0 foreign rows (row still searchable by owner);
+  cross-tenant id takeover rejected; HTTP GET search with `scope.tenant_id` + unscoped 4xx;
+  scopes change → destructive migration error.
+
 ## Where everything lives
 
 - Spec: `docs/system-behavior-spec.md`

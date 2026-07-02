@@ -12,6 +12,29 @@ export interface CollectionsSchemaGenConfig {
 }
 
 const FTS_LANGUAGE = /^[a-z_]{1,63}$/;
+const SCOPE_KEY = /^[a-z_][a-z0-9_]{0,60}$/;
+
+/** Validated scope keys for a collection (empty when unscoped). */
+export function collectionScopes(c: Pick<CollectionDef, "scopes" | "name" | "fields">): string[] {
+  const scopes = c.scopes ?? [];
+  for (const key of scopes) {
+    if (!SCOPE_KEY.test(key)) {
+      throw new Error(
+        `collection ${c.name ?? "?"}: invalid scope key "${key}" — must match /^[a-z_][a-z0-9_]*$/`
+      );
+    }
+    if (c.fields && `scope_${key}` in c.fields) {
+      throw new Error(
+        `collection ${c.name ?? "?"}: declared field "scope_${key}" collides with scope "${key}"`
+      );
+    }
+  }
+  return scopes;
+}
+
+export function scopeColumn(key: string): string {
+  return sanitiseIdent(`scope_${key}`);
+}
 
 /** The collection's FTS regconfig, validated. Default "english". */
 export function ftsLanguage(c: Pick<CollectionDef, "language" | "name">): string {
@@ -88,10 +111,12 @@ export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
     const coll = sanitiseIdent(c.name);
     const table = `${schema}.c_${coll}`;
     const wantPhon = assertPhoneticAvailable(c);
+    const scopes = collectionScopes(c);
 
-    const fieldCols = Object.entries(c.fields)
-      .map(([k, def]) => `  ${sanitiseIdent(k)} ${fieldSqlType(def)}`)
-      .join(",\n");
+    const fieldCols = [
+      ...scopes.map((s) => `  ${scopeColumn(s)} text NOT NULL`),
+      ...Object.entries(c.fields).map(([k, def]) => `  ${sanitiseIdent(k)} ${fieldSqlType(def)}`),
+    ].join(",\n");
 
     const embedDim = c.embeddings
       ? Math.max(...Object.values(c.embeddings).map((e) => e.dim))
@@ -145,6 +170,12 @@ ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
         image_checked_at timestamptz
       );
     `);
+
+    if (scopes.length > 0) {
+      stmts.push(
+        `CREATE INDEX IF NOT EXISTS c_${coll}_scope_idx ON ${table} (${scopes.map(scopeColumn).join(", ")});`
+      );
+    }
 
     stmts.push(`CREATE INDEX IF NOT EXISTS c_${coll}_fts_idx ON ${table} USING gin (fts);`);
     if (wantPhon) {

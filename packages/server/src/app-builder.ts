@@ -225,7 +225,17 @@ export function buildApp(deps: AppDeps): Hono {
     offset: z.number().optional(),
     facets: z.array(z.string()).optional(),
     efSearch: z.number().int().min(10).max(1000).optional(),
+    scope: z.record(z.string(), z.string()).optional(),
   });
+
+  // GET routes take the scope as scope.<key>=<value> query params.
+  const scopeFromQuery = (q: Record<string, string>): Record<string, string> | undefined => {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(q)) {
+      if (k.startsWith("scope.") && k.length > 6) out[k.slice(6)] = v;
+    }
+    return Object.keys(out).length ? out : undefined;
+  };
 
   const ShopSearchBody = z.object({
     q: z.string().optional(),
@@ -235,6 +245,7 @@ export function buildApp(deps: AppDeps): Hono {
       mimeType: z.string().optional(),
       productId: z.string().optional(),
     }).optional(),
+    scope: z.record(z.string(), z.string()).optional(),
     filters: z.record(z.string(), z.unknown()).optional(),
     weights: z
       .record(
@@ -286,6 +297,7 @@ export function buildApp(deps: AppDeps): Hono {
     documents: z.array(
       z.object({
         id: z.string(),
+        scope: z.record(z.string(), z.string()).optional(),
         data: z.record(z.string(), z.unknown()),
       })
     ),
@@ -293,6 +305,7 @@ export function buildApp(deps: AppDeps): Hono {
 
   const RemoveDocumentsBody = z.object({
     ids: z.array(z.string()).min(1),
+    scope: z.record(z.string(), z.string()).optional(),
   });
 
   app.post("/v1/projects/:project/rotate-key", async (c) => {
@@ -327,7 +340,7 @@ export function buildApp(deps: AppDeps): Hono {
       const { project, collection } = c.req.param();
       await requireProjectKey(c, project);
       const body = c.req.valid("json");
-      return c.json(await services.ingest.removeDocuments(project, collection, body.ids));
+      return c.json(await services.ingest.removeDocuments(project, collection, body.ids, body.scope));
     }
   );
 
@@ -381,6 +394,7 @@ export function buildApp(deps: AppDeps): Hono {
         q: q.q ?? "",
         limit: q.limit ? Number(q.limit) : undefined,
         offset: q.offset ? Number(q.offset) : undefined,
+        scope: scopeFromQuery(q),
       })
     );
   });
@@ -405,6 +419,7 @@ export function buildApp(deps: AppDeps): Hono {
           offset: body.offset,
           facets: body.facets,
           efSearch: body.efSearch,
+          scope: body.scope,
         })
       );
     }
@@ -427,6 +442,7 @@ export function buildApp(deps: AppDeps): Hono {
           limit: body.limit,
           offset: body.offset,
           efSearch: body.efSearch,
+          scope: body.scope,
         })
       );
     }
@@ -486,6 +502,7 @@ export function buildApp(deps: AppDeps): Hono {
   const FacetsBody = z.object({
     facets: z.array(z.string()),
     filters: z.record(z.string(), z.unknown()).optional(),
+    scope: z.record(z.string(), z.string()).optional(),
   });
   app.post(
     "/v1/projects/:project/collections/:collection/facets",
@@ -498,6 +515,7 @@ export function buildApp(deps: AppDeps): Hono {
         await services.search.facets(project, collection, {
           filters: body.filters as Record<string, import("./core/search.ts").FilterClause> | undefined,
           facets: body.facets,
+          scope: body.scope,
         })
       );
     }
@@ -512,6 +530,7 @@ export function buildApp(deps: AppDeps): Hono {
     const doc = await services.search.getDocument(project, collection, id, {
       offset: offset ? Number(offset) : undefined,
       maxChars: maxChars ? Number(maxChars) : undefined,
+      scope: scopeFromQuery(c.req.query()),
     });
     if (!doc) return c.json({ detail: `document "${id}" not found` }, 404);
     return c.json(doc);

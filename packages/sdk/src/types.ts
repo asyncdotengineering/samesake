@@ -469,6 +469,11 @@ export interface ConnectorDef {
   name: string;
   kind: "shopify" | "woocommerce" | "jsonl";
   options: Record<string, unknown>;
+  /**
+   * Scope values stamped onto every document this connector pulls (one feed =
+   * one tenant). Required when the collection declares `scopes`.
+   */
+  scope?: Record<string, string>;
 }
 
 export interface DerivedDocContext {
@@ -499,6 +504,18 @@ export interface CollectionDef {
    * column — a destructive migration.
    */
   language?: string;
+  /**
+   * Tenancy: scope key names (e.g. `["tenant_id"]`). Each key compiles to a
+   * `scope_<key>` column, and every read/write on the collection then REQUIRES
+   * all scope values — documents carry `scope` on push, queries pass
+   * `scope` in SearchOpts; there is no cross-scope search. Scopes answer
+   * "whose catalog is this row" (hard isolation between stores/tenants) — a
+   * vendor facet inside one shared marketplace catalog is a normal field, not
+   * a scope. Ids stay unique per collection (not per scope); an upsert that
+   * would overwrite an id owned by a different scope is rejected. Adding or
+   * changing scopes on an existing collection is a destructive migration.
+   */
+  scopes?: string[];
   fields: Record<string, CollectionFieldDef>;
   enrich?: PipelineDef;
   sources?: ConnectorDef[];
@@ -627,6 +644,8 @@ export interface ShopperContext {
 export interface ShopSearchRequest<S extends string = string> {
   q?: string;
   image?: ShopSearchImageInput;
+  /** Tenancy scope — required (all declared keys) when the collection declares `scopes`. */
+  scope?: Record<string, string>;
   filters?: Record<string, unknown>;
   weights?: SearchWeightsInput<S>;
   rankingPolicy?: RankingPolicy;

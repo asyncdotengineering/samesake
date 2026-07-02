@@ -539,13 +539,18 @@ async function cmdListProjects(flags: Record<string, string>): Promise<void> {
   }
 }
 
-async function cmdSearchExplain(flags: Record<string, string>): Promise<void> {
+async function cmdSearchExplain(flags: Record<string, string>, rest: string[]): Promise<void> {
   const project = flags.project ?? PROJECT ?? fail("--project is required");
   const collection = flags.collection ?? fail("--collection is required");
   const q = flags.q ?? fail("--q is required");
+  const scope = parseScopeArgs(rest);
   const body = await post<Record<string, unknown>>(
     `/v1/projects/${project}/collections/${collection}/search/explain`,
-    { q, limit: flags.limit ? Number(flags.limit) : undefined }
+    {
+      q,
+      limit: flags.limit ? Number(flags.limit) : undefined,
+      ...(Object.keys(scope).length ? { scope } : {}),
+    }
   );
   if (flags.json === "true") {
     console.log(JSON.stringify(body, null, 2));
@@ -648,14 +653,15 @@ async function cmdReviewCorrect(flags: Record<string, string>): Promise<void> {
   console.log(`✓ corrected ${body.corrected.join(", ")} on ${id} (doc re-indexes on next \`index\` run)`);
 }
 
-async function cmdRemove(flags: Record<string, string>): Promise<void> {
+async function cmdRemove(flags: Record<string, string>, rest: string[]): Promise<void> {
   const project = flags.project ?? PROJECT ?? fail("--project is required");
   const collection = flags.collection ?? fail("--collection is required");
   const ids = (flags.ids ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   if (!ids.length) fail("--ids is required (comma-separated document ids)");
+  const scope = parseScopeArgs(rest);
   const body = await del<{ removed: number }>(
     `/v1/projects/${project}/collections/${collection}/documents`,
-    { ids }
+    { ids, ...(Object.keys(scope).length ? { scope } : {}) }
   );
   console.log(`✓ removed ${body.removed} document${body.removed === 1 ? "" : "s"}`);
 }
@@ -922,8 +928,8 @@ async function main(): Promise<void> {
     case "ingest": await cmdIngest(flags); break;
     case "enrich": await cmdEnrich(flags); break;
     case "index": await cmdIndex(flags); break;
-    case "remove": await cmdRemove(flags); break;
-    case "search-explain": await cmdSearchExplain(flags); break;
+    case "remove": await cmdRemove(flags, rest); break;
+    case "search-explain": await cmdSearchExplain(flags, rest); break;
     case "calibrate-search": await cmdCalibrateSearch(flags); break;
     case "rotate-key": await cmdRotateKey(flags); break;
     case "review-list": await cmdReviewList(flags); break;

@@ -115,6 +115,16 @@ export function planCollectionMigration(
     );
   }
 
+  // Scope columns are NOT NULL and existing rows carry no values — tenancy
+  // cannot be bolted onto a populated table in place.
+  const storedScopes = (stored.scopes ?? []).join(",");
+  const incomingScopes = (incoming.scopes ?? []).join(",");
+  if (storedScopes !== incomingScopes) {
+    plan.destructive.push(
+      `${coll}: scopes change [${storedScopes}] → [${incomingScopes}] (recreate the collection)`
+    );
+  }
+
   for (const [name, def] of Object.entries(incomingFields)) {
     const prev = storedFields[name];
     if (!prev) {

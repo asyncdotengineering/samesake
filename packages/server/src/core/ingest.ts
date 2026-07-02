@@ -5,9 +5,12 @@ import { computeContentHash } from "../connectors/normalize.ts";
 import { connectorFromDef, type PullConnector } from "../connectors/index.ts";
 import { searchResultCache } from "./search-cache.ts";
 import { collectionTableName } from "./db-utils.ts";
+import { resolveScope } from "./scope.ts";
 
 export interface IngestDocument {
   id: string;
+  /** Required (all declared keys) when the collection declares `scopes`. */
+  scope?: Record<string, string>;
   data: Record<string, unknown>;
 }
 
@@ -31,12 +34,13 @@ export function makeIngestService(ctx: MatcherCtx, projectsService: ProjectsServ
     let upserted = 0;
 
     for (const doc of docs) {
+      const scopeCols = resolveScope(def, collectionName, doc.scope, `push (doc "${doc.id}")`);
       const data = { ...doc.data };
       const contentHash =
         (data.content_hash as string | undefined) ?? computeContentHash(data);
       data.content_hash = contentHash;
 
-      await ctx.storage.upsertDocument(table, doc.id, JSON.stringify(data), contentHash);
+      await ctx.storage.upsertDocument(table, doc.id, JSON.stringify(data), contentHash, scopeCols);
       upserted++;
     }
 
@@ -50,7 +54,8 @@ export function makeIngestService(ctx: MatcherCtx, projectsService: ProjectsServ
   async function removeDocuments(
     projectSlug: string,
     collectionName: string,
-    ids: string[]
+    ids: string[],
+    scope?: Record<string, string>
   ): Promise<{ removed: number }> {
     if (ids.length === 0) return { removed: 0 };
     const project = await projectsService.getProject(projectSlug);
@@ -58,8 +63,9 @@ export function makeIngestService(ctx: MatcherCtx, projectsService: ProjectsServ
     const def = await projectsService.getCollectionDef(projectSlug, collectionName);
     if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
 
+    const scopeCols = resolveScope(def, collectionName, scope, "removeDocuments");
     const table = collectionTableName(project.schema_name, collectionName);
-    const removed = await ctx.storage.deleteDocuments(table, ids);
+    const removed = await ctx.storage.deleteDocuments(table, ids, scopeCols);
 
     if (removed > 0) {
       searchResultCache.invalidateProjectCollection(projectSlug, collectionName);
@@ -79,7 +85,7 @@ export function makeIngestService(ctx: MatcherCtx, projectsService: ProjectsServ
       for await (const row of connector.pull()) {
         if (seen.has(row.id)) continue;
         seen.add(row.id);
-        batch.push(row);
+        batch.push(connector.scope ? { ...row, scope: connector.scope } : row);
       }
     }
 

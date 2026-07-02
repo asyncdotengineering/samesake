@@ -5,10 +5,20 @@ import { jsonlFeedConnector } from "./jsonl.ts";
 
 export type PullConnector = {
   name: string;
+  /** Scope stamped onto every pulled document (one feed = one tenant). */
+  scope?: Record<string, string>;
   pull: (opts?: Record<string, unknown>) => AsyncIterable<{ id: string; data: Record<string, unknown> }>;
 };
 
 export function connectorFromDef(
+  def: ConnectorDef,
+  opts?: { timeoutMs?: number }
+): PullConnector {
+  const connector = buildConnector(def, opts);
+  return def.scope ? { ...connector, scope: def.scope } : connector;
+}
+
+function buildConnector(
   def: ConnectorDef,
   opts?: { timeoutMs?: number }
 ): PullConnector {
