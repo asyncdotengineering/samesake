@@ -1,6 +1,6 @@
 ---
 "@samesake/core": minor
-"@samesake/server": minor
+"@samesake/server": major
 ---
 
 Multilingual lexical leg. `CollectionDef.language` picks the Postgres FTS config (stemmer +

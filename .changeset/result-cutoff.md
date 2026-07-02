@@ -1,6 +1,6 @@
 ---
 "@samesake/core": minor
-"@samesake/server": minor
+"@samesake/server": major
 ---
 
 Honest zero-results: pluggable result-cutoff strategies on the search path
