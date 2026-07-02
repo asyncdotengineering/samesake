@@ -1,3 +1,50 @@
+## 4.0.0
+
+### Major Changes
+
+- 396c9a5: Multilingual lexical leg. `CollectionDef.language` picks the Postgres FTS config (stemmer +
+  stopwords) for both the indexed `fts` generated column and query parsing — the hardcoded
+  `'english'` is gone. The fts column now normalises through `samesake_normalise`
+  (lowercase + unaccent + punctuation folding) and queries fold accents via `unaccent()`, so
+  `café` ≡ `cafe` in any language. `CollectionSearchDef.phonetic: true` (with
+  `createMatcher({ phonetic })`) adds a cross-script phonetic branch to the lexical leg: a new
+  `samesake_phonetic_tokens` system function feeds a generated `fts_phon` column (GIN-indexed) and
+  query-side codes are ORed into the candidate set — a Sinhala/Tamil query finds the
+  Latin-transliterated product. Changing `language` on an existing collection is flagged as a
+  destructive migration. Note: collections created before this release keep their un-normalised fts
+  column until recreated — accented documents in old tables may stop matching accented queries
+  (queries are now accent-folded); recreate the collection to align both sides. Multilingual golden
+  queries (`ml-01…ml-05`, Sinhala/Tamil/mixed-script) added to the fashion-lk eval set.
+- 396c9a5: Honest zero-results: pluggable result-cutoff strategies on the search path
+  (`CollectionSearchDef.cutoff`). Default ON for every collection as `{ strategy: "score-drop" }`
+  — when no hit has lexical (FTS) evidence and even the best semantic cosine is below `minAnchor`,
+  the list is honestly empty instead of nearest-neighbour padding; a steep relative cosine cliff
+  (`maxDrop`) ends a semantic tail mid-list. Also available: `category-coherence` (unanchored
+  results scattered across a declared field → zero) and `none` (opt out). FTS-anchored hits are
+  never cut; hard-filtered queries (explicit or NLQ-derived) bypass the cutoff so filtered recall
+  stays total. Search responses gain `cutoff_dropped`; `/v1/metrics` gains
+  `search_cutoff_dropped_total`. Proven by an adversarial eval: "laptop" against a clothing
+  catalog returns zero, not the three least-irrelevant handbags.
+
+### Patch Changes
+
+- 396c9a5: `samesake init [dir]` now scaffolds a complete runnable search project — catalog config,
+  docker-compose Postgres (pgvector 0.8 + contrib extensions), a ~20-line HTTP server, a
+  deterministic local embedder (no LLM key needed), a 24-product seeded catalog, and `.env` with a
+  generated API key. Zero to first search in four commands. The old entity-resolution
+  single-config-file `init --name` form is gone.
+
+  `createDbFromUrl` now silences Postgres NOTICEs (`onnotice`): idempotent `IF NOT EXISTS` DDL is
+  the design, and the "already exists, skipping" spam on every boot was pure noise.
+
+- 396c9a5: `evaluateSearch`'s persisted judge-grade write is now awaited. The fire-and-forget write raced
+  process exit at the end of an eval run, silently dropping grades — the next run re-rolled the
+  judge on pairs it should have reused, so metric deltas stopped meaning "retrieval changed".
+  Proven fixed: two back-to-back eval runs are now byte-identical per query (67/67 grades + topIds).
+- Updated dependencies [396c9a5]
+- Updated dependencies [396c9a5]
+  - @samesake/core@3.1.0
+
 ## 3.0.0
 
 ### Major Changes
