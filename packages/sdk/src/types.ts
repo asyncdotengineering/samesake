@@ -184,7 +184,11 @@ export interface CollectionTextFieldDef {
   facet?: boolean | "range";
   soft?: boolean;
   path?: string;
-  weight?: number;
+  /**
+   * tsvector weight class for the lexical leg: "A" (title-class, ranks above
+   * everything else) or "B" (default). Only meaningful with `searchable: true`.
+   */
+  ftsWeight?: "A" | "B";
 }
 
 export interface CollectionNumberFieldDef {
@@ -236,6 +240,12 @@ export interface CollectionEmbeddingDef {
   model: string;
   dim: number;
   taskType?: string;
+  /**
+   * Template for the embedded document when the collection has no `indexing`
+   * surfaces (`"$title $brand"` interpolates data/enriched values). Collections
+   * with an enrich pipeline + `indexing` build their surfaces there instead.
+   */
+  source?: string;
 }
 
 export type FtsChannel<F extends string> = {
@@ -420,7 +430,7 @@ export interface DerivedDocContext {
 export type DerivedDocDef =
   | { kind: "dense"; build: (ctx: DerivedDocContext) => string; embedding: string }
   | { kind: "rerank"; build: (ctx: DerivedDocContext) => string }
-  | { kind: "fts"; build: (ctx: DerivedDocContext) => string };
+  | { kind: "fts"; build: (ctx: DerivedDocContext) => string; weight?: "A" | "B" };
 
 export type IndexGate = (ctx: DerivedDocContext) => { index: boolean; reason?: string };
 

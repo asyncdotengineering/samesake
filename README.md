@@ -290,7 +290,7 @@ Cross-script matching, product parse gates, and the 19-assertion smoke test live
 |-------|--------|
 | Runtime | [Bun](https://bun.sh) 1.3+ |
 | HTTP | [Hono](https://hono.dev/) — universal `fetch` handler |
-| Database | Postgres 15+ with [pgvector](https://github.com/pgvector/pgvector) + `pg_trgm` + `unaccent` + `fuzzystrmatch` |
+| Database | Postgres 15+ with [pgvector](https://github.com/pgvector/pgvector) ≥ 0.7 (0.8 recommended — enables iterative index scans) + `pg_trgm` + `unaccent` + `fuzzystrmatch` |
 | Driver | [postgres-js](https://github.com/porsager/postgres) via Drizzle (raw SQL; schema generated per project at runtime) |
 | Validation | [Zod](https://zod.dev) |
 | AI | BYO — consumer supplies `embed` and optional `generate` / `parse` |
@@ -330,7 +330,7 @@ internal job runner. To run them durably, the caller wraps the calls in a platfo
 
 ## Status & naming
 
-NPM packages: **`@samesake/core`** (SDK), **`@samesake/server`**, **`@samesake/cli`** at **1.0.0**. The current public name is **Samesake**. The HTTP app still lives at `apps/matcher/`.
+NPM packages: **`@samesake/core`** (SDK), **`@samesake/server`**, **`@samesake/cli`**, **`@samesake/mcp`** at **2.6.0**. The current public name is **Samesake**. The HTTP app still lives at `apps/matcher/`.
 
 Search and match share embeddings, Postgres caches, and per-project runtime DDL.
 

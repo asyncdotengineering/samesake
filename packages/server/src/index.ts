@@ -97,7 +97,7 @@ export type { FashionCatalogSyncEvent } from "./core/fashion-search.ts";
 export {
   ParsedProductSchema,
   type ParsedProduct,
-  DEFAULT_PRODUCT_PARSE_INSTRUCTIONS,
+  DEFAULT_PRODUCT_PARSE_BODY,
 } from "./core/parse.ts";
 
 // DDL emitter — pure utility, useful for consumers that maintain their own

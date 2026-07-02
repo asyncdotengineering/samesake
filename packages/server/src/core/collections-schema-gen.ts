@@ -24,7 +24,14 @@ function fieldSqlType(def: CollectionFieldDef): string {
 }
 
 function ftsGeneratedColumnDdl(_fields: Record<string, CollectionFieldDef>): string {
-  return `fts tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(fts_src, ''))) STORED`;
+  // Weighted lexical surface: fts_src_a carries title-class text (weight A, ranks
+  // above everything else in ts_rank_cd), fts_src carries the rest (weight B).
+  return (
+    `fts tsvector GENERATED ALWAYS AS (` +
+    `setweight(to_tsvector('english', coalesce(fts_src_a, '')), 'A') || ` +
+    `setweight(to_tsvector('english', coalesce(fts_src, '')), 'B')` +
+    `) STORED`
+  );
 }
 
 export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
@@ -52,6 +59,7 @@ export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
         owner: `collection ${c.name}`,
         field: `embeddings.${name}`,
         dimensions: def.dim,
+        columnType: "halfvec",
       });
     }
 
@@ -62,10 +70,11 @@ export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
         owner: `collection ${c.name}`,
         field: "spaces total",
         dimensions: spaceDimTotal,
+        columnType: "halfvec",
       });
     }
     const spaceVecCol =
-      spaceDimTotal > 0 ? `,\n        space_vec vector(${spaceDimTotal})` : "";
+      spaceDimTotal > 0 ? `,\n        space_vec halfvec(${spaceDimTotal})` : "";
 
     const stmts: string[] = [];
 
@@ -78,9 +87,10 @@ export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
 ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
         rerank_doc text,
         fts_src text,
+        fts_src_a text,
         gate_reason text,
         ${ftsGeneratedColumnDdl(c.fields)},
-        embedding vector(${embedDim})${spaceVecCol},
+        embedding halfvec(${embedDim})${spaceVecCol},
         ingested_at timestamptz NOT NULL DEFAULT now(),
         enriched_at timestamptz,
         indexed_at timestamptz,
@@ -98,13 +108,13 @@ ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
 
     if (c.embeddings && Object.keys(c.embeddings).length > 0) {
       stmts.push(
-        `CREATE INDEX IF NOT EXISTS c_${coll}_emb_idx ON ${table} USING hnsw (embedding vector_cosine_ops);`
+        `CREATE INDEX IF NOT EXISTS c_${coll}_emb_idx ON ${table} USING hnsw (embedding halfvec_cosine_ops);`
       );
     }
 
     if (spaceDimTotal > 0) {
       stmts.push(
-        `CREATE INDEX IF NOT EXISTS c_${coll}_space_vec_idx ON ${table} USING hnsw (space_vec vector_cosine_ops);`
+        `CREATE INDEX IF NOT EXISTS c_${coll}_space_vec_idx ON ${table} USING hnsw (space_vec halfvec_cosine_ops);`
       );
     }
 
@@ -134,6 +144,7 @@ ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
       `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS image_checked_at timestamptz;`,
       `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS rerank_doc text;`,
       `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS fts_src text;`,
+      `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS fts_src_a text;`,
       `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS gate_reason text;`,
       `UPDATE ${table} SET pipeline_status='ready' WHERE pipeline_status='pending' AND (indexed_at IS NOT NULL OR enriched_at IS NOT NULL);`,
     ];

@@ -13,6 +13,19 @@ export function getPgClient(db: PostgresJsDatabase, context = "query"): PgUnsafe
   return session.client;
 }
 
+export type PgSql = PgUnsafe & {
+  begin: <T>(fn: (tx: PgUnsafe) => Promise<T>) => Promise<T>;
+};
+
+/** The full postgres-js client (adds `begin` for SET LOCAL-scoped queries). */
+export function getPgSql(db: PostgresJsDatabase, context = "query"): PgSql {
+  const client = getPgClient(db, context) as Partial<PgSql>;
+  if (typeof client.begin !== "function") {
+    throw new Error(`postgres transaction client unavailable for ${context}`);
+  }
+  return client as PgSql;
+}
+
 export function entityTableName(entityName: string): string {
   return sanitiseIdent(entityName);
 }

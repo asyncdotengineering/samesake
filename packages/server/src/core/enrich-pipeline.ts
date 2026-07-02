@@ -22,21 +22,23 @@ function hasIndexing(def: CollectionDef): def is CollectionDef & { indexing: Ind
   return !!def.indexing && typeof def.indexing.gate === "function";
 }
 
-interface IndexingPersistResult {
+export interface IndexingPersistResult {
   doc: string | null;
   rerank_doc: string | null;
   fts_src: string | null;
+  fts_src_a: string | null;
   pipeline_status: "ready" | "quarantined";
   gate_reason: string | null;
 }
 
-function persistIndexingSurfaces(
+export function persistIndexingSurfaces(
   indexing: IndexingDef,
   ctx: DerivedDocContext
 ): IndexingPersistResult {
   let doc: string | null = null;
   let rerank_doc: string | null = null;
   let fts_src: string | null = null;
+  let fts_src_a: string | null = null;
 
   for (const [key, surface] of Object.entries(indexing.surfaces) as Array<[string, DerivedDocDef]>) {
     const text = surface.build(ctx);
@@ -45,13 +47,17 @@ function persistIndexingSurfaces(
         doc,
         rerank_doc,
         fts_src,
+        fts_src_a,
         pipeline_status: "quarantined",
         gate_reason: `empty:${key}`,
       };
     }
     if (surface.kind === "dense") doc = text;
     else if (surface.kind === "rerank") rerank_doc = text;
-    else if (surface.kind === "fts") fts_src = text;
+    else if (surface.kind === "fts") {
+      if (surface.weight === "A") fts_src_a = text;
+      else fts_src = text;
+    }
   }
 
   const gateResult = indexing.gate(ctx);
@@ -60,12 +66,13 @@ function persistIndexingSurfaces(
       doc,
       rerank_doc,
       fts_src,
+      fts_src_a,
       pipeline_status: "quarantined",
       gate_reason: gateResult.reason ?? "gate-rejected",
     };
   }
 
-  return { doc, rerank_doc, fts_src, pipeline_status: "ready", gate_reason: null };
+  return { doc, rerank_doc, fts_src, fts_src_a, pipeline_status: "ready", gate_reason: null };
 }
 
 function imageValidatorsForUrls(
@@ -238,15 +245,17 @@ export function makeEnrichPipelineService(
                doc = $2,
                rerank_doc = $3,
                fts_src = $4,
-               pipeline_status = $5,
-               gate_reason = $6,
+               fts_src_a = $5,
+               pipeline_status = $6,
+               gate_reason = $7,
                updated_at = now()
-           WHERE id = $7`,
+           WHERE id = $8`,
           [
             JSON.stringify(enriched),
             surfaces.doc,
             surfaces.rerank_doc,
             surfaces.fts_src,
+            surfaces.fts_src_a,
             surfaces.pipeline_status,
             surfaces.gate_reason,
             row.id,

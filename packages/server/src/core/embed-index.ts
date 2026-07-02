@@ -13,6 +13,7 @@ import {
   recordPipelineFailure,
   type ErrorRateOpts,
 } from "./pipeline-failure.ts";
+import { persistIndexingSurfaces } from "./enrich-pipeline.ts";
 import {
   assembleDocVector,
   encodeCategorical,
@@ -85,6 +86,36 @@ function hasEnrichPipeline(def: CollectionDef): boolean {
 
 function hasSpaces(def: CollectionDef): boolean {
   return !!def.spaces && Object.keys(def.spaces).length > 0;
+}
+
+/**
+ * Indexing surfaces for collections with no enrich pipeline: the embedded doc
+ * comes from the embedding's `source` template (fallback: searchable fields),
+ * and the lexical surfaces from `searchable` text fields (ftsWeight "A" →
+ * fts_src_a, else fts_src). Collections WITH an enrich pipeline build these in
+ * persistIndexingSurfaces instead.
+ */
+export function composeDefaultSurfaces(
+  def: CollectionDef,
+  embSource: string | undefined,
+  data: Record<string, unknown>,
+  enriched: Record<string, unknown> | null
+): { doc: string; ftsSrc: string | null; ftsSrcA: string | null } {
+  const byWeight: Record<"A" | "B", string[]> = { A: [], B: [] };
+  for (const [name, fdef] of Object.entries(def.fields)) {
+    if (fdef.type !== "text" || !fdef.searchable) continue;
+    const text = formatTemplateValue(resolveFieldValue(name, fdef, data, enriched)).trim();
+    if (!text) continue;
+    byWeight[fdef.ftsWeight === "A" ? "A" : "B"].push(text);
+  }
+  const searchable = [...byWeight.A, ...byWeight.B].join(" ").trim();
+  const doc =
+    (embSource ? resolveEmbedTemplate(embSource, data, enriched) : "").trim() || searchable;
+  return {
+    doc,
+    ftsSrc: byWeight.B.length ? byWeight.B.join(" ") : null,
+    ftsSrcA: byWeight.A.length ? byWeight.A.join(" ") : null,
+  };
 }
 
 function spaceKeys(def: CollectionDef): string[] {
@@ -315,6 +346,7 @@ export function makeEmbedIndexService(
         data: Record<string, unknown>;
         enriched: Record<string, unknown> | null;
         ingestedAt: Date | null;
+        surfaces: { ftsSrc: string | null; ftsSrcA: string | null } | null;
       }> = [];
 
       for (const row of chunk) {
@@ -338,8 +370,30 @@ export function makeEmbedIndexService(
 
         const rowId = String(row.id);
 
+        // Enrich-owning collections read the surfaces enrich persisted. Without
+        // an enrich pipeline, build declared indexing surfaces inline, or fall
+        // back to source-template/searchable-field defaults — so plain
+        // push → index → search works alone.
+        let inline: { doc: string | null; ftsSrc: string | null; ftsSrcA: string | null } | null =
+          null;
+        if (!needsEnrich) {
+          if (def.indexing) {
+            const built = persistIndexingSurfaces(def.indexing, { data, enriched: enriched ?? {} });
+            if (built.pipeline_status === "quarantined") {
+              await markIndexSkipped(rowId);
+              continue;
+            }
+            inline = { doc: built.doc, ftsSrc: built.fts_src, ftsSrcA: built.fts_src_a };
+          } else {
+            const d = composeDefaultSurfaces(def, embDef?.source, data, enriched);
+            inline = { doc: d.doc, ftsSrc: d.ftsSrc, ftsSrcA: d.ftsSrcA };
+          }
+        }
+
         if (embDef) {
-          const docText = String(row.doc ?? "").trim();
+          const docText = needsEnrich
+            ? String(row.doc ?? "").trim()
+            : (inline!.doc ?? "").trim();
           if (!docText) {
             ctx.observability.log("warn", "embed-index", "skipping doc — empty embedding document", {
               docId: rowId,
@@ -358,6 +412,7 @@ export function makeEmbedIndexService(
           data,
           enriched,
           ingestedAt,
+          surfaces: inline ? { ftsSrc: inline.ftsSrc, ftsSrcA: inline.ftsSrcA } : null,
         });
       }
 
@@ -388,6 +443,11 @@ export function makeEmbedIndexService(
           if (embDef) {
             colNames.push("doc", "embedding");
             params.push(docs[j], toVectorLiteral(vectors[j]!));
+          }
+
+          if (row.surfaces) {
+            colNames.push("fts_src", "fts_src_a");
+            params.push(row.surfaces.ftsSrc, row.surfaces.ftsSrcA);
           }
 
           if (hasSpace) {
@@ -485,9 +545,24 @@ export function makeEmbedIndexService(
           ? row.ingested_at
           : new Date(String(row.ingested_at));
     const parsedRow = { id: String(row.id), data, enriched, ingestedAt };
+    const needsEnrich = hasEnrichPipeline(def);
+    let defaultSurfaces: { doc: string | null; ftsSrc: string | null; ftsSrcA: string | null } | null =
+      null;
+    if (!needsEnrich) {
+      if (def.indexing) {
+        const built = persistIndexingSurfaces(def.indexing, { data, enriched: enriched ?? {} });
+        if (built.pipeline_status === "quarantined") return false;
+        defaultSurfaces = { doc: built.doc, ftsSrc: built.fts_src, ftsSrcA: built.fts_src_a };
+      } else {
+        const d = composeDefaultSurfaces(def, embDef?.source, data, enriched);
+        defaultSurfaces = { doc: d.doc, ftsSrc: d.ftsSrc, ftsSrcA: d.ftsSrcA };
+      }
+    }
 
     if (embDef) {
-      const docText = String(row.doc ?? "").trim();
+      const docText = needsEnrich
+        ? String(row.doc ?? "").trim()
+        : (defaultSurfaces!.doc ?? "").trim();
       if (!docText) return false;
       const vec = l2Renormalize(
         await embedService.embedQuery({
@@ -505,6 +580,10 @@ export function makeEmbedIndexService(
       });
       const colNames: string[] = ["doc", "embedding"];
       const params: unknown[] = [docText, toVectorLiteral(vec)];
+      if (defaultSurfaces) {
+        colNames.push("fts_src", "fts_src_a");
+        params.push(defaultSurfaces.ftsSrc, defaultSurfaces.ftsSrcA);
+      }
 
       if (hasSpace) {
         const { segments, dims } = await buildDocSpaceSegments(
@@ -553,8 +632,12 @@ export function makeEmbedIndexService(
       const params: unknown[] = [
         toVectorLiteral(assembleDocVector(segments, dims)),
         ...fieldValues,
-        parsedRow.id,
       ];
+      if (defaultSurfaces) {
+        colNames.splice(1, 0, "fts_src", "fts_src_a");
+        params.splice(1, 0, defaultSurfaces.ftsSrc, defaultSurfaces.ftsSrcA);
+      }
+      params.push(parsedRow.id);
       const setClause = colNames.map((c, k) => `${c} = $${k + 1}`).join(", ");
       await ctx.storage.client("embed-index").unsafe(
         `UPDATE ${table}

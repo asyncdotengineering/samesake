@@ -22,6 +22,14 @@ examples/real-world-sample/_raw.json
 # Skill telemetry — sentinel files, scratchpads, delegate transcripts.
 .handoff/
 
+# Local agent tooling state (never source).
+.agents/
+.codex/
+.metadata_cache/
+.wrangler/
+
 # Generated eval/benchmark outputs and Porulle local media (runtime, not source).
 .samesake/
 apps/playground/.data/
+.plandesk/token
+.plandesk/server.json

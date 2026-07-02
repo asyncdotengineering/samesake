@@ -236,7 +236,7 @@ describeIf("collection migrations", () => {
         AND a.attname = 'embedding' AND NOT a.attisdropped
     `));
     await close();
-    expect(col[0]!.coltype).toBe("vector(16)");
+    expect(col[0]!.coltype).toBe("halfvec(16)");
   });
 
   test("apply fails when indexing manifest references missing embedding", async () => {

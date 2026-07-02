@@ -175,6 +175,18 @@ export function makeProjectsService(
     const collectionMigrations: ReturnType<typeof planCollectionMigration>[] = [];
     const createStmts: string[] = [];
 
+    if ((config.collections ?? []).length > 0) {
+      const pgv = await ctx.storage.pgvectorVersion();
+      if (!pgv || (pgv[0] === 0 && pgv[1] < 7)) {
+        throw new ClientError(
+          "pgvector_too_old",
+          `collections require pgvector >= 0.7 (halfvec embedding columns); ` +
+            `found ${pgv ? pgv.join(".") : "no vector extension"}. ` +
+            `Upgrade the extension, then re-apply.`
+        );
+      }
+    }
+
     for (const c of config.collections ?? []) {
       if (!c.name) continue;
       const exists = await collectionTableExists(projectSchema, c.name);

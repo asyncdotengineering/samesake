@@ -222,6 +222,7 @@ export function buildApp(deps: AppDeps): Hono {
     limit: z.number().optional(),
     offset: z.number().optional(),
     facets: z.array(z.string()).optional(),
+    efSearch: z.number().int().min(10).max(1000).optional(),
   });
 
   const FashionSearchBody = z.object({
@@ -386,6 +387,7 @@ export function buildApp(deps: AppDeps): Hono {
           limit: body.limit,
           offset: body.offset,
           facets: body.facets,
+          efSearch: body.efSearch,
         })
       );
     }
@@ -407,6 +409,7 @@ export function buildApp(deps: AppDeps): Hono {
           mode: body.mode,
           limit: body.limit,
           offset: body.offset,
+          efSearch: body.efSearch,
         })
       );
     }
