@@ -1,4 +1,4 @@
-# @samesake/cli
+# @samesake/core
 
 ## 3.0.0
 
@@ -73,20 +73,3 @@ index → search` path was broken. `indexing` is optional again: without it, the
     automatically on vector legs, fixing filtered-ANN under-return ("hard filters stay hard").
   - `efSearch` search option (HTTP + in-process, 10–1000): per-query HNSW recall/latency dial.
   - Apply now fails fast with a clear error when pgvector < 0.7.
-
-### Patch Changes
-
-- Updated dependencies [fcb5742]
-  - @samesake/core@3.0.0
-  - @samesake/server@3.0.0
-
-## 2.0.1
-
-### Patch Changes
-
-- 87a8d9c: Use `workspace:^` for inter-package dependencies. In dev this always resolves to the local
-  workspace package; at publish `bun publish` rewrites it to a real `^<version>` (verified via
-  `bun pm pack`). Replaces the previous loose `^2.0.0` ranges that could silently resolve to a stale
-  published version (the bug that left `apps/playground` pinned to `^1.3.0`).
-- Updated dependencies [87a8d9c]
-  - @samesake/server@2.4.1
