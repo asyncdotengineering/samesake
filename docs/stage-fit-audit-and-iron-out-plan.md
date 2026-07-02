@@ -1,0 +1,156 @@
+# Stage-Fit Audit & Iron-Out Plan
+
+Status: Ready for review · 2026-07-02.
+Companion to [`system-behavior-spec.md`](./system-behavior-spec.md) (what the system does) and
+[`research/mices/README.md`](./research/mices/README.md) (external validation). This doc is the
+verdicts: what fits the stage, what is baggage, and the ordered plan to become **the enrichment +
+fast-search toolkit anyone can replace their ecommerce search with — especially multi-vendor
+marketplaces — with DX as a moat**.
+
+Stage assumption: pre-adoption OSS product, catalogs well under 10M SKUs, no behavioral/click data
+at any installation yet.
+
+---
+
+## 1. Infrastructure & abstraction verdicts
+
+| Item | Verdict | Why |
+|---|---|---|
+| **Postgres + pgvector only, two containers** | **KEEP — it's the moat, not a shortcut** | Research is unanimous: 100k–1M products fit comfortably; the HNSW-in-RAM wall is ~10M×1536d, 100× beyond ICP. "Start with what your engineers know" / "libraries before databases" (MICES). Adding Elasticsearch/Typesense/VectorChord now is planning for scale we don't have; AGPL traps besides. |
+| **RRF (k=60) hybrid fusion** | **KEEP** | The industry's standard pre-LTR fusion. Keep the seam swappable for a learned reranker later; expose per-arm provenance now (explain already does). |
+| **BYO embed/generate/rerank** | **KEEP, but incomplete** | Model rankings reshuffle per catalog (idealo). But un-tuned models are the #1 failure mode — BYO without shipped provider adapters + guardrail defaults is DX friction masquerading as flexibility. See P0-3, P1-2. |
+| **`ts_rank_cd` lexical leg, hardcoded `'english'`** | **CHALLENGE — the one genuine quality ceiling** | No IDF/BM25, no multilingual, while cross-script primitives already exist in-repo for the entity path. Fix the free wins now (`setweight`, wire `samesake_normalise`/`samesake_phonetic`, configurable FTS config); BM25 extension bake-off **only if the eval proves lexical is the bottleneck** (deployment decision, not code). |
+| **StorageAdapter half-migration** | **STOP the migration; shrink the abstraction** | 8 core modules still run raw SQL via `client()`. A second dialect has no demand signal; Postgres-only *is the pitch*. Declare PostgresAdapter the only backend, keep it as the tidy home for shared queries, delete the "future dialect" aspiration from the doc comment. Don't spend more sessions relocating methods (s59 was one). |
+| **Entity-resolution product (`entity()`/match)** | **QUARANTINE, then decide** | 2,000+ lines, 9 routes, 8 CLI commands, one internal consumer (bom-quotation). It is not the ecommerce-search product — but **cross-merchant SKU dedup is load-bearing for multi-vendor marketplaces** (DoorDash). End state: keep the *capability*, re-aim it as marketplace offer-dedup (same product from N vendors → one result with N offers) instead of a general record-linkage toolkit. Until that build starts, stop expanding its surface. |
+| **Fashion template** | **KEEP as the proof path; stop the leaks** | Great-defaults-by-template is the right generality mechanism. But fashion leaks into the generic core: `fashionSearch` on the Matcher, `/fashion-search` route, fashion-hardcoded eval constraint fields. Templates must be additive, not baked in. |
+| **Typed spaces (`space_vec`)** | **KEEP** | Differentiated, now intent-safe via `mode`. No MICES team has an equivalent typed-multi-signal column; it's the "compiler" story made real. |
+| **Agent tools / MCP surface** | **KEEP — promote** | dm-drogerie runs a public MCP server over their search; "one retrieval stack, assistants as thin clients" is exactly Zalando/Coveo guidance. This is a differentiator for the agentic-commerce wave. |
+| **Inline pipelines, no job runner** | **KEEP** | Durability via the caller's platform (6 guides) is stage-honest. Building an internal queue is speculative infra. |
+| **In-process search cache** | **KEEP** | Sufficient at stage; a shared cache is scale we don't have. |
+
+## 2. Executed this session (verified: `tsc --noEmit` clean, sdk 4/4, server 253/253 pass)
+
+1. **Deleted the legacy fashion preset layer** — `fashionAttributes`, `fashionAttributeSchema`,
+   `fashionEnrichmentPreset`, `fashionSearchPreset` (~215 lines, `packages/sdk/src/index.ts`).
+   Zero code callers; a second divergent fashion vocabulary competing with the live `fashion.*`
+   template. Updated the one stale doc (`guides/conversational-search.mdx`) to the live template.
+2. **Deleted the deprecated `DEFAULT_PRODUCT_PARSE_INSTRUCTIONS` alias** ("removed in 0.7.x", we
+   ship 2.6.0); server now exports the canonical `DEFAULT_PRODUCT_PARSE_BODY`.
+3. **Fixed the README version lie** (1.0.0 → 2.6.0, added `@samesake/mcp`).
+4. **Archived 37 root process files** (`*-implementation-notes.md`, `*-scratchpad.md`,
+   `AUDIT-SUMMARY.md`, `bom-quotation-feature-audit.csv`) into `docs/notes/`. Root now presents as
+   a product repo, not a build log.
+5. **Wrote the missing baselines**: `docs/system-behavior-spec.md`, `docs/research/mices/README.md`.
+
+### Follow-up session (same day) — P0-2 + Tier-0 defaults shipped (261/261 tests, all 3 release-gate examples pass)
+
+6. **Found and fixed a silent break in the minimal path**: since the S1c indexing migration,
+   collections without an enrich pipeline indexed nothing (surfaces were only built during
+   enrich; `hello-search`, quickstart, and the README example were all broken — "expected 5
+   indexed, got 0" — and no CI runs the examples). `indexing` is optional again:
+   `CollectionEmbeddingDef.source` is restored, and `embed-index` composes surfaces inline
+   (declared surfaces when present, else source-template + searchable-field defaults).
+7. **halfvec by default**: collection `embedding`/`space_vec` are `halfvec` with
+   `halfvec_cosine_ops` HNSW (schema-gen + migration planner); dim ceiling 4000 for collections,
+   2000 kept for entity `vector` columns; apply fails fast on pgvector < 0.7.
+8. **Iterative index scans + `efSearch`**: `SET LOCAL hnsw.iterative_scan = relaxed_order` on
+   vector legs (pgvector ≥ 0.8, version-detected), `efSearch` (10–1000) exposed in SearchOpts and
+   the HTTP search routes, both scoped per query via a `SET LOCAL` transaction
+   (`StorageAdapter.unsafeWithSettings`).
+9. **Weighted lexical leg**: `fts` generated column is now
+   `setweight(fts_src_a,'A') || setweight(fts_src,'B')`; opt-in via
+   `f.text({ searchable: true, ftsWeight: "A" })` or an fts indexing surface with `weight: "A"`;
+   dead `CollectionTextFieldDef.weight` removed.
+10. **Filtered-recall + default-surface test coverage** (`test/default-surfaces.test.ts`):
+    hard filter returns every match despite adversarial vectors; setweight A-beats-B proven;
+    halfvec column type asserted. Changeset: `.changeset/tier-zero-defaults.md` (major).
+
+## 3. The iron-out backlog (ordered; each item names its proof)
+
+### P0 — correctness & honesty (the product's claims must be true)
+
+1. **Generic `removeDocuments`** on the Matcher. Docs already promise it; only fashion-sync can
+   delete. A search engine you can't delete from is not replaceable-search. *Proof: integration
+   test push→delete→search returns nothing; docs claim matches code.*
+2. **Filtered-recall eval + pgvector iterative scans (0.8) + `halfvec` default.** "Hard filters
+   stay hard" is unverified under filtered-ANN over-filtering — the exact collision point NLQ
+   creates (dm leans on native ANN filters; this is our equivalent risk). `halfvec` is a
+   day-one-or-painful retrofit. *Proof: new eval slice measuring recall under hard filters,
+   before/after.*
+3. **De-fashion the generic core.** Move `fashionSearch`/`/fashion-search` behind the template
+   (collections declare facades, core stays neutral); make eval constraint fields
+   (`run.ts:62–78`) schema-driven instead of price/color/gender/category-hardcoded. The 360-audit
+   guardrail ("fashion logic out of `core/*`") is currently violated. *Proof: grep gate — no
+   `fashion` symbol imported by `packages/server/src/core/*` except the template seam; eval runs
+   against a non-fashion collection.*
+4. **Judge-family separation + ESCI-grade rubric.** Never enrich and judge with the same model
+   family (self-preference flatters our own LLM-written `search_document`); version-pin/hash the
+   judge prompt; grade 4-class Exact/Substitute/Complement/Irrelevant with Substitute as soft
+   positive (four independent MICES sources). *Proof: eval config rejects same-family
+   enrich+judge; golden runs re-scored on the 4-class rubric.*
+5. **One env contract.** Canonical `SAMESAKE_DATABASE_URL` / `SAMESAKE_API_KEY` (namespaced —
+   we're embedded in host apps) everywhere: `.env.example`, docs quickstart, README, examples;
+   delete the mapping shim in `apps/matcher/src/index.ts`. No fallback aliases (alpha — break it).
+   *Proof: grep for the old names returns only CHANGELOG.*
+
+### P1 — adoption path (DX as moat)
+
+1. **`bunx samesake init`: zero-to-searching in ≤10 minutes.** Scaffold `samesake.config.ts` + a
+   Docker Compose (Postgres with all 4 extensions preinstalled) + the ~40-line `apps/matcher`
+   server as the template, seeded sample catalog. Today the cleanest on-ramp is buried in `apps/`.
+   *Proof: fresh-machine walkthrough, timed.*
+2. **Shipped provider adapters** — `@samesake/providers` (or core-adjacent): Gemini, OpenAI,
+   Voyage/Cohere `embed`/`generate`/`rerank` factories. Every consumer currently hand-rolls the
+   same 40–110 lines of Gemini glue; Mastra's one-method provider interface is the shape to
+   borrow. BYO stays; the default just stops being "write it yourself." *Proof: playground +
+   ecommerce-assistant + matcher consume the adapter; hand-rolled copies deleted.*
+3. **Result-cutoff strategies + designed zero-results.** Pluggable: threshold table / score-drop
+   detector / category-coherence / judge gate. A single `relevanceFloor` float is
+   known-insufficient (Delivery Hero, Digitec: bad results are worse than honest zero results).
+   *Proof: adversarial eval suite ("laptop" in a clothing store) passes with each strategy.*
+4. **Multilingual lexical leg.** Configurable FTS config + wire the existing
+   `samesake_normalise`/`samesake_phonetic` into collection search (they already serve the entity
+   path). The #1 quality investment per BUILD-READY; unblocks non-English adopters. *Proof:
+   multilingual golden queries added to eval; cross-script retrieval demonstrated.*
+5. **OSS trust surface**: CONTRIBUTING, SECURITY, ROADMAP, CI running typecheck + both suites +
+   release-gate examples, root `test`/`lint` scripts, the missing production guide
+   (`deploy/README.md` references it), "Why Samesake?"/comparison page. *Proof: files exist, CI
+   green on PR.*
+6. **Repo presentation**: gitignore `.agents/ .codex/ .metadata_cache/ .wrangler/`; decide
+   `evals/runs/` policy (commit curated baselines, ignore the rest); commit or fold the untracked
+   `docs/rfcs`, `docs/research`, `docs/design`; playground back to `workspace:*` and resolve the
+   `porulle#24` override.
+
+### P2 — the marketplace wedge (the differentiated bet)
+
+1. **Tenancy model for collections.** `scopes` on `CollectionDef` (the entity side already has
+   it) → compiled to a scoped column + mandatory filter, per-scope quotas/keys optional. "Replace
+   your marketplace search" requires a first-class answer to "whose catalog is this row?"
+2. **Cross-vendor offer dedup** — re-aim the existing match/dedup engine at "same product, N
+   vendors → one result, N offers." This is where the bolted-on second product becomes the
+   marketplace moat (DoorDash flags exactly this as load-bearing for multi-vendor).
+3. **Enrichment upgrades with proven ROI** (in order): per-row ANN-retrieved few-shots
+   (PatternRAG +34% recall — sibling products fill missing attributes, compounds in multi-vendor
+   catalogs); waterfall/tiered extraction (cheap precise tiers before vision LLM); version lineage
+   on enrich outputs (re-embed without re-LLM); LLM image-captions→text as the Postgres-friendly
+   visual signal (Pinterest OmniSearchSage) before any raw-CLIP ambition.
+4. **Staged-rollout routing primitive** — per-query-segment switch (zero-results → low-results →
+   all queries); how every MICES team shipped hybrid safely. For samesake it's how an adopter
+   migrates off their incumbent search incrementally — the actual "replace your search" motion.
+5. **Training-pair export** (click positives + taxonomy/same-SERP negatives + de-biasing hooks) so
+   adopters with traffic can fine-tune their BYO models and plug back in.
+
+### Explicit non-goals at this stage (challenged and rejected)
+
+LTR/learned ranker (no click data), SPLADE/ColBERT (license + stack traps), second storage dialect,
+internal job queue, personalization/behavioral CF, semantic IDs, generative carousels, checkout —
+and **precision micro-optimization as a conversion play** (OTTO + Walmart measured null; treat
+precision as a guardrail metric).
+
+## 4. Direction note
+
+This plan supersedes the earlier "internal fashion tool, shelve OSS ambitions" posture: the goal is
+explicitly a replaceable ecommerce search + enrichment product, multi-vendor marketplaces first.
+Fashion remains the proof-path template, not the category. Sequencing: P0 makes the current claims
+true → P1 makes adoption frictionless → P2 builds the marketplace wedge no incumbent OSS
+alternative has (the one direct analog, Marqo OSS, is deprecated; the slot is open).
