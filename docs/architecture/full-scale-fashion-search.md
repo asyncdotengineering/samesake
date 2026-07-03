@@ -167,5 +167,5 @@ second search datastore — until a real caller needs them. These are the premat
 ## Related docs
 `product-direction` (the "1") · `search-enrichment-accuracy-implementation-notes.md` (L4 enrichment eval)
 · `search-eval-phase1-implementation-notes.md` (L2/L4 golden eval + fixes) · `search-redteam-implementation-notes.md`
-(L4 adversarial) · `docs/research/postgres-high-scale-search.md` (L0 scale + BM25 decision) ·
+(L4 adversarial) ·
 `README.md` (current API surface).

@@ -6,7 +6,7 @@ Source of truth: `docs/product-oss-search-report.md`
 
 Audit prompt: `docs/product-report-code-gap-audit.md`
 
-RFC: `docs/rfcs/0001-close-product-oss-search-gaps.md`
+RFC: 0001-close-product-oss-search-gaps (removed — see git history)
 
 ## Audit Report
 
@@ -229,4 +229,4 @@ P2 - broaden adoption:
 
 ## RFC
 
-See `docs/rfcs/0001-close-product-oss-search-gaps.md`.
+See RFC 0001-close-product-oss-search-gaps (removed — in git history).

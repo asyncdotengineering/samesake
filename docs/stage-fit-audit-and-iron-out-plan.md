@@ -1,8 +1,7 @@
 # Stage-Fit Audit & Iron-Out Plan
 
 Status: Ready for review · 2026-07-02.
-Companion to [`system-behavior-spec.md`](./system-behavior-spec.md) (what the system does) and
-[`research/mices/README.md`](./research/mices/README.md) (external validation). This doc is the
+Companion to [`system-behavior-spec.md`](./system-behavior-spec.md) (what the system does). This doc is the
 verdicts: what fits the stage, what is baggage, and the ordered plan to become **the enrichment +
 fast-search toolkit anyone can replace their ecommerce search with — especially multi-vendor
 marketplaces — with DX as a moat**.
@@ -40,7 +39,7 @@ at any installation yet.
 4. **Archived 37 root process files** (`*-implementation-notes.md`, `*-scratchpad.md`,
    `AUDIT-SUMMARY.md`, `bom-quotation-feature-audit.csv`) into `docs/notes/`. Root now presents as
    a product repo, not a build log.
-5. **Wrote the missing baselines**: `docs/system-behavior-spec.md`, `docs/research/mices/README.md`.
+5. **Wrote the missing baselines**: `docs/system-behavior-spec.md`.
 
 ### Follow-up session (same day) — P0-2 + Tier-0 defaults shipped (261/261 tests, all 3 release-gate examples pass)
 
@@ -147,7 +146,7 @@ at any installation yet.
     hits — junk tails behind keyword matches now cut; eval-verified retrieval-neutral on the
     real corpus (topIds 67/67 identical, p2tenancy baseline minted).
 
-25. **P2-2 cross-vendor offer dedup** (`rfcs/rfc-offer-dedup.md`, C1–C9): `CollectionDef.dedup`
+25. **P2-2 cross-vendor offer dedup** (C1–C9): `CollectionDef.dedup`
     (exactKey/trigram/cosine channels, autoLink/suggest two-band, offerFields) clusters
     same-product listings via an explicit incremental `matcher.dedup()` stage; search collapses on
     the cluster id and attaches an `offers` array (declared fields only, one batched query/page,
@@ -214,7 +213,7 @@ Remaining P2: enrichment ROI upgrades (3), staged rollout (4), training-pair exp
    green on PR.*
 6. **Repo presentation**: gitignore `.agents/ .codex/ .metadata_cache/ .wrangler/`; decide
    `evals/runs/` policy (commit curated baselines, ignore the rest); commit or fold the untracked
-   `docs/rfcs`, `docs/research`, `docs/design`; playground back to `workspace:*` and resolve the
+   `docs/design`; playground back to `workspace:*` and resolve the
    `porulle#24` override.
 
 ### P2 — the marketplace wedge (the differentiated bet)

@@ -13,7 +13,7 @@ debt removals. Autonomous IC mode.
    with the adjacent "challenge any infrastructure or abstraction that does not fit this stage."
 3. **"Relevant videos related to samesake"** — the channel (MICES conference) never mentions
    samesake; interpreted as talks relevant to samesake's problem space. 11 of 30 talks selected,
-   captions pulled, synthesized to `docs/research/mices/README.md`.
+   captions pulled, synthesized to a MICES research note (since removed).
 4. **Root scratchpads were moved, not deleted** (`docs/notes/`), tracked files via `git mv`.
 5. **`DEFAULT_PRODUCT_PARSE_INSTRUCTIONS` export replaced by `DEFAULT_PRODUCT_PARSE_BODY`**
    (the canonical name) so the documented "reuse the default prompt" use-case survives. Breaking
@@ -316,12 +316,12 @@ debt removals. Autonomous IC mode.
 
 - Spec: `docs/system-behavior-spec.md`
 - Audit + plan: `docs/stage-fit-audit-and-iron-out-plan.md`
-- MICES research: `docs/research/mices/README.md`
+- MICES research: (removed — in git history)
 - Archived process docs: `docs/notes/`
 
 ---
 
-# P2-2 — Cross-vendor offer dedup (RFC `rfcs/rfc-offer-dedup.md`)
+# P2-2 — Cross-vendor offer dedup
 
 Session 2026-07-03. Executing C1→C9 of RFC Section 8. This section is a running log
 of decisions not spelled out by the RFC, deviations, and root causes.
