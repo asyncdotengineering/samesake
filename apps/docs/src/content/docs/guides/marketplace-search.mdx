@@ -166,6 +166,88 @@ console.log(result.aggregate, "pass:", result.pass);
 
 That's how you tune a marketplace without playing whack-a-mole. See [Eval gate](/guides/eval-gate/).
 
+## Collapse duplicate listings — one product, many offers
+
+On a marketplace that works, this problem *grows*: as more sellers join, more of them list the
+**same physical product** with different titles, photos, and prices. Search treats them as unrelated
+documents, so the results page shows the same silicone case five times — perceived selection
+collapses, the price competition is invisible, and genuinely different products get crowded out.
+
+Declare `dedup` on the collection and search returns **one hit per product**, each carrying an
+`offers` array — the member listings' vendor, price, and availability:
+
+```ts title="catalog.ts"
+export const products = collection("products", {
+  // ...fields, embeddings, search as before
+  dedup: {
+    channels: [
+      { kind: "exactKey", field: "gtin" },          // equal non-empty GTIN → decisive, auto-links
+      { kind: "trigram",  field: "title", weight: 1 }, // fuzzy title similarity
+      { kind: "cosine",   weight: 1 },                // doc-embedding similarity
+    ],
+    autoLink: 0.82,     // best-candidate score at/above which two listings merge automatically
+    suggest:  0.62,     // scores in [0.62, 0.82) queue for a human instead of merging
+    offerFields: ["vendor", "price", "available"], // copied onto each offer entry
+  },
+});
+```
+
+<Aside type="tip">
+**Calibrate the thresholds to your embedding model, and lean on the GTIN.** On a real gemini-embedding-2
+run over messy titles, an equal `exactKey` (GTIN/MPN) is the *reliable* auto-link — it short-circuits
+to a merge with zero false positives — while title-only semantic similarity for same-product variants
+often lands in the *suggest* band rather than above `autoLink`. That's the precision-first design working
+as intended: uncertain pairs become a review queue, never a silent merge. Two levers to raise auto-link
+recall: enrich the embedded document beyond the raw title (brand + attributes), and calibrate `autoLink`
+down until precision starts to slip. The `examples/fashion-search/dedup-eval.ts` script measures exactly
+this precision/recall tradeoff on a labelled set — run it against your own model before you pick numbers.
+</Aside>
+
+Clustering is an **explicit stage** — it runs after `index`, in the same incremental spirit as the
+rest of the pipeline (it only touches rows that are indexed and not yet clustered):
+
+```ts title="sync.ts"
+await matcher.pushDocuments("market", "products", rows);
+await matcher.enrich("market", "products");
+await matcher.index("market", "products");
+await matcher.dedup("market", "products");   // ← cluster same-product listings
+```
+
+Now search collapses on the cluster and attaches the offers:
+
+```ts
+const { hits } = await matcher.search("market", "products", { q: "silicone case iphone 15 black" });
+// hits[0] = { id: "...", title: "...", offers: [
+//   { id: "a", vendor: "AStore", price: 12, available: true },
+//   { id: "b", vendor: "BShop",  price: 10, available: true },
+//   { id: "c", vendor: "CMart",  price: 15, available: true },
+// ] }
+```
+
+`offers` only ever contains the fields you declared in `offerFields` (plus `id`) — never the raw
+listing — so you control exactly what cross-vendor data a search response reveals. A member that
+goes out of stock or gets quarantined drops out of `offers` automatically. Pass `offers: false` to
+skip the attachment, or `diversify: false` to see every raw listing again.
+
+<Aside type="note">
+**Precision over recall — uncertain pairs are suggestions, not merges.** A pair scoring below
+`autoLink` but at/above `suggest` is queued for a human rather than merged, so two genuinely
+different products are never silently collapsed. Review the queue and act on it:
+
+```ts
+const { suggestions } = await matcher.dedupSuggestions("market", "products");
+await matcher.confirmGroup("market", "products", { id: "listing-9", group: "cluster-3" }); // merge
+await matcher.splitGroup("market", "products", { id: "listing-9" });                        // separate
+```
+
+A `split` is remembered: re-running `dedup` (even with `{ rebuild: true }`) never re-suggests or
+re-merges a pair a human pulled apart. All of it is also available over HTTP and the CLI
+(`samesake dedup`, `dedup-clusters`, `dedup-suggestions`, `dedup-confirm`, `dedup-split`).
+</Aside>
+
+Clusters never span tenancy `scopes` (below) — candidates are pinned to the row's own scope, so a
+listing in one store can never merge with an identical one in another.
+
 ## Multi-store isolation — `scopes`
 
 Everything above is one marketplace: many sellers inside **one shared catalog**, where "vendor" is

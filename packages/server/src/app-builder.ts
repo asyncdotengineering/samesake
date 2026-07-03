@@ -14,6 +14,7 @@ import type { StorageAdapter } from "./db/storage-adapter.ts";
 import type { EntityDef, ProjectConfig } from "@samesake/core";
 import type { MatchService } from "./core/match.ts";
 import type { SearchService } from "./core/search.ts";
+import type { DedupService } from "./core/dedup.ts";
 import type { CalibrateSearchService } from "./core/calibrate-search.ts";
 import type { AgentToolsService } from "./core/agent-tools.ts";
 import type { ShopSearchService } from "./core/shop-search.ts";
@@ -38,6 +39,7 @@ export interface AppDeps {
   services: {
     match: MatchService;
     search: SearchService;
+    dedup: DedupService;
     calibrateSearch: CalibrateSearchService;
     agentTools: AgentToolsService;
     shopSearch: ShopSearchService;
@@ -552,6 +554,70 @@ export function buildApp(deps: AppDeps): Hono {
       const res = await services.search.grepDocument(project, collection, id, body);
       if (!res) return c.json({ detail: `document "${id}" not found` }, 404);
       return c.json(res);
+    }
+  );
+
+  // ── Cross-vendor offer dedup ────────────────────────────────────────────
+  app.post("/v1/projects/:project/collections/:collection/dedup", async (c) => {
+    const { project, collection } = c.req.param();
+    await requireProjectKey(c, project);
+    const body = (await c.req.json().catch(() => ({}))) as { limit?: number; rebuild?: boolean };
+    return c.json(await services.dedup.dedup(project, collection, { limit: body.limit, rebuild: body.rebuild }));
+  });
+
+  app.get("/v1/projects/:project/collections/:collection/dedup/clusters", async (c) => {
+    const { project, collection } = c.req.param();
+    await requireProjectKey(c, project);
+    const q = c.req.query();
+    return c.json(
+      await services.dedup.dedupClusters(project, collection, {
+        scope: scopeFromQuery(q),
+        minMembers: q.minMembers ? Number(q.minMembers) : undefined,
+        limit: q.limit ? Number(q.limit) : undefined,
+      })
+    );
+  });
+
+  app.get("/v1/projects/:project/collections/:collection/dedup/suggestions", async (c) => {
+    const { project, collection } = c.req.param();
+    await requireProjectKey(c, project);
+    const q = c.req.query();
+    return c.json(
+      await services.dedup.dedupSuggestions(project, collection, {
+        scope: scopeFromQuery(q),
+        limit: q.limit ? Number(q.limit) : undefined,
+      })
+    );
+  });
+
+  const DedupConfirmBody = z.object({
+    id: z.string(),
+    group: z.string(),
+    scope: z.record(z.string(), z.string()).optional(),
+  });
+  app.post(
+    "/v1/projects/:project/collections/:collection/dedup/confirm",
+    zValidator("json", DedupConfirmBody),
+    async (c) => {
+      const { project, collection } = c.req.param();
+      await requireProjectKey(c, project);
+      const body = c.req.valid("json");
+      return c.json(await services.dedup.confirmGroup(project, collection, body));
+    }
+  );
+
+  const DedupSplitBody = z.object({
+    id: z.string(),
+    scope: z.record(z.string(), z.string()).optional(),
+  });
+  app.post(
+    "/v1/projects/:project/collections/:collection/dedup/split",
+    zValidator("json", DedupSplitBody),
+    async (c) => {
+      const { project, collection } = c.req.param();
+      await requireProjectKey(c, project);
+      const body = c.req.valid("json");
+      return c.json(await services.dedup.splitGroup(project, collection, body));
     }
   );
 

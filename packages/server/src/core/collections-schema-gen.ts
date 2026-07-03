@@ -36,6 +36,148 @@ export function scopeColumn(key: string): string {
   return sanitiseIdent(`scope_${key}`);
 }
 
+/** Cluster-id column for a dedup-enabled collection (default "product_group"). */
+export function dedupGroupField(c: Pick<CollectionDef, "dedup">): string {
+  return c.dedup?.groupField ?? "product_group";
+}
+
+const DEDUP_RESERVED = new Set([
+  "id",
+  "data",
+  "enriched",
+  "content_hash",
+  "doc",
+  "rerank_doc",
+  "embedding",
+  "space_vec",
+  "fts",
+  "dedup_score",
+  "dedup_checked_at",
+]);
+
+/**
+ * Validate a collection's `dedup` config against its declared fields/scopes.
+ * Throws (naming the offending field) — same discipline as {@link collectionScopes}.
+ */
+export function validateDedupConfig(c: CollectionDef): void {
+  const dedup = c.dedup;
+  if (!dedup) return;
+  const name = c.name ?? "?";
+  const fieldNames = new Set(Object.keys(c.fields ?? {}));
+  const scopes = collectionScopes(c);
+  const group = dedup.groupField ?? "product_group";
+
+  if (fieldNames.has(group)) {
+    throw new Error(`collection ${name}: dedup.groupField "${group}" collides with a declared field`);
+  }
+  if (scopes.includes(group)) {
+    throw new Error(`collection ${name}: dedup.groupField "${group}" collides with scope "${group}"`);
+  }
+  if (DEDUP_RESERVED.has(group)) {
+    throw new Error(`collection ${name}: dedup.groupField "${group}" is a reserved column name`);
+  }
+
+  let weighted = 0;
+  let exactKeys = 0;
+  for (const ch of dedup.channels ?? []) {
+    if (ch.kind === "exactKey") {
+      exactKeys++;
+      if (!fieldNames.has(ch.field)) {
+        throw new Error(`collection ${name}: dedup exactKey field "${ch.field}" is not a declared field`);
+      }
+      const ftype = c.fields[ch.field]?.type;
+      if (ftype !== "text" && ftype !== "enum") {
+        throw new Error(
+          `collection ${name}: dedup exactKey field "${ch.field}" must be a text or enum field (got ${ftype})`
+        );
+      }
+    } else if (ch.kind === "trigram") {
+      weighted++;
+      if (!fieldNames.has(ch.field)) {
+        throw new Error(`collection ${name}: dedup trigram field "${ch.field}" is not a declared field`);
+      }
+      if (!(ch.weight > 0)) {
+        throw new Error(`collection ${name}: dedup trigram weight for "${ch.field}" must be > 0`);
+      }
+    } else if (ch.kind === "cosine") {
+      weighted++;
+      if (!(ch.weight > 0)) {
+        throw new Error(`collection ${name}: dedup cosine weight must be > 0`);
+      }
+      if (!c.embeddings || Object.keys(c.embeddings).length === 0) {
+        throw new Error(`collection ${name}: dedup cosine channel requires a declared embeddings key`);
+      }
+    }
+  }
+  if (weighted === 0 && exactKeys === 0) {
+    throw new Error(`collection ${name}: dedup requires at least one weighted channel or one exactKey`);
+  }
+  if (!(dedup.autoLink > 0 && dedup.autoLink <= 1)) {
+    throw new Error(`collection ${name}: dedup.autoLink must be in (0, 1], got ${dedup.autoLink}`);
+  }
+  if (dedup.suggest !== undefined && !(dedup.suggest > 0 && dedup.suggest <= dedup.autoLink)) {
+    throw new Error(
+      `collection ${name}: dedup.suggest (${dedup.suggest}) must be in (0, autoLink=${dedup.autoLink}]`
+    );
+  }
+  for (const f of dedup.offerFields ?? []) {
+    if (!fieldNames.has(f)) {
+      throw new Error(`collection ${name}: dedup.offerFields "${f}" is not a declared field`);
+    }
+  }
+}
+
+/**
+ * Additive DDL for a dedup-enabled collection: cluster-state columns, the group
+ * btree, a trgm GIN per trigram channel, an exactKey btree (unless the field is
+ * already `filterable`), and the suggestions table. All `IF NOT EXISTS`, so it is
+ * safe both for a fresh collection and for adding `dedup` to an existing one.
+ */
+export function dedupDDL(schema: string, collectionName: string, c: CollectionDef): string[] {
+  const dedup = c.dedup;
+  if (!dedup) return [];
+  validateDedupConfig(c);
+  const coll = sanitiseIdent(collectionName);
+  const table = `${schema}.c_${coll}`;
+  const group = sanitiseIdent(dedup.groupField ?? "product_group");
+
+  const stmts: string[] = [
+    `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${group} text;`,
+    `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS dedup_score real;`,
+    `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS dedup_checked_at timestamptz;`,
+    `CREATE INDEX IF NOT EXISTS c_${coll}_${group}_idx ON ${table} (${group});`,
+  ];
+
+  const filterable = new Set(
+    Object.entries(c.fields)
+      .filter(([, d]) => d.filterable)
+      .map(([k]) => sanitiseIdent(k))
+  );
+  for (const ch of dedup.channels) {
+    if (ch.kind === "trigram") {
+      const col = sanitiseIdent(ch.field);
+      stmts.push(
+        `CREATE INDEX IF NOT EXISTS c_${coll}_${col}_trgm_idx ON ${table} USING gin (${col} gin_trgm_ops);`
+      );
+    } else if (ch.kind === "exactKey" && !filterable.has(sanitiseIdent(ch.field))) {
+      const col = sanitiseIdent(ch.field);
+      stmts.push(`CREATE INDEX IF NOT EXISTS c_${coll}_${col}_idx ON ${table} (${col});`);
+    }
+  }
+
+  stmts.push(
+    `CREATE TABLE IF NOT EXISTS ${table}_dedup_suggestions (
+      row_id text NOT NULL,
+      candidate_group text NOT NULL,
+      score real NOT NULL,
+      status text NOT NULL DEFAULT 'open',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (row_id, candidate_group)
+    );`
+  );
+  return stmts;
+}
+
 /** The collection's FTS regconfig, validated. Default "english". */
 export function ftsLanguage(c: Pick<CollectionDef, "language" | "name">): string {
   const lang = c.language ?? "english";
@@ -112,6 +254,7 @@ export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
     const table = `${schema}.c_${coll}`;
     const wantPhon = assertPhoneticAvailable(c);
     const scopes = collectionScopes(c);
+    validateDedupConfig(c);
 
     const fieldCols = [
       ...scopes.map((s) => `  ${scopeColumn(s)} text NOT NULL`),
@@ -232,6 +375,12 @@ ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
         `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${ftsPhonColumnDdl(SYS)};`,
         `CREATE INDEX IF NOT EXISTS c_${sanitiseIdent(collectionName)}_fts_phon_idx ON ${table} USING gin (fts_phon);`
       );
+    }
+
+    // Offer-dedup: cluster-state columns + indexes + suggestions table. Idempotent
+    // (all IF NOT EXISTS), so adding `dedup` to an existing collection is additive.
+    if (def?.dedup) {
+      stmts.push(...dedupDDL(schema, collectionName, def));
     }
 
     return stmts;

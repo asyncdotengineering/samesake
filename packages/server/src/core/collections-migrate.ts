@@ -125,6 +125,41 @@ export function planCollectionMigration(
     );
   }
 
+  // Offer-dedup config diff. Adding dedup is additive (cluster columns + indexes +
+  // suggestions table land via ensureCollectionSystemColumns's IF-NOT-EXISTS DDL);
+  // removing it drops that state (destructive); changing channels/thresholds needs a
+  // rebuild (a note, not a schema change).
+  const storedDedup = stored.dedup;
+  const incomingDedup = incoming.dedup;
+  const storedGroup = storedDedup ? (storedDedup.groupField ?? "product_group") : null;
+  const incomingGroup = incomingDedup ? (incomingDedup.groupField ?? "product_group") : null;
+  if (!storedDedup && incomingDedup) {
+    plan.additions.push(`${coll}: add dedup (cluster columns, indexes, suggestions table)`);
+  } else if (storedDedup && !incomingDedup) {
+    const g = sanitiseIdent(storedGroup!);
+    plan.destructive.push(
+      `${coll}: dedup removed (drops ${g}, dedup_score, dedup_checked_at, and the suggestions table)`
+    );
+    alterStatements.push(`ALTER TABLE ${table} DROP COLUMN IF EXISTS ${g}`);
+    alterStatements.push(`ALTER TABLE ${table} DROP COLUMN IF EXISTS dedup_score`);
+    alterStatements.push(`ALTER TABLE ${table} DROP COLUMN IF EXISTS dedup_checked_at`);
+    alterStatements.push(`DROP TABLE IF EXISTS ${table}_dedup_suggestions`);
+  } else if (storedDedup && incomingDedup) {
+    if (storedGroup !== incomingGroup) {
+      plan.destructive.push(
+        `${coll}: dedup.groupField ${storedGroup} → ${incomingGroup} (cluster column renamed — recreate the collection)`
+      );
+    } else if (
+      JSON.stringify(storedDedup.channels) !== JSON.stringify(incomingDedup.channels) ||
+      storedDedup.autoLink !== incomingDedup.autoLink ||
+      storedDedup.suggest !== incomingDedup.suggest
+    ) {
+      plan.notes.push(
+        `${coll}: dedup channels/thresholds changed — re-run matcher.dedup({ rebuild: true }) to re-cluster`
+      );
+    }
+  }
+
   for (const [name, def] of Object.entries(incomingFields)) {
     const prev = storedFields[name];
     if (!prev) {

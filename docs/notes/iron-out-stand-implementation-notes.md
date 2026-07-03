@@ -318,3 +318,153 @@ debt removals. Autonomous IC mode.
 - Audit + plan: `docs/stage-fit-audit-and-iron-out-plan.md`
 - MICES research: `docs/research/mices/README.md`
 - Archived process docs: `docs/notes/`
+
+---
+
+# P2-2 — Cross-vendor offer dedup (RFC `rfcs/rfc-offer-dedup.md`)
+
+Session 2026-07-03. Executing C1→C9 of RFC Section 8. This section is a running log
+of decisions not spelled out by the RFC, deviations, and root causes.
+
+## Load-bearing decisions (logged before writing code)
+
+1. **`matcher.dedup` public-method collision — REPURPOSED (safe).** The public
+   `matcher.dedup` binding currently points at the *entity* `matchService.runDedup`
+   (`{project,kind,scope,...}`). The RFC (REQ-2, §4.2) names the NEW collection dedup
+   `matcher.dedup(project, collection, opts?)`. Investigation: the entity dedup is
+   consumed ONLY via the HTTP route `GET /v1/projects/:p/duplicates` (which calls
+   `services.match.runDedup` directly — see `hello/run.ts`), and the in-process
+   `matcher.dedup` binding has **zero** consumers or tests. So the public binding is
+   repurposed to the collection dedup; `matchService.runDedup` and the `/duplicates`
+   route stay untouched. The entity engine (tables, 9 routes, feedback machinery) is
+   left exactly as-is per RFC §2. Verified: no bom-quotation/test reference to the
+   in-process `matcher.dedup`.
+
+2. **Eval baseline reference exists** at repo-root
+   `evals/runs/2026-07-02T21-56-59-647Z-search-p2tenancy.json` (NOT under
+   `examples/fashion-search/` as the task text implies — `eval-search.ts` resolves
+   `REPO_ROOT = <repo>` and writes to `<repo>/evals/runs/`). Gate #4 diffs the
+   `--phase=p2dedup` run's per-query `topIds` against this file's `perQuery[].topIds`.
+
+3. **Delegation posture.** C1–C8 are one tightly-coupled TS feature across shared files
+   (`core/dedup.ts` spans C3/C4/C6, `search.ts` C5, `collections-schema-gen.ts` C2).
+   Parallel delegation would conflict and still require full understanding to verify, and
+   C3+C4 are the RFC's stated risk core needing first-party proof. So core is built by the
+   lead IC; delegation reserved for isolated C9 docs and a final adversarial review.
+
+4. **Build order.** `@samesake/core` is `packages/sdk` (published name); `packages/server`
+   consumes it via built `dist`. After SDK type changes (C1) the SDK must be rebuilt before
+   server typechecks/tests resolve the new `dedup` field (RFC way-forward #4).
+
+## C3+C4 build notes (risk core — proven at CHECKPOINT-A)
+
+- **`assigned` skip-set (correctness fix, not in RFC pseudocode).** The row snapshot
+  is `SELECT ... WHERE group IS NULL` taken ONCE. But when row A auto-links to a
+  not-yet-clustered candidate B, B is founded as the leader (its group is set) mid-loop.
+  If the loop later reprocesses B from the stale snapshot, B could re-found a *different*
+  leader and thrash the cluster apart (A left orphaned at B.id while B moves to C.id).
+  Fix: an in-memory `Set<string>` of ids given a group this run (leaders founded +
+  each processed row); skip a snapshot row if already assigned. This is what makes
+  membership converge (RFC §5.4 "membership converges regardless of leader identity").
+  Proven: 3 same-mpn vendors → exactly one 3-member cluster; distinct product separate;
+  re-run processes 0.
+- **`matcher.dedup` repurposed** — entity `runDedup` stays; public binding now the
+  collection dedup service (createMatcher.ts). Human-loop methods exposed:
+  `dedupClusters`, `dedupSuggestions`, `confirmGroup`, `splitGroup`.
+- **Candidate SQL** — one UNION CTE: exactKey btree ∪ trigram GIN top-20 (`%` + ORDER BY
+  similarity) ∪ ANN top-20 (`embedding <=> $vec::halfvec`), every probe scope-pinned and
+  `id <> self`; outer join filters `pipeline_status='ready'`. Trigram/cosine similarities
+  computed in the outer SELECT reusing the same param refs.
+
+## Gate results (C8 / FINAL)
+
+- **Gate #2 full suite: 332/332 green** (313 baseline + 19 new `test/dedup.test.ts`). The single
+  transient failure on the first run — `observability.test.ts › nlq cache hit counter` — was
+  cross-RUN contamination I caused: my *earlier timed-out* suite run persisted the `obs` NLQ parse
+  result into the GLOBAL `samesake_stage_cache` (`nlqCacheKey` = sha1 of model|instr|def.name|query,
+  no project-schema component; 7-day TTL), so the re-run hit the cache and `generateCalls` was 0
+  instead of 1. Not a dedup regression (the `obs` collection has no dedup; every dedup path is gated
+  on `def.dedup`). Cleared the stale `stage_name='__nlq'` row and observability.test.ts passes 2/2
+  cold. Pre-existing test-isolation weakness, not introduced here.
+
+- **Gate #4 neutrality: PROVEN, 67/67.** `eval-search.ts --phase=p2dedup` on the real
+  fashionparity corpus → per-query `topIds` **67/67 identical** to
+  `evals/runs/2026-07-02T21-56-59-647Z-search-p2tenancy.json`. The dedup-less `products`
+  collection is byte-identical on the read path. Airtight by construction: for a collection with
+  no `dedup`, the group-column projection (`extraCols`) is empty, collapse falls back to
+  `search.variantGroup` only, `attachOffers` is gated on `def.dedup`, and the cache key's offers
+  component is inert. Run artifact: `evals/runs/2026-07-03T06-48-45-418Z-search-p2dedup.json`.
+- **Gate #3 examples:** hello-search 5/5, hello-spaces 4/4, quickstart green (against dist).
+- **Gate #5:** workspace `tsc --noEmit` clean; `oxlint` clean (0 errors; removed my one unused
+  `CollectionDef` import in dedup.ts); `apps/docs` build green (marketplace-search dedup section).
+
+## Adversarial review — findings resolved
+
+An independent adversarial review pass ran over the whole diff against the RFC. It confirmed
+tenancy, SQL-injection safety, neutrality, and offers correctness are CLEAR, and surfaced 4 real
+issues — all fixed, each with a regression test:
+
+1. **BLOCKER — declined pair re-merged on rebuild (directional decline memory).** The decline was
+   stored/checked one-directionally `(row_id, candidate_group)`, but clustering is symmetric — on a
+   `{rebuild:true}` the cluster re-founds the other way and the reverse-direction link was NOT
+   blocked, silently re-merging (auto-link band) a pair a human had split. My original review test
+   missed it (it used the suggest band and only asserted the exact declined direction). **Fix:**
+   `isDeclined(a,b)` checks BOTH orderings; used in both the auto-link and suggest branches.
+   Regression: `test/dedup.test.ts` "BLOCKER-1" (equal-mpn auto-link pair, split, rebuild → not
+   re-merged).
+2. **MAJOR — splitting a cluster leader was a silent no-op.** `SET group = id` on the leader (whose
+   group already == its id) left every member attached and recorded no decline. **Fix:** `splitGroup`
+   now re-homes the remaining members onto a new leader before evicting, and records the decline
+   against EVERY former co-member (not just one), so no rebuild leader-reshuffle can re-merge the
+   split row with any co-member. Regression: "MAJOR-2" (split the trio's leader → separated + survives
+   rebuild against both co-members).
+3. **MINOR — `dedupClusters` materialized the whole clustered table then sliced in JS.** **Fix:** a
+   `grp` CTE selects the top-N qualifying clusters (bounded by `limit`) in SQL, then only those
+   members are fetched.
+4. **MINOR — `exactKey` on a non-text field would error at query time (`col <> ''`).** **Fix:**
+   `validateDedupConfig` now rejects an `exactKey` channel on a non-text/enum field at apply, naming
+   the field.
+
+`test/dedup.test.ts` is now 21 tests (was 19). Server typecheck + lint clean after the fixes.
+
+## Final gate sweep (all green)
+
+- **#1 dedup.test.ts:** 21 tests — scoring units, 3-vendor cluster / distinct no-cluster, DDL,
+  offers + quarantine + offers:false, suggest→confirm→split with decline surviving re-run+rebuild,
+  cross-scope isolation (+ row-level count(DISTINCT scope)=1) + without-scope rejection, HTTP
+  lifecycle + auth, and the two review regressions (BLOCKER-1 auto-link rebuild, MAJOR-2 leader split).
+- **#2 full suite:** `bun test packages/sdk packages/server packages/providers` → **334 pass / 0 fail**
+  on a cold run (313 baseline + 21 dedup). The observability NLQ-cache flake is a pre-existing global
+  `samesake_stage_cache` cold-dependency, unrelated to dedup; clean once the stale __nlq row is cleared.
+- **#3 examples:** hello-search / hello-spaces / quickstart green against rebuilt dist.
+- **#4 neutrality:** 67/67 topIds identical to p2tenancy baseline (review fixes touched no search path,
+  so unchanged).
+- **#5:** workspace typecheck clean, lint clean, apps/docs build green.
+
+Change is left as working-tree edits (not committed) — the kickoff did not request a commit.
+
+## Post-review follow-ups (requested after delivery)
+
+**(a) Fixed the pre-existing `observability.test.ts` isolation flake.** Root cause: the test used a
+FIXED NLQ query phrase against the content-addressed, project-independent global NLQ cache
+(`samesake_stage_cache`), so any prior run within the 7-day TTL warmed it and turned the "cold parse"
+assertion into a cache hit. The cache design is correct (same instructions|model|collection|query →
+same parse is intended reuse); the TEST was non-hermetic. Fix: make the probe query unique per run
+(`another obs nlq phrase ${random}`). Proven repeatable — `observability.test.ts` now passes on TWO
+consecutive runs (the old bug failed the 2nd). The suite is repeatably green without a cache wipe.
+
+**(b) Added a real-embedding dedup QUALITY eval** (`examples/fashion-search/dedup-eval.ts`,
+`bun run eval:dedup`). All the dedup unit/integration tests use the hash-embed stub; this grades
+clustering on REAL `gemini-embedding-2` vectors over a hand-labelled gold set of cross-vendor fashion
+listings (3 truth groups + 6 distinct, some sharing a GTIN), sweeping `autoLink` and scoring pairwise
+precision/recall vs the labels. Findings on the real corpus:
+- **Precision = 1.000 at every threshold (0.75–0.90) — zero false merges**, even though the distinct
+  set contains adjacent categories (AF1 / Ultraboost / Converse are all sneakers). The precision-first
+  contract holds on real vectors, not just the stub.
+- **GTIN `exactKey` is the reliable auto-link path** (guaranteed precision + recall); title-only
+  semantic cosine for same-product variants is modest, so most true dupes land in the SUGGEST band —
+  human-reachable recall (auto-link + suggest) ≈ 5/7 at autoLink 0.75. This is the two-band design
+  behaving as intended, not a defect.
+- Fed back into the guide: `marketplace-search.mdx` example thresholds lowered to a grounded
+  `autoLink 0.82 / suggest 0.62` with a calibration Aside pointing at the eval (the old `0.9` was the
+  worst-recall point the eval found).

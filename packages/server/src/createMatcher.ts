@@ -36,6 +36,7 @@ import { makeEmbedService } from "./core/embed.ts";
 import { makeParseService } from "./core/parse.ts";
 import { makeMatchService } from "./core/match.ts";
 import { makeSearchService } from "./core/search.ts";
+import { makeDedupService } from "./core/dedup.ts";
 import { makeAgentToolsService } from "./core/agent-tools.ts";
 import { makeIngestService } from "./core/ingest.ts";
 import { makeEnrichPipelineService } from "./core/enrich-pipeline.ts";
@@ -65,7 +66,12 @@ export interface Matcher {
   matchBatch: ReturnType<typeof makeMatchService>["runMatchBatch"];
   confirm: ReturnType<typeof makeMatchService>["runConfirm"];
   decline: ReturnType<typeof makeMatchService>["runDecline"];
-  dedup: ReturnType<typeof makeMatchService>["runDedup"];
+  /** Cross-vendor offer dedup: cluster a dedup-enabled collection's rows (RFC offer-dedup). */
+  dedup: ReturnType<typeof makeDedupService>["dedup"];
+  dedupClusters: ReturnType<typeof makeDedupService>["dedupClusters"];
+  dedupSuggestions: ReturnType<typeof makeDedupService>["dedupSuggestions"];
+  confirmGroup: ReturnType<typeof makeDedupService>["confirmGroup"];
+  splitGroup: ReturnType<typeof makeDedupService>["splitGroup"];
   setScopeThresholds: ReturnType<typeof makeMatchService>["setScopeThresholds"];
   calibrate: ReturnType<typeof makeCalibrateService>["runCalibrate"];
   explain: ReturnType<typeof makeExplainService>["runExplain"];
@@ -249,6 +255,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
   const parseService = makeParseService(ctx);
   const matchService = makeMatchService(ctx, embedService, parseService, projectsService, schemaGen);
   const searchService = makeSearchService(ctx, embedService, projectsService);
+  const dedupService = makeDedupService(ctx, projectsService);
   const calibrateSearchService = makeCalibrateSearchService(ctx, searchService);
   const evaluateEnrichService = makeEvaluateEnrichService(ctx, projectsService);
   const evalService = makeEvalService(ctx, searchService);
@@ -275,6 +282,7 @@ export function createMatcher(config: MatcherConfig): Matcher {
     services: {
       match: matchService,
       search: searchService,
+      dedup: dedupService,
       calibrateSearch: calibrateSearchService,
       agentTools: agentToolsService,
       shopSearch: shopSearchService,
@@ -306,7 +314,11 @@ export function createMatcher(config: MatcherConfig): Matcher {
     matchBatch: matchService.runMatchBatch,
     confirm: matchService.runConfirm,
     decline: matchService.runDecline,
-    dedup: matchService.runDedup,
+    dedup: dedupService.dedup,
+    dedupClusters: dedupService.dedupClusters,
+    dedupSuggestions: dedupService.dedupSuggestions,
+    confirmGroup: dedupService.confirmGroup,
+    splitGroup: dedupService.splitGroup,
     setScopeThresholds: matchService.setScopeThresholds,
     calibrate: calibrateService.runCalibrate,
     explain: explainService.runExplain,

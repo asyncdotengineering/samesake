@@ -252,6 +252,14 @@ SEARCH PIPELINE
                                                           Delete documents by id
   search-explain --project=NAME --collection=COL --q=QUERY [--json]
                                                           Per-channel search ranking breakdown
+  dedup          --project=NAME --collection=COL [--rebuild] [--limit=N]
+                                                          Cluster same-product listings (cross-vendor offer dedup)
+  dedup-clusters --project=NAME --collection=COL [--scope k=v] [--min-members=2] [--limit=N] [--json]
+  dedup-suggestions --project=NAME --collection=COL [--scope k=v] [--limit=N] [--json]
+                                                          List uncertain pairs queued for human review
+  dedup-confirm  --project=NAME --collection=COL --id=ID --group=G [--scope k=v]
+  dedup-split    --project=NAME --collection=COL --id=ID [--scope k=v]
+                                                          Merge / split a clustered pair
   calibrate-search --project=NAME --collection=COL --queries=FILE.json [--limit=N] [--json]
                                                           Sweep mode/weight configs on graded relevance
                                                           (labels in FILE, else the LLM judges) → recommend
@@ -910,6 +918,90 @@ async function cmdInit(flags: Record<string, string>, rest: string[]): Promise<v
   }
 }
 
+// ── Cross-vendor offer dedup ──────────────────────────────────────────────
+function dedupBase(flags: Record<string, string>): { project: string; collection: string } {
+  const project = flags.project ?? PROJECT ?? fail("--project is required");
+  const collection = flags.collection ?? fail("--collection is required");
+  return { project, collection };
+}
+
+async function cmdDedup(flags: Record<string, string>): Promise<void> {
+  const { project, collection } = dedupBase(flags);
+  const body: { limit?: number; rebuild?: boolean } = {};
+  if (flags.limit) body.limit = Number(flags.limit);
+  if (flags.rebuild === "true") body.rebuild = true;
+  const r = await post<{ processed: number; autoLinked: number; founded: number; suggested: number }>(
+    `/v1/projects/${project}/collections/${collection}/dedup`,
+    body
+  );
+  console.log(
+    `✓ dedup: processed ${r.processed}, autoLinked ${r.autoLinked}, suggested ${r.suggested}, founded ${r.founded}`
+  );
+}
+
+function scopeQuery(scope: Record<string, string>, extra: Record<string, string> = {}): string {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(scope)) params.set(`scope.${k}`, v);
+  for (const [k, v] of Object.entries(extra)) if (v) params.set(k, v);
+  const s = params.toString();
+  return s ? `?${s}` : "";
+}
+
+async function cmdDedupClusters(flags: Record<string, string>, rest: string[]): Promise<void> {
+  const { project, collection } = dedupBase(flags);
+  const scope = parseScopeArgs(rest);
+  const qs = scopeQuery(scope, { minMembers: flags["min-members"] ?? "", limit: flags.limit ?? "" });
+  const r = await get<{ clusters: Array<{ group: string; members: Array<Record<string, unknown>> }> }>(
+    `/v1/projects/${project}/collections/${collection}/dedup/clusters${qs}`
+  );
+  if (flags.json === "true") return void console.log(JSON.stringify(r, null, 2));
+  if (!r.clusters.length) return void console.log("No clusters with >= min members.");
+  console.log(`${r.clusters.length} cluster${r.clusters.length === 1 ? "" : "s"}:`);
+  for (const c of r.clusters) {
+    console.log(`\n  cluster ${c.group} (n=${c.members.length})`);
+    for (const m of c.members) console.log(`    [id=${String(m.id)}] ${JSON.stringify(m)}`);
+  }
+}
+
+async function cmdDedupSuggestions(flags: Record<string, string>, rest: string[]): Promise<void> {
+  const { project, collection } = dedupBase(flags);
+  const scope = parseScopeArgs(rest);
+  const qs = scopeQuery(scope, { limit: flags.limit ?? "" });
+  const r = await get<{ suggestions: Array<{ id: string; candidateGroup: string; score: number }> }>(
+    `/v1/projects/${project}/collections/${collection}/dedup/suggestions${qs}`
+  );
+  if (flags.json === "true") return void console.log(JSON.stringify(r, null, 2));
+  if (!r.suggestions.length) return void console.log("No open suggestions.");
+  console.log(`${r.suggestions.length} suggestion${r.suggestions.length === 1 ? "" : "s"}:`);
+  for (const s of r.suggestions) {
+    console.log(`  ${s.id} → cluster ${s.candidateGroup} (score ${s.score.toFixed(3)})`);
+  }
+}
+
+async function cmdDedupConfirm(flags: Record<string, string>, rest: string[]): Promise<void> {
+  const { project, collection } = dedupBase(flags);
+  const id = flags.id ?? fail("--id is required");
+  const group = flags.group ?? fail("--group is required");
+  const scope = parseScopeArgs(rest);
+  await post(`/v1/projects/${project}/collections/${collection}/dedup/confirm`, {
+    id,
+    group,
+    ...(Object.keys(scope).length ? { scope } : {}),
+  });
+  console.log(`✓ confirmed ${id} into cluster ${group}`);
+}
+
+async function cmdDedupSplit(flags: Record<string, string>, rest: string[]): Promise<void> {
+  const { project, collection } = dedupBase(flags);
+  const id = flags.id ?? fail("--id is required");
+  const scope = parseScopeArgs(rest);
+  const r = await post<{ group: string }>(`/v1/projects/${project}/collections/${collection}/dedup/split`, {
+    id,
+    ...(Object.keys(scope).length ? { scope } : {}),
+  });
+  console.log(`✓ split ${id} into fresh cluster ${r.group}`);
+}
+
 async function main(): Promise<void> {
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") {
     await cmdHelp();
@@ -940,6 +1032,11 @@ async function main(): Promise<void> {
     case "decline": await cmdDecline(flags, rest); break;
     case "calibrate": await cmdCalibrate(flags, rest); break;
     case "duplicates": await cmdDuplicates(flags, rest); break;
+    case "dedup": await cmdDedup(flags); break;
+    case "dedup-clusters": await cmdDedupClusters(flags, rest); break;
+    case "dedup-suggestions": await cmdDedupSuggestions(flags, rest); break;
+    case "dedup-confirm": await cmdDedupConfirm(flags, rest); break;
+    case "dedup-split": await cmdDedupSplit(flags, rest); break;
     case "variants": await cmdVariants(flags, rest); break;
     case "dev": await cmdDev(flags); break;
     case "eval": await cmdEval(flags); break;

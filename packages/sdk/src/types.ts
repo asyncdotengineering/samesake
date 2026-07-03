@@ -442,6 +442,41 @@ export interface CollectionCutoffDef {
   coherenceMin?: number;
 }
 
+// ── Cross-vendor offer dedup ────────────────────────────────────────────
+/**
+ * A single scoring channel for offer-dedup. The weighted channels contribute a
+ * normalized [0,1] score (Σ weightᵢ·channelᵢ / Σ weightᵢ); an `exactKey` channel
+ * is decisive — equal non-empty values short-circuit to an auto-link regardless
+ * of the other channels (REQ-4). Empty/null key values never match.
+ */
+export type DedupChannelDef =
+  | { kind: "exactKey"; field: string }
+  | { kind: "trigram"; field: string; weight: number }
+  | { kind: "cosine"; weight: number };
+
+/**
+ * Declares that a collection clusters listings of the same physical product so
+ * search returns one hit per product with an `offers` array. Collections WITHOUT
+ * this block are bit-for-bit unaffected on every surface (REQ-1). Clustering is an
+ * explicit `matcher.dedup(project, collection)` stage — never automatic on index.
+ */
+export interface CollectionDedupDef {
+  /** Scoring channels; weighted sum normalized by total weight → [0,1]. */
+  channels: DedupChannelDef[];
+  /** Best-candidate score at/above which a row auto-joins the candidate's cluster. (0,1]. */
+  autoLink: number;
+  /**
+   * Scores in [suggest, autoLink) persist a suggestion for human review instead of
+   * auto-linking. Unset = no suggestions (precision-first: uncertain pairs found their
+   * own cluster). Must satisfy 0 < suggest <= autoLink.
+   */
+  suggest?: number;
+  /** Declared collection fields copied onto each offer entry (e.g. ["vendor","price","available"]). */
+  offerFields: string[];
+  /** Cluster-id column name. Default "product_group". Must not collide with a declared field. */
+  groupField?: string;
+}
+
 export interface StageContext {
   data: Record<string, unknown>;
   enriched: Record<string, unknown>;
@@ -522,6 +557,13 @@ export interface CollectionDef {
   embeddings?: Record<string, CollectionEmbeddingDef>;
   spaces?: Record<string, SpaceDef>;
   search?: CollectionSearchDef;
+  /**
+   * Cross-vendor offer dedup: cluster listings of the same physical product so search
+   * returns one hit per product with an `offers` array. Declaring it adds cluster-state
+   * columns + a suggestions table and makes search collapse on the cluster id by default.
+   * Omit it and the collection is completely unaffected. See {@link CollectionDedupDef}.
+   */
+  dedup?: CollectionDedupDef;
   indexing?: IndexingDef;
   indexingManifest?: {
     surfaces: Record<string, { kind: "dense" | "rerank" | "fts"; embedding?: string }>;

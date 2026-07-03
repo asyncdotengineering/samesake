@@ -147,8 +147,19 @@ at any installation yet.
     hits — junk tails behind keyword matches now cut; eval-verified retrieval-neutral on the
     real corpus (topIds 67/67 identical, p2tenancy baseline minted).
 
-Remaining P2: offer dedup (2 — **RFC ready**: `rfcs/rfc-offer-dedup.md`, kickoff for a fresh
-session), enrichment ROI upgrades (3), staged rollout (4), training-pair export (5).
+25. **P2-2 cross-vendor offer dedup** (`rfcs/rfc-offer-dedup.md`, C1–C9): `CollectionDef.dedup`
+    (exactKey/trigram/cosine channels, autoLink/suggest two-band, offerFields) clusters
+    same-product listings via an explicit incremental `matcher.dedup()` stage; search collapses on
+    the cluster id and attaches an `offers` array (declared fields only, one batched query/page,
+    quarantined members drop out). Human loop: suggestions → `confirmGroup` / `splitGroup` with
+    decline memory surviving re-runs + `{rebuild:true}`. HTTP (5 routes) + CLI parity. Candidates
+    are scope-pinned → clusters never span tenants. `matcher.dedup` repurposed to collection dedup;
+    the entity engine + `/duplicates` route untouched. Proof: `test/dedup.test.ts` (19 tests —
+    scoring, 3-vendor cluster / distinct no-cluster, offers + quarantine, suggest→confirm→split,
+    cross-scope isolation, HTTP lifecycle); dedup-less collections eval-verified inert
+    (topIds 67/67 vs p2tenancy baseline).
+
+Remaining P2: enrichment ROI upgrades (3), staged rollout (4), training-pair export (5).
 
 ## 3. The iron-out backlog (ordered; each item names its proof)
 

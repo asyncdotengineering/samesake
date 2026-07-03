@@ -50,6 +50,13 @@ export interface SearchHit {
   id: string;
   score: number;
   data: Record<string, unknown>;
+  /**
+   * Cross-vendor offers for this hit's cluster (dedup-enabled collections only): one
+   * entry per ready cluster member, restricted to the collection's declared
+   * `dedup.offerFields` + `id` (+ scope keys on scoped collections). Absent when the
+   * collection declares no `dedup` or the hit carries no cluster id.
+   */
+  offers?: Array<Record<string, unknown>>;
   [field: string]: unknown;
 }
 
@@ -134,6 +141,12 @@ export interface SearchOpts {
    * cross-scope search. Rejected on unscoped collections.
    */
   scope?: Record<string, string>;
+  /**
+   * Attach cross-vendor `offers` to each hit (dedup-enabled collections only). Defaults
+   * to on when the collection declares `dedup`; set false to skip the batched offers
+   * query. No effect on collections without `dedup`.
+   */
+  offers?: boolean;
 }
 
 // Second-stage rerank: how many first-stage candidates to hand the reranker.
@@ -187,6 +200,7 @@ function resultCacheKey(project: string, collection: string, opts: SearchOpts): 
     facets: opts.facets ?? [],
     efSearch: opts.efSearch ?? null,
     scope: opts.scope ?? {},
+    offers: opts.offers ?? null,
   };
 }
 
@@ -288,6 +302,10 @@ async function runHybridQuery(
   const needCosFloor = relevanceFloor !== null && hasCos;
   const recField = sanitiseIdent(weights.recencyField);
   const fieldCols = Object.keys(def.fields).map((k) => `d.${sanitiseIdent(k)}`).join(", ");
+  // Dedup collapse/offers need the cluster id on each hit. Selected only for
+  // dedup-enabled collections, so a dedup-less collection's SQL is byte-identical.
+  const dedupGroupCol = def.dedup ? sanitiseIdent(def.dedup.groupField ?? "product_group") : null;
+  const extraCols = dedupGroupCol ? `, d.${dedupGroupCol}` : "";
 
   const qRef = hasFts ? addParam(q) : null;
   const vecRef = hasCos && vector ? addParam(toVectorLiteral(vector)) : null;
@@ -330,7 +348,7 @@ async function runHybridQuery(
         WITH filtered AS (
           SELECT id FROM ${table} WHERE ${where}
         )
-        SELECT d.id, d.data, d.rerank_doc, ${fieldCols}, 0::float AS score,
+        SELECT d.id, d.data, d.rerank_doc, ${fieldCols}${extraCols}, 0::float AS score,
                (SELECT count(*)::int FROM filtered) AS total_candidates
         FROM ${table} d
         JOIN filtered f ON f.id = d.id
@@ -474,7 +492,7 @@ async function runHybridQuery(
           ORDER BY score DESC
           LIMIT ${limitRef} OFFSET ${offsetRef}
         )
-        SELECT d.id, d.data, d.rerank_doc, ${fieldCols}, r.score::float AS score,
+        SELECT d.id, d.data, d.rerank_doc, ${fieldCols}${extraCols}, r.score::float AS score,
                r.fts_present, r.cos_sim, r.total_candidates
         FROM ranked r
         JOIN ${table} d ON d.id = r.id
@@ -782,6 +800,10 @@ export function makeSearchService(
       for (const k of fieldKeys) {
         hit[k] = row[sanitiseIdent(k)] ?? row[k];
       }
+      if (r.def.dedup) {
+        const gc = sanitiseIdent(r.def.dedup.groupField ?? "product_group");
+        if (row[gc] != null) hit[gc] = row[gc];
+      }
       if (row.rerank_doc != null) hit.rerank_doc = row.rerank_doc;
       return hit;
     });
@@ -936,6 +958,45 @@ export function makeSearchService(
     return out;
   }
 
+  // Attach cross-vendor offers to the final page. One batched query keyed on the
+  // page's distinct cluster ids, restricted to ready+in-scope members and to the
+  // declared offerFields (never raw `data`) — the owner controls what a search
+  // response reveals (REQ-6, REQ-8, §10). Bounded by page_size × max_cluster_size.
+  async function attachOffers(r: Retrieval, hits: SearchHit[]): Promise<void> {
+    const cfg = r.def.dedup;
+    if (!cfg) return;
+    const group = sanitiseIdent(cfg.groupField ?? "product_group");
+    const groups = [...new Set(hits.map((h) => h[group]).filter((v) => v != null && v !== ""))].map(String);
+    if (!groups.length) return;
+
+    const scoped = appendScopeSql(
+      `${group} = ANY($1) AND (pipeline_status = 'ready' OR pipeline_status IS NULL)`,
+      [groups],
+      r.scopeCols
+    );
+    const offerCols = cfg.offerFields.map((f) => sanitiseIdent(f));
+    const cols = [...new Set(["id", group, ...offerCols, ...Object.keys(r.scopeCols)])].join(", ");
+    const table = collectionTableName(r.project.schema_name, r.collectionName);
+    const rows = await ctx.storage
+      .client("offers")
+      .unsafe(`SELECT ${cols} FROM ${table} WHERE ${scoped.where}`, scoped.params);
+
+    const byGroup = new Map<string, Array<Record<string, unknown>>>();
+    for (const row of rows) {
+      const g = String(row[group]);
+      const offer: Record<string, unknown> = { id: String(row.id) };
+      for (const f of cfg.offerFields) offer[f] = row[sanitiseIdent(f)];
+      for (const sc of Object.keys(r.scopeCols)) offer[sc] = row[sc];
+      const list = byGroup.get(g) ?? [];
+      list.push(offer);
+      byGroup.set(g, list);
+    }
+    for (const h of hits) {
+      const gv = h[group];
+      if (gv != null && String(gv) !== "") h.offers = byGroup.get(String(gv)) ?? [];
+    }
+  }
+
   // Second-stage rerank: blend retrieval position with reranker scores (never pure replace).
   // Unscored candidates keep their RRF slot; failures fall back to first-stage order.
   async function rerankHits(
@@ -985,8 +1046,13 @@ export function makeSearchService(
     }
     const retrieval = await retrieve(projectSlug, collectionName, opts);
     const limit = opts.limit ?? 20;
-    const variantGroup = retrieval.def.search?.variantGroup;
-    const wantDiversify = !!variantGroup && opts.diversify !== false;
+    // Collapse field: an explicit search.variantGroup wins; else a dedup-enabled
+    // collection collapses on its cluster id by default (REQ-6). `diversify:false` opts out.
+    const dedupGroup = retrieval.def.dedup
+      ? sanitiseIdent(retrieval.def.dedup.groupField ?? "product_group")
+      : null;
+    const collapseField = retrieval.def.search?.variantGroup ?? dedupGroup;
+    const wantDiversify = !!collapseField && opts.diversify !== false;
     const wantRerank = !!ctx.rerank && opts.rerank !== false;
 
     // Pull a deeper pool when a second stage will reorder/collapse it, so the final
@@ -994,7 +1060,7 @@ export function makeSearchService(
     const poolLimit = wantDiversify || wantRerank ? Math.max(limit, RERANK_POOL) : limit;
     const result = await finishSearch(retrieval, { ...opts, limit: poolLimit }, t0);
 
-    if (wantDiversify && variantGroup) result.hits = diversifyHits(result.hits, variantGroup);
+    if (wantDiversify && collapseField) result.hits = diversifyHits(result.hits, collapseField);
     if (wantRerank && result.hits.length > 1) {
       result.hits = await rerankHits(retrieval.q, opts.image, result.hits, limit);
     }
@@ -1003,6 +1069,12 @@ export function makeSearchService(
       result.hits = applyRankingPolicy(result.hits, rankingPolicy).hits;
     }
     if (result.hits.length > limit) result.hits = result.hits.slice(0, limit);
+
+    // Offers ride the final page: one batched query per page, only when the collection
+    // declares dedup and the page carries clustered hits (REQ-6, REQ-8).
+    if (retrieval.def.dedup && opts.offers !== false) {
+      await attachOffers(retrieval, result.hits);
+    }
     result.took_ms = Date.now() - t0;
 
     if (cacheKey && !retrieval.nlq.degraded) {

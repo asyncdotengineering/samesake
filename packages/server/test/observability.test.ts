@@ -79,7 +79,11 @@ describeIf("observability counters", () => {
 
   test("nlq cache hit counter increments on repeat parse", async () => {
     const before = matcher.metrics().nlq_cache_hits;
-    const q = "another obs nlq phrase here";
+    // Unique per run: the NLQ cache is a content-addressed, project-independent global
+    // (sha1 of instructions|model|collection|query, 7-day TTL). A fixed phrase would be
+    // warmed by a previous run and turn the first parse below into a cache hit — so make
+    // the query fresh each run to guarantee a genuine cold miss.
+    const q = `another obs nlq phrase ${Math.random().toString(36).slice(2, 10)}`;
     generateCalls = 0;
     await matcher.search(projectSlug, "obs", { q, cache: false });
     expect(generateCalls).toBe(1);

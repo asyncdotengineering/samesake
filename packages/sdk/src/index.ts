@@ -319,6 +319,21 @@ type CollectionInput<
       model?: string;
     };
   };
+  /**
+   * Cross-vendor offer dedup. Channel fields and `offerFields` must be declared
+   * fields (enforced at compile time); thresholds + groupField validated at apply.
+   */
+  dedup?: {
+    channels: ReadonlyArray<
+      | { kind: "exactKey"; field: NoInfer<keyof TFields & string> }
+      | { kind: "trigram"; field: NoInfer<keyof TFields & string>; weight: number }
+      | { kind: "cosine"; weight: number }
+    >;
+    autoLink: number;
+    suggest?: number;
+    offerFields: ReadonlyArray<NoInfer<keyof TFields & string>>;
+    groupField?: string;
+  };
 };
 
 export function collection<

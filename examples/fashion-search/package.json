@@ -8,6 +8,7 @@
     "generate:synthetic": "bun generate-synthetic-corpus.ts",
     "eval": "bun eval.ts",
     "eval:vibes": "bun eval-vibes.ts",
+    "eval:dedup": "bun dedup-eval.ts",
     "bench": "bun bench-retrieval.ts",
     "serve": "bun serve.ts",
     "typecheck": "tsc --noEmit"

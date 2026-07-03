@@ -15,6 +15,8 @@ export interface SearchCacheKey {
   efSearch?: number | null;
   /** Tenancy scope — different tenants must never share a cache entry. */
   scope?: unknown;
+  /** Offer attachment toggle — offers:false results must not be served for offers:true. */
+  offers?: boolean | null;
 }
 
 function stableKey(key: SearchCacheKey): string {
@@ -31,6 +33,7 @@ function stableKey(key: SearchCacheKey): string {
     JSON.stringify(key.facets ?? []),
     key.efSearch ?? "",
     JSON.stringify(key.scope ?? {}),
+    key.offers === false ? "no-offers" : "",
   ].join("|");
 }
 
