@@ -41,13 +41,6 @@ import type {
   FtsChannel,
   CosineChannel,
   RecencyChannel,
-  SpacesChannel,
-  TextSpaceDef,
-  ImageSpaceDef,
-  NumberSpaceDef,
-  RecencySpaceDef,
-  CategoricalSpaceDef,
-  SpaceDef,
   IndexingDef,
   RankingPolicy,
 } from "./types.ts";
@@ -62,7 +55,6 @@ export {
   fashionEnrichPipeline,
   fashionSearchFields,
   fashionSearchDefaults,
-  fashionSpaces,
   composeFashionEmbedDoc,
   composeFashionRerankDoc,
   fashionIndexing,
@@ -235,52 +227,13 @@ export const Channels = {
   }): RecencyChannel<F> {
     return { kind: "recency", ...opts };
   },
-  spaces(opts: { weight: number }): SpacesChannel {
-    return { kind: "spaces", ...opts };
-  },
 } as const;
 
 const PGVECTOR_HNSW_MAX_DIMS = 4000;
 
-function spaceDim(def: SpaceDef): number {
-  return def.kind === "text" || def.kind === "image" ? def.dim : def.dims;
-}
-
-function validateSpaceDims(spaces: Record<string, SpaceDef>): void {
-  let total = 0;
-  for (const def of Object.values(spaces)) {
-    total += spaceDim(def);
-  }
-  if (total > PGVECTOR_HNSW_MAX_DIMS) {
-    throw new Error(
-      `spaces total dimension ${total} exceeds the pgvector HNSW limit of ${PGVECTOR_HNSW_MAX_DIMS} for halfvec columns. ` +
-        `Reduce space dims or split spaces across collections.`
-    );
-  }
-}
-
-export const s = {
-  text(opts: Omit<TextSpaceDef, "kind">): TextSpaceDef {
-    return { kind: "text", ...opts };
-  },
-  image(opts: Omit<ImageSpaceDef, "kind">): ImageSpaceDef {
-    return { kind: "image", ...opts };
-  },
-  number(opts: Omit<NumberSpaceDef, "kind">): NumberSpaceDef {
-    return { kind: "number", ...opts };
-  },
-  recency(opts: Omit<RecencySpaceDef, "kind">): RecencySpaceDef {
-    return { kind: "recency", ...opts };
-  },
-  categorical(opts: Omit<CategoricalSpaceDef, "kind">): CategoricalSpaceDef {
-    return { kind: "categorical", ...opts };
-  },
-} as const;
-
 type CollectionInput<
   TFields extends Record<string, CollectionFieldDef>,
   TEmbeddings extends Record<string, CollectionEmbeddingDef>,
-  TSpaces extends Record<string, SpaceDef> = Record<string, never>,
 > = {
   fields: TFields;
   /**
@@ -294,7 +247,6 @@ type CollectionInput<
   enrich?: PipelineDef;
   sources?: ConnectorDef[];
   embeddings?: TEmbeddings;
-  spaces?: TSpaces;
   search?: {
     channels: ReadonlyArray<
       TypedSearchChannel<
@@ -303,7 +255,6 @@ type CollectionInput<
       >
     >;
     combiner?: "rrf";
-    defaultSpaceWeights?: Partial<Record<NoInfer<keyof TSpaces & string>, number>>;
     /** Declared field whose value groups product variants; results collapse to one per group. */
     variantGroup?: NoInfer<keyof TFields & string>;
     rankingPolicy?: RankingPolicy;
@@ -339,17 +290,31 @@ type CollectionInput<
 export function collection<
   const TFields extends Record<string, CollectionFieldDef>,
   const TEmbeddings extends Record<string, CollectionEmbeddingDef> = Record<string, never>,
-  const TSpaces extends Record<string, SpaceDef> = Record<string, never>,
 >(
   name: string,
-  def: CollectionInput<TFields, TEmbeddings, TSpaces>
+  def: CollectionInput<TFields, TEmbeddings>
 ): CollectionDef & { name: string } {
   assertIdent(name, "collection");
   assertNoIdentCollisions(Object.keys(def.fields ?? {}), "field");
-  if (def.spaces) assertNoIdentCollisions(Object.keys(def.spaces), "space");
-  if (def.embeddings) assertNoIdentCollisions(Object.keys(def.embeddings), "embedding");
-  if (def.spaces && Object.keys(def.spaces).length > 0) {
-    validateSpaceDims(def.spaces);
+  const embeddings = Object.entries(def.embeddings ?? {});
+  if (embeddings.length > 0) {
+    assertNoIdentCollisions(embeddings.map(([key]) => key), "embedding");
+    for (const [index, [key, embedding]] of embeddings.entries()) {
+      if (!Number.isInteger(embedding.dim) || embedding.dim <= 0 || embedding.dim > PGVECTOR_HNSW_MAX_DIMS) {
+        throw new Error(
+          `collection "${name}": embedding "${key}" dim ${embedding.dim} exceeds the pgvector HNSW limit of ${PGVECTOR_HNSW_MAX_DIMS}`
+        );
+      }
+      if (embedding.evidence !== true && embedding.extract !== undefined) {
+        throw new Error(`collection "${name}": embedding "${key}" defines extract without evidence:true`);
+      }
+      if (embedding.evidence === true && typeof embedding.extract !== "function") {
+        throw new Error(`collection "${name}": evidence embedding "${key}" requires extract`);
+      }
+      if (index === 0 && embedding.evidence === true) {
+        throw new Error(`collection "${name}": the first embedding cannot use evidence storage`);
+      }
+    }
   }
   const vg = (def as unknown as CollectionDef).search?.variantGroup;
   if (vg && !(def.fields && vg in def.fields)) {

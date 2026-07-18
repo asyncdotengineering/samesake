@@ -10,7 +10,7 @@
 // is the declarative *content*: taxonomy, enums, two-stage schemas, prompts, embed-doc composer,
 // and NLQ defaults.
 import { z } from "zod";
-import type { CollectionFieldDef, CollectionSearchDef, DerivedDocContext, IndexingDef, PipelineDef, SpaceDef, StageDef } from "../types.ts";
+import type { CollectionFieldDef, CollectionSearchDef, DerivedDocContext, IndexingDef, PipelineDef, StageDef } from "../types.ts";
 
 // ── Taxonomy + controlled vocabulary ────────────────────────────────────
 export const fashionTaxonomy = [
@@ -414,20 +414,6 @@ export function fashionSearchDefaults(): Pick<CollectionSearchDef, "relaxableFil
   return { relaxableFilters: ["colors", "material", "fit", "styles", "category", "price"] };
 }
 
-// Visual + price + category + freshness spaces (no `style` text-space — that duplicates the
-// cosine doc channel and would blow pgvector's 2000-d HNSW limit; see CHANGELOG).
-export function fashionSpaces(opts: { visual?: boolean; priceMax?: number } = {}): Record<string, SpaceDef> {
-  const spaces: Record<string, SpaceDef> = {
-    price: { kind: "number", field: "price", mode: "closer", dims: 8, min: 0, max: opts.priceMax ?? 50000, scale: "log" } as SpaceDef,
-    freshness: { kind: "recency", field: "ingested_at", halfLifeDays: 60, dims: 8 } as SpaceDef,
-    category: { kind: "categorical", field: "category", values: fashionTaxonomy.map((c) => c.id), dims: 32 } as SpaceDef,
-  };
-  if (opts.visual !== false) {
-    spaces.visual = { kind: "image", source: "$image_url", model: "gemini-embedding-2", dim: 768, taskType: "RETRIEVAL_DOCUMENT" } as SpaceDef;
-  }
-  return spaces;
-}
-
 // ── Enrichment-accuracy eval defaults ───────────────────────────────────
 /** One scorable attribute for enrichment-accuracy eval. Structurally matches @samesake/server's
  * `AttrSpec` (kept dependency-free here so the SDK does not import the server). */
@@ -459,7 +445,6 @@ export const fashion = {
   taxonomy: fashionTaxonomy,
   enums: fashionEnums,
   fields: fashionSearchFields,
-  spaces: fashionSpaces,
   enrichPipeline: fashionEnrichPipeline,
   indexing: fashionIndexing,
   classifySchema: fashionClassifySchema,
