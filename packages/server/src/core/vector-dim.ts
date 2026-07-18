@@ -1,6 +1,6 @@
 /** HNSW limit for `vector` columns (entity embeddings). */
 export const PGVECTOR_HNSW_MAX_DIMENSIONS = 2000;
-/** HNSW limit for `halfvec` columns (collection embedding / space_vec). */
+/** HNSW limit for `halfvec` columns (collection aspect embeddings). */
 export const PGVECTOR_HNSW_MAX_DIMENSIONS_HALFVEC = 4000;
 
 export function assertIndexableVectorDimension(input: {

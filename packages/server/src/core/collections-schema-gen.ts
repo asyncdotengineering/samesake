@@ -1,5 +1,5 @@
 import type { CollectionDef, CollectionFieldDef } from "@samesake/core";
-import { totalSpaceDims } from "./spaces.ts";
+import { embeddingColumn, embeddingEntries, embeddingIndexName, evidenceEntries, evidenceTable } from "./aspects.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
 import { assertIndexableVectorDimension } from "./vector-dim.ts";
 
@@ -49,7 +49,6 @@ const DEDUP_RESERVED = new Set([
   "doc",
   "rerank_doc",
   "embedding",
-  "space_vec",
   "fts",
   "dedup_score",
   "dedup_checked_at",
@@ -261,10 +260,9 @@ export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
       ...Object.entries(c.fields).map(([k, def]) => `  ${sanitiseIdent(k)} ${fieldSqlType(def)}`),
     ].join(",\n");
 
-    const embedDim = c.embeddings
-      ? Math.max(...Object.values(c.embeddings).map((e) => e.dim))
-      : 1536;
-    for (const [name, def] of Object.entries(c.embeddings ?? {})) {
+    const embEntries = embeddingEntries(c);
+    const embedDim = embEntries.length > 0 ? embEntries[0]![1].dim : 1536;
+    for (const [name, def] of embEntries) {
       assertIndexableVectorDimension({
         owner: `collection ${c.name}`,
         field: `embeddings.${name}`,
@@ -273,18 +271,12 @@ export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
       });
     }
 
-    const spaceDimTotal =
-      c.spaces && Object.keys(c.spaces).length > 0 ? totalSpaceDims(c.spaces) : 0;
-    if (spaceDimTotal > 0) {
-      assertIndexableVectorDimension({
-        owner: `collection ${c.name}`,
-        field: "spaces total",
-        dimensions: spaceDimTotal,
-        columnType: "halfvec",
-      });
-    }
-    const spaceVecCol =
-      spaceDimTotal > 0 ? `,\n        space_vec halfvec(${spaceDimTotal})` : "";
+    const embeddingCols = embEntries.slice(1)
+      .map(([name, def], index) =>
+        def.evidence === true ? null : `,\n        ${embeddingColumn(name, index + 1)} halfvec(${def.dim})`
+      )
+      .filter((value): value is string => value !== null)
+      .join("");
 
     const stmts: string[] = [];
 
@@ -300,7 +292,7 @@ ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
         fts_src_a text,
         gate_reason text,
         ${ftsGeneratedColumnDdl(c, SYS)},${wantPhon ? `\n        ${ftsPhonColumnDdl(SYS)},` : ""}
-        embedding halfvec(${embedDim})${spaceVecCol},
+        embedding halfvec(${embedDim})${embeddingCols},
         ingested_at timestamptz NOT NULL DEFAULT now(),
         enriched_at timestamptz,
         indexed_at timestamptz,
@@ -325,16 +317,41 @@ ${fieldCols ? fieldCols + ",\n" : ""}        doc text,
       stmts.push(`CREATE INDEX IF NOT EXISTS c_${coll}_fts_phon_idx ON ${table} USING gin (fts_phon);`);
     }
 
-    if (c.embeddings && Object.keys(c.embeddings).length > 0) {
+    for (const [name, def] of embEntries) {
+      if (def.evidence === true) continue;
+      const index = embEntries.findIndex(([key]) => key === name);
       stmts.push(
-        `CREATE INDEX IF NOT EXISTS c_${coll}_emb_idx ON ${table} USING hnsw (embedding halfvec_cosine_ops);`
+        `CREATE INDEX IF NOT EXISTS ${embeddingIndexName(coll, name, index)} ON ${table} USING hnsw (${embeddingColumn(name, index)} halfvec_cosine_ops);`
       );
     }
 
-    if (spaceDimTotal > 0) {
-      stmts.push(
-        `CREATE INDEX IF NOT EXISTS c_${coll}_space_vec_idx ON ${table} USING hnsw (space_vec halfvec_cosine_ops);`
-      );
+    const evEntries = evidenceEntries(c);
+    if (evEntries.length > 0) {
+      const dims = new Set(evEntries.map(([, def]) => def.dim));
+      if (dims.size !== 1) {
+        throw new Error(`collection ${c.name}: evidence embeddings must share one dimension`);
+      }
+      const evTable = evidenceTable(schema, c.name);
+      const scopeCols = scopes.map((scope) => `  ${scopeColumn(scope)} text NOT NULL,\n`).join("");
+      stmts.push(`
+        CREATE TABLE IF NOT EXISTS ${evTable} (
+${scopeCols}          doc_id text NOT NULL REFERENCES ${table}(id) ON DELETE CASCADE,
+          aspect text NOT NULL,
+          ord int NOT NULL,
+          vec halfvec(${evEntries[0]![1].dim}) NOT NULL,
+          src text,
+          PRIMARY KEY (doc_id, aspect, ord)
+        );
+      `);
+      if (evEntries.length === 1) {
+        stmts.push(`CREATE INDEX IF NOT EXISTS c_${coll}_evidence_vec_idx ON ${evTable} USING hnsw (vec halfvec_cosine_ops);`);
+      } else {
+        for (const [name] of evEntries) {
+          stmts.push(
+            `CREATE INDEX IF NOT EXISTS c_${coll}_evidence_${sanitiseIdent(name)}_idx ON ${evTable} USING hnsw (vec halfvec_cosine_ops) WHERE aspect = '${name.replace(/'/g, "''")}';`
+          );
+        }
+      }
     }
 
     for (const [name, def] of Object.entries(c.fields)) {
