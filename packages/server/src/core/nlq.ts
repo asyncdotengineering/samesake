@@ -5,22 +5,44 @@ import { makeStageCacheService } from "../db/stage-cache.ts";
 import { normalizeSchema } from "./schema-input.ts";
 import type { SearchFilters } from "./search.ts";
 import { embeddingEntries } from "./aspects.ts";
+import {
+  groundVocabValues,
+  openVocabFieldNames,
+  type GroundedValueDecision,
+  type VocabCandidates,
+  type VocabLookup,
+} from "./field-vocab.ts";
 
 const NLQ_CACHE_STAGE = "__nlq";
 const NLQ_CACHE_TTL_DAYS = 7;
+const NLQ_SCHEMA_VERSION = "grounded-v2";
 
 function normalizeQuery(q: string): string {
   return q.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function nlqCacheKey(def: CollectionDef, q: string): string {
+function candidateHash(candidates: VocabCandidates): string {
+  const stable = Object.fromEntries(
+    Object.keys(candidates)
+      .sort()
+      .map((field) => [
+        field,
+        [...(candidates[field] ?? [])]
+          .map(({ value, count }) => ({ value, count }))
+          .sort((a, b) => a.value.localeCompare(b.value) || a.count - b.count),
+      ])
+  );
+  return createHash("sha1").update(JSON.stringify(stable)).digest("hex").slice(0, 16);
+}
+
+export function nlqCacheKey(def: CollectionDef, q: string, candidates: VocabCandidates = {}): string {
   const instr = def.search?.nlq?.instructions ?? "";
   const model = def.search?.nlq?.model ?? "default";
   const aspects = embeddingEntries(def)
     .map(([name, embedding]) => `${name}:${embedding.describe ?? name}`)
     .join("|");
   return createHash("sha1")
-    .update(`nlq|${model}|${createHash("sha1").update(instr).digest("hex").slice(0, 12)}|${createHash("sha1").update(aspects).digest("hex").slice(0, 12)}|${def.name}|${normalizeQuery(q)}`)
+    .update(`${NLQ_SCHEMA_VERSION}|nlq|${model}|${createHash("sha1").update(instr).digest("hex").slice(0, 12)}|${createHash("sha1").update(aspects).digest("hex").slice(0, 12)}|${candidateHash(candidates)}|${def.name}|${normalizeQuery(q)}`)
     .digest("hex");
 }
 
@@ -28,6 +50,7 @@ import { callWithTimeout, DEFAULT_NLQ_TIMEOUT_MS } from "./policy.ts";
 
 export interface NlqParsed {
   semantic_query: string;
+  lexical_query?: string;
   aspects?: Record<string, { subQuery?: string; weight: number }>;
   [key: string]: unknown;
 }
@@ -36,9 +59,21 @@ export interface NlqParseResult {
   parsed: NlqParsed;
   degraded: boolean;
   filters: SearchFilters;
+  deterministicFilters: SearchFilters;
+  groundedValues: Record<string, GroundedValueDecision[]>;
   excludeTerms: string[];
   /** field -> implied budget direction, only when no explicit min/max was parsed for that field */
   budgetHints: Record<string, "cheap" | "premium">;
+}
+
+export interface ParseNlqOptions {
+  candidates?: VocabLookup;
+  deterministicFilters?: SearchFilters;
+  grounding?: { available: boolean; decisions: Record<string, GroundedValueDecision[]> };
+  schemaCandidates?: VocabCandidates;
+  scopeCols?: Record<string, string>;
+  schema?: string;
+  collection?: string;
 }
 
 function fieldDescription(name: string, field: CollectionFieldDef): string {
@@ -48,7 +83,7 @@ function fieldDescription(name: string, field: CollectionFieldDef): string {
   return `Filter by ${name}`;
 }
 
-export function deriveNlqSchema(def: CollectionDef): Record<string, unknown> {
+export function deriveNlqSchema(def: CollectionDef, candidates: VocabCandidates = {}): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
 
   for (const [name, field] of Object.entries(def.fields)) {
@@ -109,13 +144,17 @@ export function deriveNlqSchema(def: CollectionDef): Record<string, unknown> {
         };
         break;
       case "text":
+        const catalogValues = candidates[name]?.map(({ value }) => value) ?? [];
         properties[name] = {
           type: "STRING",
-          description: fieldDescription(name, field),
+          ...(catalogValues.length ? { enum: catalogValues } : {}),
+          description: catalogValues.length
+            ? `Catalog values for ${name}; use only these visible values`
+            : fieldDescription(name, field),
         };
         properties[`exclude_${name}`] = {
           type: "ARRAY",
-          items: { type: "STRING" },
+          items: catalogValues.length ? { type: "STRING", enum: catalogValues } : { type: "STRING" },
           description: `Exclude ${name} values`,
         };
         break;
@@ -165,14 +204,171 @@ export function aspectsSchemaFragment(def: CollectionDef): Record<string, unknow
   };
 }
 
-export function tokenCount(q: string): number {
-  return q.trim().split(/\s+/).filter(Boolean).length;
+function isStringSchema(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && (value as Record<string, unknown>).type === "string" ||
+    !!value && typeof value === "object" && (value as Record<string, unknown>).type === "STRING";
+}
+
+function injectStringEnum(value: unknown, enumValues: string[], label: string): Record<string, unknown> {
+  if (isStringSchema(value)) return { ...(value as Record<string, unknown>), enum: enumValues };
+  if (value && typeof value === "object" && Array.isArray((value as Record<string, unknown>).anyOf)) {
+    const branches = (value as Record<string, unknown>).anyOf as unknown[];
+    let changed = false;
+    const anyOf = branches.map((branch) => {
+      if (!isStringSchema(branch)) return branch;
+      changed = true;
+      return { ...(branch as Record<string, unknown>), enum: enumValues };
+    });
+    if (changed) return { ...(value as Record<string, unknown>), anyOf };
+  }
+  throw new Error(`NLQ schema property "${label}" must contain a string branch for catalog grounding`);
+}
+
+function injectCandidateEnums(schema: Record<string, unknown>, candidates: VocabCandidates): Record<string, unknown> {
+  const properties = schema.properties;
+  if (!properties || typeof properties !== "object" || Array.isArray(properties)) return schema;
+  const next = { ...schema, properties: { ...(properties as Record<string, unknown>) } };
+  const nextProperties = next.properties as Record<string, unknown>;
+  for (const [field, values] of Object.entries(candidates)) {
+    const enumValues = values.map(({ value }) => value);
+    if (!enumValues.length) continue;
+    if (Object.hasOwn(nextProperties, field)) {
+      nextProperties[field] = injectStringEnum(nextProperties[field], enumValues, field);
+    }
+    const exclude = `exclude_${field}`;
+    const excludeSchema = nextProperties[exclude];
+    if (excludeSchema && typeof excludeSchema === "object" && !Array.isArray(excludeSchema)) {
+      const items = (excludeSchema as Record<string, unknown>).items;
+      if (items !== undefined) {
+        nextProperties[exclude] = {
+          ...(excludeSchema as Record<string, unknown>),
+          items: injectStringEnum(items, enumValues, `${exclude}.items`),
+        };
+      }
+    }
+  }
+  return next;
+}
+
+function augmentNlqSchema(
+  def: CollectionDef,
+  candidates: VocabCandidates
+): Record<string, unknown> {
+  const input = def.search?.nlq?.schema ?? deriveNlqSchema(def, candidates);
+  const schema = normalizeSchema(input);
+  const copy = JSON.parse(JSON.stringify(schema)) as Record<string, unknown>;
+  const properties = copy.properties && typeof copy.properties === "object" && !Array.isArray(copy.properties)
+    ? copy.properties as Record<string, unknown>
+    : {};
+  copy.properties = properties;
+  if (!Object.hasOwn(properties, "semantic_query")) {
+    properties.semantic_query = { type: "STRING", description: "descriptive intent stripped of constraints; never empty" };
+  }
+  if (!Object.hasOwn(properties, "lexical_query")) {
+    properties.lexical_query = { type: "STRING", description: "corrected keyword surface with structured constraints removed" };
+  }
+  const aspectFragment = aspectsSchemaFragment(def);
+  if (aspectFragment && !Object.hasOwn(properties, "aspects")) properties.aspects = aspectFragment;
+  return injectCandidateEnums(copy, candidates);
 }
 
 export function shouldSkipNlq(def: CollectionDef, q: string): boolean {
   if (!def.search?.nlq) return true;
   if (def.search.nlq.enable === false) return true;
-  return tokenCount(q) <= 2 && !/\d/.test(q);
+  if (!q.trim()) return true;
+  return false;
+}
+
+function normalizeEnumQuery(q: string): string {
+  return q
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\p{P}\p{S}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function enumTokens(value: string): string[] {
+  return normalizeEnumQuery(value).split(" ").filter(Boolean);
+}
+
+interface EnumTokenCandidate {
+  field: string;
+  value: string;
+  tokens: string[];
+}
+
+const NEGATION_TOKENS = new Set(["not", "no", "without", "exclude", "except"]);
+
+export function deriveEnumTokenFilters(q: string, def: CollectionDef): SearchFilters {
+  const queryTokens = normalizeEnumQuery(q).split(" ").filter(Boolean);
+  const candidates: EnumTokenCandidate[] = [];
+  for (const [field, fieldDef] of Object.entries(def.fields)) {
+    if (!fieldDef.filterable || fieldDef.soft !== true) continue;
+    const values = fieldDef.type === "enum" || (fieldDef.type === "array" && fieldDef.itemType === "enum")
+      ? fieldDef.values ?? []
+      : [];
+    for (const value of values) {
+      const tokens = enumTokens(value);
+      if (tokens.length) candidates.push({ field, value, tokens });
+    }
+    if (fieldDef.type === "enum") {
+      for (const value of fieldDef.alsoMatch ?? []) {
+        const tokens = enumTokens(value);
+        if (tokens.length) candidates.push({ field, value, tokens });
+      }
+    }
+  }
+
+  const phraseFields = new Map<string, Set<string>>();
+  for (const candidate of candidates) {
+    const phrase = candidate.tokens.join(" ");
+    const fields = phraseFields.get(phrase) ?? new Set<string>();
+    fields.add(candidate.field);
+    phraseFields.set(phrase, fields);
+  }
+
+  const filtersByField = new Map<string, string[]>();
+  const consumed = new Set<number>();
+  const ordered = [...candidates].sort(
+    (a, b) => b.tokens.length - a.tokens.length || b.value.length - a.value.length || a.field.localeCompare(b.field) || a.value.localeCompare(b.value)
+  );
+  for (const candidate of ordered) {
+    const phrase = candidate.tokens.join(" ");
+    if ((phraseFields.get(phrase)?.size ?? 0) > 1) continue;
+    for (let start = 0; start <= queryTokens.length - candidate.tokens.length; start++) {
+      const end = start + candidate.tokens.length;
+      if (candidate.tokens.some((token, offset) => queryTokens[start + offset] !== token)) continue;
+      if (Array.from({ length: 2 }, (_, offset) => queryTokens[start - offset - 1]).some((token) => token && NEGATION_TOKENS.has(token))) continue;
+      if (Array.from({ length: candidate.tokens.length }, (_, offset) => start + offset).some((index) => consumed.has(index))) continue;
+      for (let index = start; index < end; index++) consumed.add(index);
+      const valuesForField = filtersByField.get(candidate.field) ?? [];
+      if (!valuesForField.includes(candidate.value)) valuesForField.push(candidate.value);
+      filtersByField.set(candidate.field, valuesForField);
+      break;
+    }
+  }
+
+  const filters: SearchFilters = {};
+  for (const [field, values] of filtersByField) {
+    const fieldDef = def.fields[field];
+    if (fieldDef?.type === "array") filters[field] = values;
+    else if (values.length === 1) filters[field] = values[0]!;
+    else filters[field] = { $in: values };
+  }
+  return filters;
+}
+
+export function mergeDeterministicSoftFilters(
+  parsedFilters: SearchFilters,
+  deterministicFilters: SearchFilters,
+  def: CollectionDef
+): SearchFilters {
+  const merged = { ...parsedFilters };
+  for (const [field, value] of Object.entries(deterministicFilters)) {
+    if (def.fields[field]?.soft === true) merged[field] = value;
+  }
+  return merged;
 }
 
 function asStringArray(v: unknown): string[] {
@@ -264,7 +460,12 @@ export function mergeFilters(
   return { ...nlqFilters, ...explicit };
 }
 
-function buildNlqPrompt(q: string, def: CollectionDef, instructions?: string): string {
+function buildNlqPrompt(
+  q: string,
+  def: CollectionDef,
+  instructions?: string,
+  candidates: VocabCandidates = {}
+): string {
   const parts: string[] = [];
   if (instructions?.trim()) parts.push(instructions.trim());
   const aspects = embeddingEntries(def);
@@ -272,6 +473,9 @@ function buildNlqPrompt(q: string, def: CollectionDef, instructions?: string): s
     parts.push(
       `Retrieval aspects:\n${aspects.map(([name, embedding]) => `- ${name}: ${embedding.describe ?? name}`).join("\n")}\nFor each aspect referenced by the query, assign a relevance weight from 0 to 1 and optionally provide a focused subQuery. Omit unreferenced aspects.`
     );
+  }
+  if (Object.keys(candidates).length > 0) {
+    parts.push(`Catalog-grounded filter candidates (JSON data; use only values represented by the schema enums):\n${JSON.stringify(candidates)}`);
   }
   parts.push(`Query: "${q}"`);
   return parts.join("\n\n");
@@ -292,6 +496,87 @@ function normalizeAspectRoutes(def: CollectionDef, parsed: NlqParsed): NlqParsed
   return { ...parsed, aspects };
 }
 
+function openVocabFilterValues(filters: SearchFilters, def: CollectionDef): Record<string, string[]> {
+  const openFields = new Set(openVocabFieldNames(def));
+  const values: Record<string, string[]> = {};
+  for (const [field, raw] of Object.entries(filters)) {
+    if (!openFields.has(field)) continue;
+    const fieldValues: string[] = [];
+    if (typeof raw === "string") fieldValues.push(raw);
+    else if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      for (const value of Object.values(raw)) {
+        if (typeof value === "string") fieldValues.push(value);
+        else if (Array.isArray(value)) fieldValues.push(...value.filter((item): item is string => typeof item === "string"));
+      }
+    }
+    if (fieldValues.length) values[field] = fieldValues;
+  }
+  return values;
+}
+
+function unavailableGrounding(values: Record<string, string[]>): Record<string, GroundedValueDecision[]> {
+  return Object.fromEntries(
+    Object.entries(values).map(([field, fieldValues]) => [
+      field,
+      fieldValues.map((parsed) => ({ parsed, action: "dropped" as const })),
+    ])
+  );
+}
+
+function applyGrounding(
+  filters: SearchFilters,
+  decisions: Record<string, GroundedValueDecision[]>
+): { filters: SearchFilters; dropped: string[] } {
+  const out: SearchFilters = { ...filters };
+  const dropped: string[] = [];
+  for (const [field, fieldDecisions] of Object.entries(decisions)) {
+    const raw = out[field];
+    if (raw === undefined) continue;
+    const byParsed = new Map(fieldDecisions.map((decision) => [decision.parsed, decision]));
+    const resolve = (value: string): string | undefined => {
+      const decision = byParsed.get(value);
+      if (!decision || decision.action === "dropped") {
+        if (decision) dropped.push(decision.parsed);
+        return undefined;
+      }
+      return decision.mapped ?? decision.parsed;
+    };
+    if (typeof raw === "string") {
+      const mapped = resolve(raw);
+      if (mapped === undefined) delete out[field];
+      else out[field] = mapped;
+      continue;
+    }
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const next: Record<string, unknown> = {};
+    for (const [operator, value] of Object.entries(raw)) {
+      if (typeof value === "string") {
+        const mapped = resolve(value);
+        if (mapped !== undefined) next[operator] = mapped;
+      } else if (Array.isArray(value)) {
+        const mapped = value
+          .filter((item): item is string => typeof item === "string")
+          .map(resolve)
+          .filter((item): item is string => item !== undefined);
+        if (mapped.length) next[operator] = mapped;
+      } else {
+        next[operator] = value;
+      }
+    }
+    if (Object.keys(next).length) out[field] = next as SearchFilters[string];
+    else delete out[field];
+  }
+  return { filters: out, dropped: [...new Set(dropped)] };
+}
+
+function appendDroppedSemantic(semantic: string, dropped: string[]): string {
+  let out = semantic.trim();
+  for (const value of dropped) {
+    if (!out.toLowerCase().includes(value.toLowerCase())) out = `${out} ${value}`.trim();
+  }
+  return out || dropped.join(" ");
+}
+
 async function generateWithTimeout(
   ctx: MatcherCtx,
   req: Parameters<MatcherCtx["generate"]>[0]
@@ -303,37 +588,82 @@ async function generateWithTimeout(
 export async function parseNlq(
   ctx: MatcherCtx,
   def: CollectionDef,
-  q: string
+  q: string,
+  options: ParseNlqOptions = {}
 ): Promise<NlqParseResult> {
+  const enabled = !shouldSkipNlq(def, q);
+  const deterministicFilters = enabled
+    ? options.deterministicFilters ?? deriveEnumTokenFilters(q, def)
+    : {};
   const fallback: NlqParseResult = {
     parsed: { semantic_query: q },
     degraded: true,
-    filters: {},
+    filters: deterministicFilters,
+    deterministicFilters,
+    groundedValues: {},
     excludeTerms: [],
     budgetHints: {},
   };
 
-  if (shouldSkipNlq(def, q)) {
-    return { parsed: { semantic_query: q }, degraded: false, filters: {}, excludeTerms: [], budgetHints: {} };
+  if (!enabled) {
+    return {
+      parsed: { semantic_query: q },
+      degraded: false,
+      filters: deterministicFilters,
+      deterministicFilters,
+      groundedValues: {},
+      excludeTerms: [],
+      budgetHints: {},
+    };
   }
 
   if (!ctx.generateConfigured) {
     return fallback;
   }
 
-  const schema = normalizeSchema(def.search?.nlq?.schema ?? deriveNlqSchema(def)) as {
-    properties?: Record<string, unknown>;
-  };
-  // Custom (filter-only / pre-aspects) schemas still get the routing property — without it,
-  // constrained decoding can never emit `aspects` and routing silently dies (V02g redux).
-  const aspectFragment = aspectsSchemaFragment(def);
-  if (aspectFragment && schema?.properties && !schema.properties.aspects) {
-    schema.properties.aspects = aspectFragment;
-  }
+  const schemaCandidates = options.schemaCandidates ?? options.candidates?.candidates ?? {};
+  const schema = augmentNlqSchema(def, schemaCandidates);
   const instructions = def.search?.nlq?.instructions;
   // Caching is best-effort: minimal test/embedded contexts may lack system tables.
   const cache = ctx.systemTables?.samesakeStageCache ? makeStageCacheService(ctx) : null;
-  const cacheKey = nlqCacheKey(def, q);
+  const cacheKey = nlqCacheKey(def, q, schemaCandidates);
+
+  const finishParsed = async (parsed: NlqParsed, degraded: boolean): Promise<NlqParseResult> => {
+    const { filters: parsedFilters, excludeTerms, budgetHints } = nlqParsedToFilters(parsed, def);
+    const vocabValues = openVocabFilterValues(parsedFilters, def);
+    let groundedValues: Record<string, GroundedValueDecision[]> = {};
+    if (Object.keys(vocabValues).length > 0) {
+      if (options.grounding) {
+        groundedValues = options.grounding.decisions;
+      } else if (options.candidates) {
+        if (!options.candidates.available) groundedValues = unavailableGrounding(vocabValues);
+        else if (options.schema && options.collection && options.scopeCols) {
+          const grounded = await groundVocabValues(
+            ctx,
+            options.schema,
+            options.collection,
+            vocabValues,
+            options.scopeCols
+          );
+          groundedValues = grounded.available ? grounded.decisions : unavailableGrounding(vocabValues);
+        } else {
+          groundedValues = unavailableGrounding(vocabValues);
+        }
+      }
+    }
+    const grounded = applyGrounding(parsedFilters, groundedValues);
+    const filters = mergeDeterministicSoftFilters(grounded.filters, deterministicFilters, def);
+    const semantic_query = appendDroppedSemantic(parsed.semantic_query, grounded.dropped);
+    return {
+      parsed: semantic_query === parsed.semantic_query ? parsed : { ...parsed, semantic_query },
+      degraded,
+      filters,
+      deterministicFilters,
+      groundedValues,
+      excludeTerms,
+      budgetHints,
+    };
+  };
 
   if (cache) {
     try {
@@ -341,8 +671,7 @@ export async function parseNlq(
       if (hit && typeof hit.semantic_query === "string") {
         ctx.observability?.inc("nlq_cache_hits");
         const parsed = normalizeAspectRoutes(def, { ...hit, semantic_query: hit.semantic_query });
-        const { filters, excludeTerms, budgetHints } = nlqParsedToFilters(parsed, def);
-        return { parsed, degraded: false, filters, excludeTerms, budgetHints };
+        return finishParsed(parsed, false);
       }
     } catch {
       // cache read failures never block the query path
@@ -352,7 +681,7 @@ export async function parseNlq(
   try {
     const raw = (await generateWithTimeout(ctx, {
       model: def.search?.nlq?.model,
-      prompt: buildNlqPrompt(q, def, instructions),
+      prompt: buildNlqPrompt(q, def, instructions, schemaCandidates),
       system: instructions,
       schema,
     })) as Record<string, unknown>;
@@ -363,11 +692,10 @@ export async function parseNlq(
         : q;
 
     const parsed = normalizeAspectRoutes(def, { ...raw, semantic_query: semantic });
-    const { filters, excludeTerms, budgetHints } = nlqParsedToFilters(parsed, def);
     cache
       ?.setStageCache(cacheKey, NLQ_CACHE_STAGE, parsed, def.search?.nlq?.model ?? "default", NLQ_CACHE_TTL_DAYS)
       .catch(() => {});
-    return { parsed, degraded: false, filters, excludeTerms, budgetHints };
+    return finishParsed(parsed, false);
   } catch {
     return fallback;
   }

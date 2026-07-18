@@ -4,17 +4,20 @@ import { sql } from "drizzle-orm";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { z } from "zod";
-import { collection, f, Channels } from "@samesake/core";
+import { collection, f, Channels, type CollectionDef } from "@samesake/core";
 import {
   deriveNlqSchema,
+  deriveEnumTokenFilters,
+  mergeDeterministicSoftFilters,
+  nlqCacheKey,
   mergeFilters,
   nlqParsedToFilters,
   parseNlq,
   shouldSkipNlq,
-  tokenCount,
 } from "../src/core/nlq.ts";
 import { buildFilterSql } from "../src/core/search.ts";
 import type { MatcherCtx } from "../src/types.ts";
+import { groundVocabValues, vocabCandidates } from "../src/core/field-vocab.ts";
 import { ftsIndexingByTitle, nlqSchemaFixtureCollection, stubEmbed, testProductsCollection } from "./fixtures.ts";
 
 const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
@@ -104,14 +107,18 @@ describe("nlqParsedToFilters", () => {
 });
 
 describe("shouldSkipNlq", () => {
-  test("skips short keyword queries without digits", () => {
-    expect(shouldSkipNlq(testProductsCollection, "red shoes")).toBe(true);
-    expect(tokenCount("red shoes")).toBe(2);
+  test("runs NLQ for every non-empty text query", () => {
+    expect(shouldSkipNlq(testProductsCollection, "red shoes")).toBe(false);
+    expect(shouldSkipNlq(testProductsCollection, "red")).toBe(false);
   });
 
   test("runs NLQ for longer or numeric queries", () => {
     expect(shouldSkipNlq(testProductsCollection, "red running shoes")).toBe(false);
     expect(shouldSkipNlq(testProductsCollection, "under 5000")).toBe(false);
+  });
+
+  test("skips image-only empty text", () => {
+    expect(shouldSkipNlq(testProductsCollection, "")).toBe(true);
   });
 
   test("skips when nlq config missing", () => {
@@ -137,7 +144,8 @@ describe("parseNlq", () => {
     const result = await parseNlq(ctx, testProductsCollection, "red nike shoes under 100");
     expect(result.degraded).toBe(true);
     expect(result.parsed.semantic_query).toBe("red nike shoes under 100");
-    expect(result.filters).toEqual({});
+    expect(result.filters).toEqual({ colors: ["red"] });
+    expect(result.deterministicFilters).toEqual({ colors: ["red"] });
   });
 
   test(
@@ -159,7 +167,7 @@ describe("parseNlq", () => {
     7000
   );
 
-  test("keyword fast-path skips generate", async () => {
+  test("short queries invoke generate", async () => {
     let calls = 0;
     const ctx = {
       generateConfigured: true,
@@ -170,7 +178,7 @@ describe("parseNlq", () => {
     } as unknown as MatcherCtx;
 
     await parseNlq(ctx, testProductsCollection, "red shoes");
-    expect(calls).toBe(0);
+    expect(calls).toBe(1);
   });
 
   test("applies stub generate filters", async () => {
@@ -222,6 +230,166 @@ describe("parseNlq", () => {
     expect(received).toBeDefined();
     expect(received!.type).toBe("object");
     expect((received!.properties as Record<string, unknown>).semantic_query).toEqual({ type: "string" });
+  });
+});
+
+describe("deterministic soft-enum guard", () => {
+  test("matches normalized enum tokens without generation", () => {
+    const filters = deriveEnumTokenFilters("RED, dress", testProductsCollection);
+    expect(filters).toEqual({ colors: ["red"] });
+  });
+
+  test("ignores negated and cross-field ambiguous values", () => {
+    const ambiguous = collection("ambiguous", {
+      fields: {
+        title: f.text({ searchable: true }),
+        color: f.enum(["red", "blue"], { filterable: true, soft: true }),
+        shade: f.enum(["red", "green"], { filterable: true, soft: true }),
+      },
+      search: { channels: [Channels.fts({ fields: ["title"], weight: 1 })] },
+    });
+    expect(deriveEnumTokenFilters("not red shoes", testProductsCollection)).toEqual({});
+    expect(deriveEnumTokenFilters("red", ambiguous)).toEqual({});
+  });
+
+  test("matches longest phrases and overrides only positive soft values", () => {
+    const occasions = collection("occasions", {
+      fields: {
+        title: f.text({ searchable: true }),
+        occasion: f.enum(["wedding", "wedding guest"], { filterable: true, soft: true }),
+      },
+      search: { channels: [Channels.fts({ fields: ["title"], weight: 1 })] },
+    });
+    const deterministic = deriveEnumTokenFilters("wedding guest", occasions);
+    expect(deterministic).toEqual({ occasion: "wedding guest" });
+    expect(mergeDeterministicSoftFilters({ occasion: "wedding" }, deterministic, occasions)).toEqual(deterministic);
+  });
+});
+
+describe("catalog-grounded vocabulary", () => {
+  const openVocab = collection("grounded", {
+    fields: {
+      title: f.text({ searchable: true }),
+      brand: f.text({ filterable: true }),
+    },
+    search: { channels: [Channels.fts({ fields: ["title"], weight: 1 })], nlq: { enable: true } },
+  });
+
+  test("candidate lookup is scoped, thresholded, and bounded per field", async () => {
+    let query = "";
+    const ctx = {
+      storage: {
+        client: () => ({
+          unsafe: async (sqlText: string) => {
+            query = sqlText;
+            return [
+              { field: "brand", value: "Nike", count: 4 },
+              { field: "brand", value: "Niko", count: 2 },
+            ];
+          },
+        }),
+      },
+    } as unknown as MatcherCtx;
+    const result = await vocabCandidates(ctx, "project_demo", "grounded", openVocab, "nike shoes", {
+      scope_tenant: "tenant-a",
+    });
+    expect(result).toEqual({
+      available: true,
+      candidates: { brand: [{ value: "Nike", count: 4 }, { value: "Niko", count: 2 }] },
+    });
+    expect(query).toContain("> 0.25");
+    expect(query).toContain("rn <= 8");
+    expect(query).toContain("scope_tenant =");
+  });
+
+  test("grounding maps nearest values, keeps exact values, and fails closed on a missing table", async () => {
+    const ctx = {
+      storage: {
+        client: () => ({
+          unsafe: async () => [
+            { field: "brand", parsed: "NIKE", matched_value: "Nike", similarity_score: 1 },
+            { field: "brand", parsed: "Nkie", matched_value: "Nike", similarity_score: 0.7 },
+            { field: "brand", parsed: "unknown", matched_value: null, similarity_score: 0 },
+          ],
+        }),
+      },
+    } as unknown as MatcherCtx;
+    const grounded = await groundVocabValues(ctx, "project_demo", "grounded", {
+      brand: ["NIKE", "Nkie", "unknown"],
+    }, {});
+    expect(grounded).toEqual({
+      available: true,
+      decisions: {
+        brand: [
+          { parsed: "NIKE", mapped: "Nike", action: "kept" },
+          { parsed: "Nkie", mapped: "Nike", action: "mapped" },
+          { parsed: "unknown", action: "dropped" },
+        ],
+      },
+    });
+
+    const missing = {
+      storage: {
+        client: () => ({ unsafe: async () => Promise.reject(Object.assign(new Error("relation c_grounded_vocab does not exist"), { code: "42P01" })) }),
+      },
+    } as unknown as MatcherCtx;
+    await expect(vocabCandidates(missing, "project_demo", "grounded", openVocab, "nike", {})).resolves.toEqual({
+      available: false,
+      candidates: {},
+    });
+  });
+
+  test("candidate and aspect changes invalidate the seven-day parse key", () => {
+    const one = nlqCacheKey(openVocab, "nike shoes", { brand: [{ value: "Nike", count: 1 }] });
+    const two = nlqCacheKey(openVocab, "nike shoes", { brand: [{ value: "Adidas", count: 1 }] });
+    const aspectChanged = { ...openVocab, embeddings: { doc: { model: "x", dim: 8, describe: "visual" } } };
+    expect(one).not.toBe(two);
+    expect(one).not.toBe(nlqCacheKey(aspectChanged, "nike shoes", { brand: [{ value: "Nike", count: 1 }] }));
+  });
+
+  test("candidate values enter derived schema and custom schema without changing required fields", async () => {
+    let received: Record<string, unknown> | undefined;
+    const ctx = {
+      generateConfigured: true,
+      generate: async ({ schema, prompt }: { schema: Record<string, unknown>; prompt: string }) => {
+        received = schema;
+        expect(prompt).toContain("Catalog-grounded filter candidates");
+        return { semantic_query: "shoes", brand: "Nike" };
+      },
+    } as unknown as MatcherCtx;
+    await parseNlq(ctx, openVocab, "nike shoes", {
+      candidates: { available: true, candidates: { brand: [{ value: "Nike", count: 4 }] } },
+      grounding: { available: true, decisions: { brand: [{ parsed: "Nike", action: "kept" }] } },
+    });
+    const schema = received as { properties: Record<string, { enum?: string[] }> };
+    expect(schema.properties.brand.enum).toEqual(["Nike"]);
+
+    const custom = {
+      ...openVocab,
+      search: {
+        channels: [Channels.fts({ fields: ["title"], weight: 1 })],
+        nlq: {
+          enable: true,
+          schema: {
+            type: "object",
+            required: ["semantic_query"],
+            properties: {
+              semantic_query: { type: "string" },
+              brand: { anyOf: [{ type: "string" }, { type: "null" }] },
+            },
+          },
+        },
+      },
+    };
+    received = undefined;
+    await parseNlq(ctx, custom as unknown as CollectionDef, "nike shoes", {
+      candidates: { available: true, candidates: { brand: [{ value: "Nike", count: 4 }] } },
+      grounding: { available: true, decisions: { brand: [{ parsed: "Nike", action: "kept" }] } },
+    });
+    const customSchema = received as unknown as { required: string[]; properties: { brand: { anyOf: Array<{ enum?: string[] }> }; lexical_query: unknown } };
+    expect(customSchema.required).toEqual(["semantic_query"]);
+    expect(customSchema.properties.brand.anyOf[0]!.enum).toEqual(["Nike"]);
+    expect(customSchema.properties.lexical_query).toBeDefined();
   });
 });
 
@@ -336,10 +504,10 @@ describeIf("NLQ search integration", () => {
     expect(result.hits.length).toBeGreaterThan(0);
   });
 
-  test("keyword fast-path skips generate at search time", async () => {
+  test("short query invokes generate at search time", async () => {
     generateCalls = 0;
-    await matcher.search(projectSlug, "products", { q: "red shoes", limit: 5 });
-    expect(generateCalls).toBe(0);
+    await matcher.search(projectSlug, "products", { q: `red shoes ${runToken}`, limit: 5 });
+    expect(generateCalls).toBe(1);
   });
 });
 

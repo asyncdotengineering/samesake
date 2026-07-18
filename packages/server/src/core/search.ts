@@ -6,6 +6,7 @@ import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
 import { buildConstraintTrace, relaxedSoftFields } from "./constraint-trace.ts";
 import { mergeFilters, parseNlq, shouldSkipNlq } from "./nlq.ts";
+import { vocabCandidates } from "./field-vocab.ts";
 import type { ProjectsService, ProjectRow } from "./projects.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
 import { ftsLanguage } from "./collections-schema-gen.ts";
@@ -651,7 +652,15 @@ export function makeSearchService(
       }
     }
 
-    const nlq = await parseNlq(ctx, def, q);
+    const candidates = shouldSkipNlq(def, q)
+      ? { available: true, candidates: {} }
+      : await vocabCandidates(ctx, project.schema_name, collectionName, def, q, scopeCols);
+    const nlq = await parseNlq(ctx, def, q, {
+      candidates,
+      schema: project.schema_name,
+      collection: collectionName,
+      scopeCols,
+    });
     const explicitFilters = opts.filters ?? {};
     const mergedFilters = mergeFilters(nlq.filters, explicitFilters);
     await resolveBudgetHints(ctx, project.schema_name, collectionName, def, nlq.budgetHints, mergedFilters);

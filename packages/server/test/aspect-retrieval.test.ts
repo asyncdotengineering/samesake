@@ -131,6 +131,8 @@ describe("test:routing", () => {
     parsed: { semantic_query: "floral dress", ...(aspects ? { aspects } : {}) },
     degraded,
     filters: {},
+    deterministicFilters: {},
+    groundedValues: {},
     excludeTerms: [],
     budgetHints: {},
   });
