@@ -338,11 +338,16 @@ lookup so tenant A's vendor names never appear in tenant B's prompts (REQ-2).
 - Q3: Session context (broad→narrow refinement, Walmart-style) — follow-up RFC once this
   lands; the prompt seam this RFC creates (candidates block) is where prior-query context
   would slot.
-- Q4 (added 2026-07-18, from human testing): **deterministic enum-token derivation for
-  skip-NLQ queries.** "red dress" (≤2 tokens → NLQ skipped) returned black garments at
-  ranks 7-8 via the color-blind dense leg — no parse means no `colors: red` constraint even
-  though "red" is a DECLARED enum value of a filterable field. Requirement candidate: a
-  zero-LLM token matcher over declared enum vocabularies (+ alsoMatch synonyms) derives soft
-  filters for short queries at zero latency/cost, closing the head-query constraint gap the
-  skip heuristic creates. Evidence: human-test session 2026-07-18; the same query with ≥3
-  tokens (NLQ active) derives the color filter and excludes the mismatches.
+- Q4 — RESOLVED as requirements (2026-07-18, owner decision after human testing):
+  - **REQ-13: remove the short-query NLQ skip.** `shouldSkipNlq`'s ≤2-token heuristic cost
+    "red dress" its `colors: red` constraint (black garments at ranks 7-8 via the color-blind
+    dense leg; human-test session 2026-07-18). The 7-day parse cache makes the skip's saving
+    one cold parse per query per week — negligible vs the constraint gap on the highest-volume
+    query class. NLQ runs for every query; `nlq.enable === false` remains the opt-out.
+    (Interaction: the multi-aspect D1/F1 skip-to-first routing rule keys off the same
+    heuristic — with the skip removed, short queries get real parses and route normally;
+    degraded parses still fall back to first-aspect-only.)
+  - **REQ-14: deterministic enum-token layer.** A zero-LLM token matcher over declared enum
+    vocabularies (+ `alsoMatch` synonyms) derives soft filters instantly — serving the cold
+    first hit (before/while the LLM parse lands), degraded-parse fallback, and as a guardrail
+    the LLM cannot miss. Belt and suspenders with REQ-13, both cheap.
