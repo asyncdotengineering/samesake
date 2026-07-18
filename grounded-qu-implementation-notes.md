@@ -38,3 +38,4 @@ C1 → C2/C3 → C4 → C5; C5/C6 → C7; C2/C3/C6/C7 → C8; C9 runner changes 
 - C7 focused rewrite and cutoff/hybrid/explain/observability regressions pass; the rewrite fixture proves one proposal call, one retry, and no second NLQ call.
 - C8 trace-grounding coverage passes for deterministic source, grounded-value shape, effective filters, and search/explain serialization.
 - C9 offline smoke `bun --cwd examples/fashion-search eval-search.ts --fixture --phase=grounded-v2` passes; no live capture was run.
+- The full server regression passes at 316 tests / 0 failures. The two test-only timeout alignments cover RFC-added cold query work and existing Postgres hook contention under Bun's concurrent suite runner; no assertions were relaxed.
