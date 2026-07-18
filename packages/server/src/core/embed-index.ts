@@ -429,7 +429,9 @@ export function makeEmbedIndexService(
           throw e;
         }
       };
-      const INDEX_CONCURRENCY = 8;
+      // 3 keeps sustained request rate under typical embed-API RPM ceilings — 8 provoked a
+      // 429 retry-backoff collapse (measured: zero rows in 3 min against a ~100 RPM key).
+      const INDEX_CONCURRENCY = 3;
       for (let i = 0; i < rows.length; i += INDEX_CONCURRENCY) {
         await Promise.all(rows.slice(i, i + INDEX_CONCURRENCY).map(processRow));
       }
