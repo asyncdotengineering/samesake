@@ -1,8 +1,8 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels, s, fashionSearchDefaults } from "../../sdk/src/index.ts";
-import { ftsIndexingByTitle } from "./fixtures.ts";
+import { collection, f, Channels, fashionSearchDefaults } from "../../sdk/src/index.ts";
+import { denseAndFtsIndexingByTitle } from "./fixtures.ts";
 import type { EmbedRequest } from "../src/types.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
@@ -61,18 +61,17 @@ const shopCollection = collection("products", {
     sizes: f.array({ type: "text" }, { filterable: true }),
     styles: f.array({ type: "text" }, { filterable: true, soft: true }),
   },
-  spaces: {
-    intent: s.text({ source: "$title", model: "test-text", dim: 8 }),
-    visual: s.image({ source: "$image_url", model: "test-img", dim: 8 }),
-    price: s.number({ field: "price", mode: "closer", dims: 4, min: 0, max: 500 }),
+  embeddings: {
+    doc: { source: "$title", model: "test-text", dim: 8 },
+    visual: { kind: "image", source: "$image_url", model: "test-img", dim: 8 },
   },
-  indexing: ftsIndexingByTitle,
+  indexing: denseAndFtsIndexingByTitle,
   search: {
     channels: [
       Channels.fts({ fields: ["title"], weight: 1 }),
-      Channels.spaces({ weight: 1 }),
+      Channels.cosine({ embedding: "doc", weight: 1 }),
+      Channels.cosine({ embedding: "visual", weight: 1 }),
     ],
-    defaultSpaceWeights: { intent: 1, visual: 1, price: 0.2 },
     ...fashionSearchDefaults(),
   },
 });

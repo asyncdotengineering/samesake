@@ -1,7 +1,7 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels, pipeline, stage, s } from "../../sdk/src/index.ts";
+import { collection, f, Channels, pipeline, stage } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed } from "./fixtures.ts";
@@ -9,11 +9,8 @@ import { stubEmbed } from "./fixtures.ts";
 const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
 
-// Regression: a collection that has BOTH an enrich gate AND spaces must still keep
-// quarantined rows out of the index. The `space_vec IS NULL` backfill clause used to
-// sit outside the `pipeline_status = 'ready'` guard, so a freshly-enriched quarantined
-// row (space_vec NULL) was indexed and promoted to `ready` — defeating the gate.
-describeIf("quarantine holds when the collection has spaces", () => {
+// Regression: an enrich gate must keep quarantined rows out of the index.
+describeIf("quarantine holds for gated collections", () => {
   const projectSlug = `t_${Math.random().toString(36).slice(2, 10)}`;
   let schemaName = "";
   let matcher: ReturnType<typeof createMatcher>;
@@ -34,9 +31,8 @@ describeIf("quarantine holds when the collection has spaces", () => {
         String(data.title ?? "").includes("Skip") ? { index: false, reason: "skipped" } : { index: true },
     },
     embeddings: { doc: { model: "test-embed", dim: 8 } },
-    spaces: { pricey: s.number({ field: "price", mode: "closer", dims: 8, min: 0, max: 100 }) },
     search: {
-      channels: [Channels.cosine({ embedding: "doc", weight: 1 }), Channels.spaces({ weight: 1 })],
+      channels: [Channels.cosine({ embedding: "doc", weight: 1 })],
     },
   });
 
@@ -66,7 +62,7 @@ describeIf("quarantine holds when the collection has spaces", () => {
     if (matcher) await matcher.close();
   });
 
-  test("quarantined row is not indexed or promoted by space backfill, and is not searchable", async () => {
+  test("quarantined row is not indexed or promoted, and is not searchable", async () => {
     const { db: dbPre, close: closePre } = createDbFromUrl(databaseUrl!);
     const pre = (await dbPre.execute(
       sql.raw(`SELECT id, pipeline_status FROM ${schemaName}.c_products ORDER BY id`)
@@ -79,10 +75,10 @@ describeIf("quarantine holds when the collection has spaces", () => {
     const { db, close } = createDbFromUrl(databaseUrl!);
     const rows = (await db.execute(
       sql.raw(
-        `SELECT id, pipeline_status, indexed_at, space_vec::text AS space_vec
+        `SELECT id, pipeline_status, indexed_at, embedding::text AS embedding
          FROM ${schemaName}.c_products WHERE id IN ('ready','skip') ORDER BY id`
       )
-    )) as unknown as { id: string; pipeline_status: string; indexed_at: string | null; space_vec: string | null }[];
+    )) as unknown as { id: string; pipeline_status: string; indexed_at: string | null; embedding: string | null }[];
     await close();
 
     const ready = rows.find((x) => x.id === "ready")!;
@@ -93,7 +89,7 @@ describeIf("quarantine holds when the collection has spaces", () => {
 
     expect(skip.pipeline_status).toBe("quarantined");
     expect(skip.indexed_at).toBeNull();
-    expect(skip.space_vec).toBeNull();
+    expect(skip.embedding).toBeNull();
 
     const res = await matcher.search(projectSlug, "products", { q: "Skip Item", limit: 10 });
     const hits = (res.hits ?? []) as { id: string }[];

@@ -1,5 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { MatcherCtx } from "../../types.ts";
 import type { SearchExplainResult, SearchHit, SearchService } from "../search.ts";
 import { getByPath } from "../db-utils.ts";
@@ -27,7 +29,11 @@ export type MetricKey =
   | "ndcgAtK"
   | "mrr"
   | "nullRate"
-  | "constraintViolationRate";
+  | "constraintViolationRate"
+  | "zeroResultRate"
+  | "hitAt10";
+
+const execFileAsync = promisify(execFile);
 
 export interface GoldenQuery {
   id: string;
@@ -58,12 +64,20 @@ export interface PerQuery {
   nullResult: boolean;
   constraintViolations: number;
   channelAttribution: Record<string, number>;
+  zeroResult: boolean;
+  hitAt10: number;
 }
 
 export interface EvalResult {
   perQuery: PerQuery[];
   aggregate: Record<MetricKey, number> & { byType: Record<string, Record<MetricKey, number>> };
   judgeVersion: string;
+  metadata: {
+    embeddingModels: Record<string, { model: string; dim: number }>;
+    nlqModel: string | null;
+    judgeVersion: string;
+    gitSha: string | null;
+  };
   pass: boolean;
   failedThresholds: Array<{ metric: string; got: number; min: number }>;
   artifactPath: string;
@@ -104,8 +118,13 @@ function attributeWinsToChannels(
     if (!doc) continue;
     const ranks: Array<[string, number]> = [];
     if (doc.fts_rank != null) ranks.push(["fts", doc.fts_rank]);
-    if (doc.cosine_rank != null) ranks.push(["cosine", doc.cosine_rank]);
-    if (doc.spaces_rank != null) ranks.push(["spaces", doc.spaces_rank]);
+    if (doc.aspect_ranks) {
+      for (const [name, aspect] of Object.entries(doc.aspect_ranks)) {
+        if (aspect.rank != null) ranks.push([`aspect:${name}`, aspect.rank]);
+      }
+    } else if (doc.cosine_rank != null) {
+      ranks.push(["cosine", doc.cosine_rank]);
+    }
     if (doc.recency_rank != null) ranks.push(["recency", doc.recency_rank]);
     if (ranks.length === 0) continue;
     ranks.sort((a, b) => a[1] - b[1]);
@@ -127,6 +146,8 @@ function aggregateMetrics(rows: PerQuery[]): Record<MetricKey, number> {
     mrr: mean(rows.map((r) => r.mrr)),
     nullRate: nullRate(rows.map((r) => r.nullResult)),
     constraintViolationRate: mean(rows.map((r) => r.constraintViolations)),
+    zeroResultRate: mean(rows.map((r) => (r.zeroResult ? 1 : 0))),
+    hitAt10: mean(rows.map((r) => r.hitAt10)),
   };
 }
 
@@ -207,6 +228,8 @@ export async function runEval(
         nullResult,
         constraintViolations: violations,
         channelAttribution: attributeWinsToChannels(graded, explain, floor),
+        zeroResult: hits.length === 0,
+        hitAt10: hitAtK(grades, floor, 10),
       });
     } catch (e) {
       ctx.observability.log(
@@ -224,6 +247,8 @@ export async function runEval(
         nullResult: true,
         constraintViolations: 0,
         channelAttribution: {},
+        zeroResult: true,
+        hitAt10: 0,
       });
     }
   }
@@ -231,6 +256,20 @@ export async function runEval(
   const baseAgg = aggregateMetrics(perQuery);
   const aggregate = { ...baseAgg, byType: aggregateByType(perQuery) };
   const { pass, failedThresholds } = evaluateThresholds(baseAgg, opts.thresholds);
+  let gitSha: string | null = null;
+  try {
+    gitSha = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: process.cwd() })).stdout.trim();
+  } catch {
+    gitSha = null;
+  }
+  const metadata = {
+    embeddingModels: Object.fromEntries(
+      Object.entries(def?.embeddings ?? {}).map(([name, embedding]) => [name, { model: embedding.model, dim: embedding.dim }])
+    ),
+    nlqModel: def?.search?.nlq?.model ?? null,
+    judgeVersion: opts.judge.version,
+    gitSha,
+  };
   const ts = opts.timestamp ?? new Date().toISOString().replace(/[:.]/g, "-");
   const artifactName = `${ts}-${opts.judge.version}.json`;
   const artifactPath = join(artifactDir, artifactName);
@@ -240,6 +279,7 @@ export async function runEval(
     JSON.stringify(
       {
         judgeVersion: opts.judge.version,
+        metadata,
         k,
         relevanceFloor: floor,
         perQuery,
@@ -256,6 +296,7 @@ export async function runEval(
     perQuery,
     aggregate,
     judgeVersion: opts.judge.version,
+    metadata,
     pass,
     failedThresholds,
     artifactPath,

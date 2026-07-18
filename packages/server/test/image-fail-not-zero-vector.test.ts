@@ -1,8 +1,8 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels, s } from "../../sdk/src/index.ts";
-import { spaceOnlyIndexing } from "./fixtures.ts";
+import { collection, f, Channels } from "../../sdk/src/index.ts";
+import { minimalIndexing } from "./fixtures.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { __setImageTransport } from "../src/core/fetch-image.ts";
@@ -23,15 +23,14 @@ function mockFetchFail() {
   return () => __setImageTransport(null);
 }
 
-const imageSpacesCollection = collection("products", {
+const imageAspectCollection = collection("products", {
   fields: { title: f.text({ searchable: true }) },
-  indexing: spaceOnlyIndexing,
-  spaces: {
-    visual: s.image({ source: "$image_url", model: "test-img", dim: 8 }),
+  indexing: minimalIndexing,
+  embeddings: {
+    visual: { kind: "image", source: "$image_url", model: "test-img", dim: 8 },
   },
   search: {
-    channels: [Channels.spaces({ weight: 1 })],
-    defaultSpaceWeights: { visual: 1 },
+    channels: [Channels.cosine({ embedding: "visual", weight: 1 })],
   },
 });
 
@@ -55,7 +54,7 @@ describeIf("test:image-fail-not-zero-vector (REQ-18b/M5)", () => {
     await matcher.migrate();
     const r = await matcher.apply(projectSlug, {
       entities: [],
-      collections: [imageSpacesCollection],
+      collections: [imageAspectCollection],
     });
     schemaName = r.schema;
   }, 30_000);
@@ -86,9 +85,9 @@ describeIf("test:image-fail-not-zero-vector (REQ-18b/M5)", () => {
       pipeline_status: string;
       indexed_at: string | null;
       last_error: string | null;
-      space_vec: string | null;
+      embedding: string | null;
     }>(sql.raw(`
-      SELECT pipeline_status, indexed_at, last_error, space_vec::text AS space_vec
+      SELECT pipeline_status, indexed_at, last_error, embedding::text AS embedding
       FROM ${schemaName}.c_products WHERE id = 'bad-img'
     `));
     await close();
@@ -97,6 +96,6 @@ describeIf("test:image-fail-not-zero-vector (REQ-18b/M5)", () => {
     expect(rows[0]!.pipeline_status).toBe("failed");
     expect(rows[0]!.indexed_at).toBeNull();
     expect(rows[0]!.last_error).toMatch(/image fetch failed/i);
-    expect(rows[0]!.space_vec).toBeNull();
+    expect(rows[0]!.embedding).toBeNull();
   });
 });

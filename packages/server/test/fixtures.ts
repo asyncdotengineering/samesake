@@ -82,7 +82,7 @@ export const denseAndFtsIndexingByTitle = {
   gate: gates.always,
 };
 
-/** FTS-only indexing for collections without dense embeddings (spaces + FTS search). */
+/** FTS-only indexing for collections without dense embeddings. */
 export const ftsIndexingByTitle = {
   surfaces: {
     fts_doc: { kind: "fts" as const, build: ({ data }: { data: Record<string, unknown> }) => String(data.title ?? "").trim() },
@@ -90,8 +90,8 @@ export const ftsIndexingByTitle = {
   gate: gates.always,
 };
 
-/** Minimal indexing for spaces-only collections (no FTS / dense channels). */
-export const spaceOnlyIndexing = {
+/** Minimal indexing for collections whose surfaces are populated by another path. */
+export const minimalIndexing = {
   surfaces: {},
   gate: gates.always,
 };

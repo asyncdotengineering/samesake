@@ -63,10 +63,11 @@ node scripts/eval-search.js --target v2 --base http://localhost:8788
 
 Uses dedicated project slug `fashionparity` to avoid schema collisions with other tests.
 
-## Optional spaces
+## Aspect retrieval
 
-- `SPACES=1` — enable style/price/freshness/category segmented vector leg (off by default; see `docs/spaces-gate.md`).
-- `SPACES_VISUAL=1` (requires `SPACES=1`) — add `visual` image space (`s.image` on `$image_url`, Gemini multimodal embed). Off by default pending Q4 spike.
+- `doc` is the default text embedding aspect.
+- `visual` is the image embedding aspect and uses `$image_url` when enabled in the collection config.
+- `facets` is the evidence aspect built from deterministic enriched attribute phrases.
 
 For a $0 image-embedding alternative (SigLIP on Modal), see the aggregator spike at `project-search-web-search/research/spikes/modal_fashionsiglip2.py` — not wired in this example.
 

@@ -1,6 +1,5 @@
-import { createHash } from "node:crypto";
 import type { CollectionDef, CollectionFieldDef } from "@samesake/core";
-import { totalSpaceDims } from "./spaces.ts";
+import { embeddingColumn, embeddingEntries, embeddingIndexName, evidenceEntries, evidenceTable } from "./aspects.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
 import { assertIndexableVectorDimension } from "./vector-dim.ts";
 
@@ -38,13 +37,16 @@ function fieldSqlType(def: CollectionFieldDef): string {
 function canonicalEmbeddings(c: CollectionDef): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(c.embeddings ?? {})) {
-    out[k] = { model: v.model, dim: v.dim, taskType: v.taskType ?? null };
+    out[k] = {
+      model: v.model,
+      dim: v.dim,
+      taskType: v.taskType ?? null,
+      kind: v.kind ?? "text",
+      evidence: v.evidence ?? false,
+      describe: v.describe ?? null,
+    };
   }
   return out;
-}
-
-function canonicalSpaces(c: CollectionDef): Record<string, unknown> {
-  return c.spaces ?? {};
 }
 
 function jsonPathExpr(root: "data" | "enriched", path: string): string {
@@ -102,8 +104,6 @@ export function planCollectionMigration(
   const incomingFields = incoming.fields ?? {};
   const storedEmb = stored.embeddings ?? {};
   const incomingEmb = incoming.embeddings ?? {};
-  const storedSpaces = stored.spaces ?? {};
-  const incomingSpaces = incoming.spaces ?? {};
 
   // The fts generated column bakes the language in; changing it means rebuilding
   // that column (and queries would silently mis-stem against the old index).
@@ -204,13 +204,17 @@ export function planCollectionMigration(
     if (!(key in incomingEmb)) plan.destructive.push(`${coll}.embeddings.${key}: embedding removed`);
   }
 
-  const storedDim = storedEmbKeys.length ? Math.max(...Object.values(storedEmb).map((e) => e.dim)) : 0;
-  const incomingDim = incomingEmbKeys.length ? Math.max(...Object.values(incomingEmb).map((e) => e.dim)) : 0;
+  const storedFirst = storedEmbKeys[0] ? storedEmb[storedEmbKeys[0]] : undefined;
+  const incomingFirst = incomingEmbKeys[0] ? incomingEmb[incomingEmbKeys[0]] : undefined;
+  const storedDim = storedFirst?.dim ?? 0;
+  const incomingDim = incomingFirst?.dim ?? 0;
 
-  if (storedEmbKeys.length === 0 && incomingEmbKeys.length > 0) {
+  if (storedEmbKeys.length === 0 && incomingFirst) {
     alterStatements.push(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS embedding halfvec(${incomingDim})`);
     alterStatements.push(`CREATE INDEX IF NOT EXISTS ${indexName(coll, "emb_idx")} ON ${table} USING hnsw (embedding halfvec_cosine_ops)`);
     plan.additions.push(`${coll}: add embedding halfvec(${incomingDim}) + HNSW`);
+    reindex = true;
+    plan.reindexRequired.push(`${coll}: new embedding requires backfill`);
   } else if (storedDim > 0 && incomingDim > 0 && storedDim !== incomingDim) {
     plan.destructive.push(`${coll}.embedding: dimension change ${storedDim} → ${incomingDim}`);
     alterStatements.push(`DROP INDEX IF EXISTS ${indexName(coll, "emb_idx")}`);
@@ -221,47 +225,55 @@ export function planCollectionMigration(
     plan.reindexRequired.push(`${coll}: embedding dimension changed — column recreated`);
   }
 
-  const storedSpaceDim = Object.keys(storedSpaces).length ? totalSpaceDims(storedSpaces) : 0;
-  const incomingSpaceDim = Object.keys(incomingSpaces).length ? totalSpaceDims(incomingSpaces) : 0;
-  if (incomingSpaceDim > 0) {
-    assertIndexableVectorDimension({
-      owner: `collection ${coll}`,
-      field: "spaces total",
-      dimensions: incomingSpaceDim,
-      columnType: "halfvec",
-    });
+  for (const [index, [name, def]] of embeddingEntries(incoming).entries()) {
+    if (index === 0 || def.evidence === true) continue;
+    const column = embeddingColumn(name, index);
+    if (!(name in storedEmb)) {
+      alterStatements.push(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${column} halfvec(${def.dim})`);
+      alterStatements.push(`CREATE INDEX IF NOT EXISTS ${embeddingIndexName(coll, name, index)} ON ${table} USING hnsw (${column} halfvec_cosine_ops)`);
+      plan.additions.push(`${coll}.embeddings.${name}: add ${column} halfvec(${def.dim}) + HNSW`);
+      reindex = true;
+      plan.reindexRequired.push(`${coll}: new aspect "${name}" requires backfill`);
+    }
   }
-  const storedSpaceHash = createHash("sha1").update(JSON.stringify(canonicalSpaces(stored))).digest("hex");
-  const incomingSpaceHash = createHash("sha1").update(JSON.stringify(canonicalSpaces(incoming))).digest("hex");
 
-  if (Object.keys(storedSpaces).length > 0 && Object.keys(incomingSpaces).length === 0) {
-    plan.destructive.push(`${coll}.spaces: all spaces removed (drop space_vec)`);
+  for (const [index, [name, def]] of embeddingEntries(stored).entries()) {
+    if (name in incomingEmb) continue;
+    if (index === 0) {
+      plan.destructive.push(`${coll}.embeddings.${name}: first embedding removed`);
+      continue;
+    }
+    if (def.evidence === true) {
+      plan.destructive.push(`${coll}.embeddings.${name}: evidence aspect removed`);
+      continue;
+    }
+    const column = embeddingColumn(name, index);
+    alterStatements.push(`DROP INDEX IF EXISTS ${embeddingIndexName(coll, name, index)}`);
+    alterStatements.push(`ALTER TABLE ${table} DROP COLUMN IF EXISTS ${column}`);
+    plan.destructive.push(`${coll}.embeddings.${name}: aspect removed`);
   }
-  for (const name of Object.keys(storedSpaces)) {
-    if (!(name in incomingSpaces)) plan.destructive.push(`${coll}.spaces.${name}: space removed`);
+
+  const incomingEvidence = evidenceEntries(incoming);
+  const storedEvidence = evidenceEntries(stored);
+  if (storedEvidence.length > 0 && incomingEvidence.length === 0) {
+    alterStatements.push(`DROP TABLE IF EXISTS ${evidenceTable(schema, coll)}`);
+    plan.destructive.push(`${coll}.evidence: all evidence aspects removed`);
   }
-  if (storedSpaceHash !== incomingSpaceHash && incomingSpaceDim > 0) {
+  if (incomingEvidence.length > 0) {
+    const dims = new Set(incomingEvidence.map(([, def]) => def.dim));
+    if (dims.size !== 1) throw new Error(`collection ${coll}: evidence embeddings must share one dimension`);
+    const evTable = evidenceTable(schema, coll);
+    const scopeCols = (incoming.scopes ?? []).map((scope) => `  scope_${sanitiseIdent(scope)} text NOT NULL,\n`).join("");
+    alterStatements.push(`CREATE TABLE IF NOT EXISTS ${evTable} (\n${scopeCols}  doc_id text NOT NULL REFERENCES ${table}(id) ON DELETE CASCADE,\n  aspect text NOT NULL,\n  ord int NOT NULL,\n  vec halfvec(${incomingEvidence[0]![1].dim}) NOT NULL,\n  src text,\n  PRIMARY KEY (doc_id, aspect, ord)\n)`);
+    if (incomingEvidence.length === 1) {
+      alterStatements.push(`CREATE INDEX IF NOT EXISTS c_${sanitiseIdent(coll)}_evidence_vec_idx ON ${evTable} USING hnsw (vec halfvec_cosine_ops)`);
+    } else {
+      for (const [name] of incomingEvidence) {
+        alterStatements.push(`CREATE INDEX IF NOT EXISTS c_${sanitiseIdent(coll)}_evidence_${sanitiseIdent(name)}_idx ON ${evTable} USING hnsw (vec halfvec_cosine_ops) WHERE aspect = '${name.replace(/'/g, "''")}'`);
+      }
+    }
     reindex = true;
-    plan.reindexRequired.push(`${coll}: spaces definition changed`);
-  }
-  if (storedSpaceDim === 0 && incomingSpaceDim > 0) {
-    alterStatements.push(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS space_vec halfvec(${incomingSpaceDim})`);
-    alterStatements.push(`CREATE INDEX IF NOT EXISTS ${indexName(coll, "space_vec_idx")} ON ${table} USING hnsw (space_vec halfvec_cosine_ops)`);
-    plan.additions.push(`${coll}: add space_vec halfvec(${incomingSpaceDim}) + HNSW`);
-    reindex = true;
-    plan.reindexRequired.push(`${coll}: new spaces require backfill`);
-  } else if (storedSpaceDim > 0 && incomingSpaceDim > 0 && storedSpaceDim !== incomingSpaceDim) {
-    plan.destructive.push(`${coll}.space_vec: dimension change ${storedSpaceDim} → ${incomingSpaceDim}`);
-    alterStatements.push(`DROP INDEX IF EXISTS ${indexName(coll, "space_vec_idx")}`);
-    alterStatements.push(`ALTER TABLE ${table} DROP COLUMN IF EXISTS space_vec`);
-    alterStatements.push(`ALTER TABLE ${table} ADD COLUMN space_vec halfvec(${incomingSpaceDim})`);
-    alterStatements.push(`CREATE INDEX IF NOT EXISTS ${indexName(coll, "space_vec_idx")} ON ${table} USING hnsw (space_vec halfvec_cosine_ops)`);
-    reindex = true;
-    plan.reindexRequired.push(`${coll}: space_vec dimension changed — column recreated`);
-  }
-  if (storedSpaceDim > 0 && incomingSpaceDim === 0) {
-    alterStatements.push(`DROP INDEX IF EXISTS ${indexName(coll, "space_vec_idx")}`);
-    alterStatements.push(`ALTER TABLE ${table} DROP COLUMN IF EXISTS space_vec`);
+    plan.reindexRequired.push(`${coll}: evidence aspects require backfill`);
   }
 
   return { collection: coll, alterStatements, backfillStatements, reindex, plan };

@@ -29,6 +29,7 @@ export interface FilterCompileOpts {
   soft: boolean;
   excludeSoft?: boolean;
   excludeTerms?: string[];
+  columnPrefix?: string;
 }
 
 export interface CompiledFilter {
@@ -215,7 +216,9 @@ export function buildFilterSql(
     if (predicate.soft && opts.soft) softFieldsUsed.push(predicate.field);
 
     const fieldDef = def.fields[predicate.field]!;
-    const col = sanitiseIdent(predicate.field);
+    const col = opts.columnPrefix
+      ? `${opts.columnPrefix}.${sanitiseIdent(predicate.field)}`
+      : sanitiseIdent(predicate.field);
     const isArray = predicate.fieldType === "array";
 
     switch (predicate.operator) {
@@ -316,11 +319,11 @@ export function buildFilterSql(
   for (const term of opts.excludeTerms ?? []) {
     const searchableCols = Object.entries(def.fields)
       .filter(([, f]) => f.type === "text" && f.searchable)
-      .map(([k]) => `coalesce(${sanitiseIdent(k)}, '')`);
+      .map(([k]) => `coalesce(${opts.columnPrefix ? `${opts.columnPrefix}.` : ""}${sanitiseIdent(k)}, '')`);
     const textExpr =
       searchableCols.length > 0
-        ? `(coalesce(doc, '') || ' ' || ${searchableCols.join(" || ' ' || ")})`
-        : "coalesce(doc, '')";
+        ? `(coalesce(${opts.columnPrefix ? `${opts.columnPrefix}.` : ""}doc, '') || ' ' || ${searchableCols.join(" || ' ' || ")})`
+        : `coalesce(${opts.columnPrefix ? `${opts.columnPrefix}.` : ""}doc, '')`;
     clauses.push(`${textExpr} !~* ${next()}`);
     params.push(escapeRegex(term));
   }

@@ -72,6 +72,33 @@ Spaces capability ships but stays **off by default**. Flat-weighted segmented ve
 
 Verdict and engineering findings: [`docs/spaces-gate.md`](./docs/spaces-gate.md).
 
+## Aspects gate (C9, multi-aspect retrieval) — 2026-07-18
+
+Per-aspect retrieval (visual + facets legs, NLQ-routed) was gated on the enlarged harness
+(67 queries incl. typo + multilingual, k=5, cross-family judge `gpt-4.1-mini`) against a
+same-code same-corpus baseline (aspect legs zero-weighted), 5,512-doc corpus with full
+visual + facets backfill. Gate run + the protocol's two calibration runs:
+
+| metric (mean grade@5) | baseline | aspects run 1 | cal 1 (doc floored) | cal 2 (halved weights) |
+|---|---|---|---|---|
+| overall | **1.916** | 1.808 | 1.844 | 1.856 |
+| style | 2.075 | 1.825 | 1.675 | 1.65 |
+| local | 0.76 | 0.48 | 0.76 | 0.68 |
+| use-case | 1.92 | **2.12** | 2.08 | **2.10** |
+| negation | 1.70 | 1.70 | 1.95 | **2.00** |
+
+**Verdict: intent-mode aspect legs ship OFF by default** (same protocol as the V02g spaces
+gate). The visual leg consistently hurt style/overall regardless of routing and weight
+calibration; the doc embedding already carries style semantics. Two real findings survive:
+(1) facets evidence improves use-case (+0.18) and negation (+0.30) — the recorded follow-up
+is a facets-only intent experiment (per-query `weights.aspects` override is the sanctioned
+mechanism); (2) the image-query path through the `visual` aspect works and replaces spaces —
+verified live: an image query returns its own product at rank 1 via the visual leg (REQ-10).
+Artifacts: `evals/runs/2026-07-18T*aspects-{baseline,on,cal1,cal2}.*`.
+
+Note: these figures are not comparable to the historical parity tables above (different
+query count, k, judge family, and corpus size).
+
 ## Enrichment accuracy — the root-cause gate (separate from search relevance)
 
 Search relevance is downstream of enrichment: a mis-extracted color or missed neckline corrupts

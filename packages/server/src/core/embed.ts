@@ -33,7 +33,7 @@ function hasEmbedModality(req: EmbedRequest): boolean {
 }
 
 export const IMAGE_EMBED_CAPABILITY_ERROR =
-  "createMatcher's `embed` does not handle image inputs, but a collection declared an s.image space.\n\n" +
+  "createMatcher's `embed` does not handle image inputs, but a collection declared an image aspect.\n\n" +
   "Extend your embed function to accept optional `image: { url?, bytes?, mimeType? }` " +
   "(exactly one of text or image per request). Example using Gemini multimodal embedContent:\n\n" +
   "  createMatcher({\n" +
@@ -57,7 +57,7 @@ export const IMAGE_EMBED_CAPABILITY_ERROR =
   "      // ...existing text embed path\n" +
   "    },\n" +
   "  });\n\n" +
-  "Or remove the s.image space from collections that do not need image embeddings.";
+  "Or remove the image aspect from collections that do not need image embeddings.";
 
 export function toVectorLiteral(vec: number[]): string {
   return `[${vec.join(",")}]`;
@@ -104,7 +104,7 @@ export function makeEmbedService(ctx: MatcherCtx) {
     } catch (e) {
       if (req.image) {
         const msg = e instanceof Error ? e.message : String(e);
-        if (!msg.includes("s.image space")) {
+        if (!msg.includes("image aspect")) {
           throw new Error(`${IMAGE_EMBED_CAPABILITY_ERROR}\n\nUnderlying error: ${msg}`);
         }
       }

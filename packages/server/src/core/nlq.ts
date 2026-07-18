@@ -4,6 +4,7 @@ import type { MatcherCtx } from "../types.ts";
 import { makeStageCacheService } from "../db/stage-cache.ts";
 import { normalizeSchema } from "./schema-input.ts";
 import type { SearchFilters } from "./search.ts";
+import { embeddingEntries } from "./aspects.ts";
 
 const NLQ_CACHE_STAGE = "__nlq";
 const NLQ_CACHE_TTL_DAYS = 7;
@@ -15,8 +16,11 @@ function normalizeQuery(q: string): string {
 function nlqCacheKey(def: CollectionDef, q: string): string {
   const instr = def.search?.nlq?.instructions ?? "";
   const model = def.search?.nlq?.model ?? "default";
+  const aspects = embeddingEntries(def)
+    .map(([name, embedding]) => `${name}:${embedding.describe ?? name}`)
+    .join("|");
   return createHash("sha1")
-    .update(`nlq|${model}|${createHash("sha1").update(instr).digest("hex").slice(0, 12)}|${def.name}|${normalizeQuery(q)}`)
+    .update(`nlq|${model}|${createHash("sha1").update(instr).digest("hex").slice(0, 12)}|${createHash("sha1").update(aspects).digest("hex").slice(0, 12)}|${def.name}|${normalizeQuery(q)}`)
     .digest("hex");
 }
 
@@ -24,6 +28,7 @@ import { callWithTimeout, DEFAULT_NLQ_TIMEOUT_MS } from "./policy.ts";
 
 export interface NlqParsed {
   semantic_query: string;
+  aspects?: Record<string, { subQuery?: string; weight: number }>;
   [key: string]: unknown;
 }
 
@@ -127,11 +132,36 @@ export function deriveNlqSchema(def: CollectionDef): Record<string, unknown> {
     description:
       "descriptive intent stripped of price and negation constraints; never empty",
   };
+  const fragment = aspectsSchemaFragment(def);
+  if (fragment) properties.aspects = fragment;
 
   return {
     type: "OBJECT",
     properties,
     required: ["semantic_query"],
+  };
+}
+
+// Shared with parseNlq: custom nlq schemas (predating aspects, or filter-only) must still be
+// able to emit routing — without this property in the structured-output schema, constrained
+// decoding silently disables routing and every query runs all aspect legs at default weights
+// (the V02g flat-weights failure).
+export function aspectsSchemaFragment(def: CollectionDef): Record<string, unknown> | null {
+  if (embeddingEntries(def).length === 0) return null;
+  return {
+    type: "OBJECT",
+    description: "Aspect routing for retrieval. Omit aspects not referenced by the query.",
+    properties: Object.fromEntries(
+      embeddingEntries(def).map(([name, embedding]) => [name, {
+        type: "OBJECT",
+        properties: {
+          subQuery: { type: "STRING", description: "Focused fragment for this aspect" },
+          weight: { type: "NUMBER", minimum: 0, maximum: 1 },
+        },
+        required: ["weight"],
+        description: embedding.describe ?? name,
+      }])
+    ),
   };
 }
 
@@ -234,11 +264,32 @@ export function mergeFilters(
   return { ...nlqFilters, ...explicit };
 }
 
-function buildNlqPrompt(q: string, instructions?: string): string {
+function buildNlqPrompt(q: string, def: CollectionDef, instructions?: string): string {
   const parts: string[] = [];
   if (instructions?.trim()) parts.push(instructions.trim());
+  const aspects = embeddingEntries(def);
+  if (aspects.length) {
+    parts.push(
+      `Retrieval aspects:\n${aspects.map(([name, embedding]) => `- ${name}: ${embedding.describe ?? name}`).join("\n")}\nFor each aspect referenced by the query, assign a relevance weight from 0 to 1 and optionally provide a focused subQuery. Omit unreferenced aspects.`
+    );
+  }
   parts.push(`Query: "${q}"`);
   return parts.join("\n\n");
+}
+
+function normalizeAspectRoutes(def: CollectionDef, parsed: NlqParsed): NlqParsed {
+  const raw = parsed.aspects;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...parsed, aspects: undefined };
+  const allowed = new Set(embeddingEntries(def).map(([name]) => name));
+  const aspects: Record<string, { subQuery?: string; weight: number }> = {};
+  for (const [name, value] of Object.entries(raw)) {
+    if (!allowed.has(name) || !value || typeof value !== "object" || Array.isArray(value)) continue;
+    const record = value as Record<string, unknown>;
+    const rawWeight = typeof record.weight === "number" && Number.isFinite(record.weight) ? record.weight : 0;
+    const subQuery = typeof record.subQuery === "string" && record.subQuery.trim() ? record.subQuery.trim() : undefined;
+    aspects[name] = { ...(subQuery ? { subQuery } : {}), weight: Math.max(0, Math.min(1, rawWeight)) };
+  }
+  return { ...parsed, aspects };
 }
 
 async function generateWithTimeout(
@@ -270,7 +321,15 @@ export async function parseNlq(
     return fallback;
   }
 
-  const schema = normalizeSchema(def.search?.nlq?.schema ?? deriveNlqSchema(def));
+  const schema = normalizeSchema(def.search?.nlq?.schema ?? deriveNlqSchema(def)) as {
+    properties?: Record<string, unknown>;
+  };
+  // Custom (filter-only / pre-aspects) schemas still get the routing property — without it,
+  // constrained decoding can never emit `aspects` and routing silently dies (V02g redux).
+  const aspectFragment = aspectsSchemaFragment(def);
+  if (aspectFragment && schema?.properties && !schema.properties.aspects) {
+    schema.properties.aspects = aspectFragment;
+  }
   const instructions = def.search?.nlq?.instructions;
   // Caching is best-effort: minimal test/embedded contexts may lack system tables.
   const cache = ctx.systemTables?.samesakeStageCache ? makeStageCacheService(ctx) : null;
@@ -281,7 +340,7 @@ export async function parseNlq(
       const hit = (await cache.getStageCache(cacheKey)) as Record<string, unknown> | null;
       if (hit && typeof hit.semantic_query === "string") {
         ctx.observability?.inc("nlq_cache_hits");
-        const parsed: NlqParsed = { ...hit, semantic_query: hit.semantic_query };
+        const parsed = normalizeAspectRoutes(def, { ...hit, semantic_query: hit.semantic_query });
         const { filters, excludeTerms, budgetHints } = nlqParsedToFilters(parsed, def);
         return { parsed, degraded: false, filters, excludeTerms, budgetHints };
       }
@@ -293,7 +352,7 @@ export async function parseNlq(
   try {
     const raw = (await generateWithTimeout(ctx, {
       model: def.search?.nlq?.model,
-      prompt: buildNlqPrompt(q, instructions),
+      prompt: buildNlqPrompt(q, def, instructions),
       system: instructions,
       schema,
     })) as Record<string, unknown>;
@@ -303,7 +362,7 @@ export async function parseNlq(
         ? raw.semantic_query.trim()
         : q;
 
-    const parsed: NlqParsed = { ...raw, semantic_query: semantic };
+    const parsed = normalizeAspectRoutes(def, { ...raw, semantic_query: semantic });
     const { filters, excludeTerms, budgetHints } = nlqParsedToFilters(parsed, def);
     cache
       ?.setStageCache(cacheKey, NLQ_CACHE_STAGE, parsed, def.search?.nlq?.model ?? "default", NLQ_CACHE_TTL_DAYS)

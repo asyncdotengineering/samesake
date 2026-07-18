@@ -3,11 +3,34 @@
 **Category:** Architectural Change (eval-gated; successor to the spaces experiment)
 **Author:** Claude Fable 5 (session 2026-07-16, article adaptation)
 **Date:** 2026-07-16
-**Status:** Draft
+**Status:** Approved for build (2026-07-18) — full scope, next major version
 **Reviewers:** mithushancj
 **Related:** ["Multi-Aspect E-Commerce Semantic Engine Using Qdrant Multivectors"](https://pub.towardsai.net/multi-aspect-e-commerce-semantic-engine-using-qdrant-multivectors-e1e7aacaeab3) (Divy Yadav, 2026-07) · V02g spaces gate verdict (removed doc, recoverable: `git show b8a618a:docs/spaces-gate.md`) · `BENCHMARKS.md:62-73` (spaces failed the gate) · `ROADMAP.md:53-55` (SPLADE/ColBERT non-goals) · `packages/server/src/core/spaces.ts` · `packages/server/src/core/search.ts` · GitHub issue #88 (adjacent: trust/explain surface praised) · baseline SHA `02af1f8`
 
 ---
+
+## 0. Decision (2026-07-18)
+
+Approved at **full scope** — aspect columns + NLQ routing + the evidence/MaxSim leg together, no
+lean phase — shipping as the **next major version** (alpha policy: breaking changes embraced, no
+compat layers). The `spaces` subsystem is **deleted in the same release** (REQ-10, C10) once
+image-query parity holds: at no point do two vector-composition systems ship together, and there
+is no deprecation window.
+
+Spaces' signals migrate to their proper mechanisms rather than being replicated as similarity —
+the V02g lesson made permanent:
+
+| Spaces segment | Destination |
+|---|---|
+| `visual` (image) | the `visual` aspect (also the image-query/`similar`-mode target — Q4 resolved) |
+| `price` ramp | NLQ hard filters / budget hints + `RankingPolicy` business axis |
+| `freshness` decay | existing `recency` RRF channel + `RankingPolicy` newness axis |
+| `category` one-hot | category filter + category-coherence cutoff |
+
+Gate semantics are unchanged (REQ-8): a below-gate result still merges the intent-mode aspect
+legs OFF by default — but spaces deletion proceeds regardless, because spaces failed its own gate
+and is not the fallback; the `visual` aspect serves image/`similar` queries independent of the
+intent gate (REQ-10).
 
 ## 1. Problem Statement
 
@@ -62,8 +85,8 @@ predecessor failed):
   exists (none today — the current "review" module is enrichment QA, `review.ts`).
 - Deferred: query-image → aspect routing refinements (image queries already force `similar` mode;
   interaction with decomposition kept minimal in v1).
-- Deferred: deleting the `spaces` subsystem. Q3 proposes supersession; execution is a follow-up
-  breaking change once the gate passes.
+- In scope (decided 2026-07-18, §0): deleting the `spaces` subsystem in this same release —
+  REQ-10, C10. No deprecation window; the major ships exactly one vector-composition system.
 
 ## 2. Background
 
@@ -136,8 +159,8 @@ NLQ LLM pass (adding decomposition costs prompt tokens, not a new call); eval ch
 - NLQ decomposition adds schema surface to the parse; wrong routing zeroes a leg that would have
   helped. Mitigation: fallback = full query routed to every declared aspect with default weights
   (the article's fallback), decomposition only *narrows* on confident parses.
-- Two vector-composition systems exist until spaces is superseded (Q3); config docs must be
-  unambiguous about which to use (answer: this one; spaces stays off-default and deprecated).
+- Resolved by decision (§0): spaces is deleted in the same major release (C10) — no
+  coexistence, no deprecation window, no config-surface ambiguity to document.
 
 ## 3. Strict Requirements
 
@@ -169,6 +192,15 @@ NLQ LLM pass (adding decomposition costs prompt tokens, not a new call); eval ch
   with the artifact recorded (the V02g protocol).
 - REQ-9: Scope/tenancy, filters, dedup collapse, cutoff, and relevance-floor semantics apply to
   aspect legs identically to existing legs (structural guards, not per-leg opt-ins).
+- REQ-10: The `visual` aspect replaces the spaces image path for image/`similar`-mode queries
+  (active independent of the C9 intent gate, mirroring today's mode rules), and the existing
+  image-query fixtures must hold parity or better BEFORE C10 executes. C10 then deletes the
+  spaces subsystem wholesale in the same major release — `spaces.ts`, `space_vec` DDL/index,
+  `SpacesChannel` + the `s.*` space builders, spaces weights/plumbing in
+  `search.ts`/`search-query.ts`, `space_cosines` explain, the eval `spaces` attribution key, and
+  the `hello-spaces` example — sweeping producers, consumers, fixtures, and tests (full-surface
+  sweep, not just the runtime path). `space_vec` columns drop via the apply diff (destructive
+  migration, documented as the major-version break).
 
 ## 4. Interface Specification
 
@@ -368,6 +400,7 @@ prefetch-union analog is the existing RRF FULL OUTER JOIN (`search.ts:439-449`).
 | C7 | Query-side wiring: routed sub-query embeddings, multimodal text tower, weight multiplication | `search-query.ts`, `search.ts` | REQ-5, REQ-6, test:routing | "black floral dress for a beach wedding" routes visual+facets; "nike" keyword routes doc only |
 | C8 | Explain + eval attribution per aspect | `search.ts`, `eval/run.ts` | REQ-7, test:explain-aspects | Explain lists per-aspect rank/cosine; eval artifact attributes wins per aspect |
 | C9 | Gate experiment: fashion config with `visual` + `facets` aspects; run standing harness vs baseline; record artifact + verdict | `examples/fashion-search/`, `evals/runs/` | REQ-8, cmd:gate | Artifact committed; ON/OFF default decided by V02g thresholds |
+| C10 | Supersede spaces: port image-query path to the `visual` aspect (parity on image fixtures), then delete the spaces subsystem, DDL, config surface, examples, and tests | `spaces.ts` (deleted), `search.ts`, `search-query.ts`, `collections-schema-gen.ts`, `embed-index.ts`, `packages/sdk/src/types.ts`, `examples/hello-spaces/` (deleted), `examples/fashion-search/` | REQ-10, test:no-spaces-gate | Image fixtures ≥ parity via visual aspect; grep gate: no `spaces` symbols in `packages/server/src/core`; no-spaces collections' DDL/SQL still byte-identical (REQ-1) |
 
 ## 9. Validation and Testing
 
@@ -426,6 +459,8 @@ whitelist-filtered to declared aspect names (no LLM-controlled SQL identifiers).
 - Rollback: aspects are opt-in per collection config; removing extra embedding keys restores
   single-vector behavior; evidence table drops with the config (apply diff). REQ-1 guarantees
   non-opted collections never moved.
+- Spaces deletion (C10) is not runtime-rollbackable — a deployment that needs `spaces` stays on
+  the previous major. That is the major-version contract, chosen deliberately (§0).
 
 ## 12. Open Questions
 
@@ -437,15 +472,13 @@ whitelist-filtered to declared aspect names (no LLM-controlled SQL identifiers).
   beach weddings", "floral pattern") vs key:value strings ("occasions: beach_wedding").
   Tradeoff: embedding-space naturalness vs determinism. **Proposal:** natural phrases via a
   per-collection template (deterministic string build, no LLM at index time).
-- Q3: Supersede `spaces`? It ships off-default, failed its gate, and this RFC covers its intent
-  with better structure. Tradeoff: config-surface cleanliness (alpha, breaking changes embraced)
-  vs keeping number/recency/categorical segment encodings that aspects don't replicate.
-  **Proposal:** if C9 passes, file the follow-up breaking-change RFC to fold
-  number/recency/categorical signals into `RankingPolicy` axes and delete `spaces`; until then
-  docs mark spaces "superseded by aspects, do not adopt".
-- Q4: Should `visual` aspect double as the image-query (`similar` mode) target, replacing the
-  image-spaces path? **Proposal:** yes in the gate experiment (one visual system), measured by
-  the existing image-query fixtures before flipping.
+- Q3 — RESOLVED (2026-07-18, §0): delete `spaces` in this release (REQ-10, C10). The
+  number/recency/categorical segments are deliberately NOT replicated as similarity signals —
+  that encoding was the diagnosed V02g defect; each migrates to its proper mechanism per the §0
+  table.
+- Q4 — RESOLVED (2026-07-18, §0): yes — the `visual` aspect is the single visual system and the
+  image-query (`similar` mode) target; parity on the existing image-query fixtures is REQ-10's
+  precondition for C10.
 
 ## 13. Review findings (2026-07-18 validation pass)
 
@@ -506,3 +539,33 @@ execution MUST address:
   gate AFTER the lexical A/B fixture exists (BM25 itself was dropped 2026-07-18; the fixture
   survives — `rfc-bm25-lexical-leg.md` §0), so per-leg attribution can separate lexical-leg
   effects from aspect effects on the same harness.
+
+## 14. C9 execution record (2026-07-18, same night as the build)
+
+Built at full scope (C1–C10) and gated the same night on the real 5,512-doc corpus
+(full visual + facets backfill). Result: **gate FAILED — run 1 plus both protocol
+calibration runs** (artifacts `evals/runs/2026-07-18T*aspects-*`; summary table in
+`BENCHMARKS.md` "Aspects gate"). Verdict executed per §11: **intent-mode non-primary aspect
+legs OFF by default** (`parseSearchWeights` mode rule — the same rule + per-query
+`weights.aspects` override escape the spaces leg had); the capability ships; `similar`/image
+mode unaffected.
+
+Findings that amend this RFC's spec:
+
+- **REQ-5 amendment (calibration 1, kept):** the PRIMARY aspect never drops below its
+  configured weight when the router omits it — omit-means-zero applies to non-primary
+  aspects only. Run 1 measured −0.11 overall from the router silencing the doc leg
+  (the LLM omits `doc` routinely); an explicit routed weight of 0 still zeroes it.
+- **Thesis verdict:** "routing was V02g's missing piece" is falsified for the VISUAL aspect
+  on text intent — style regressed under every configuration (2.075 → 1.65–1.83); visual
+  similarity is not intent similarity, and the doc embedding already carries style. The
+  FACETS evidence leg showed real, consistent gains (use-case +0.18, negation +0.30) —
+  **follow-up experiment: facets-only intent aspects** via the per-query override.
+- **REQ-10 verified** after fixing an incomplete port found by live smoke: the image-only
+  rule zeroed the derived `weights.cosine` mirror but not `weights.aspects` — pure-image
+  queries ran text-kind legs on the "image query" placeholder at full weight. Fixed: image-
+  only queries run image-kind aspects exclusively. Parity proof: the query image's own
+  product returns at rank 1 via the visual leg (412ms, live corpus). Spaces deletion stands.
+- **Ingest findings** from the backfill (concurrency, watchdog, dead-letter direction, batch
+  APIs) are recorded in `docs/research/2026-07-18-ingestion-at-scale-notes.md` and feed the
+  ingest-at-scale RFC.

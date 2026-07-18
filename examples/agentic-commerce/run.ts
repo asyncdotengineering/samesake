@@ -1,4 +1,4 @@
-import { collection, f, Channels, s } from "../../packages/sdk/src/index.ts";
+import { collection, f, Channels } from "../../packages/sdk/src/index.ts";
 import { createDbFromUrl, createMatcher } from "../../packages/server/src/index.ts";
 import type { EmbedRequest } from "../../packages/server/src/types.ts";
 import { sql } from "../../packages/server/node_modules/drizzle-orm/index.js";
@@ -43,13 +43,16 @@ const products = collection(COLLECTION, {
     available: f.boolean({ filterable: true }),
     sizes: f.array({ type: "text" }, { filterable: true }),
   },
-  spaces: {
-    intent: s.text({ source: "$title", model: "demo-text", dim: 8 }),
-    visual: s.image({ source: "$image_url", model: "demo-image", dim: 8 }),
+  embeddings: {
+    doc: { source: "$title", model: "demo-text", dim: 8 },
+    visual: { kind: "image", source: "$image_url", model: "demo-image", dim: 8 },
   },
   search: {
-    channels: [Channels.fts({ fields: ["title"], weight: 1 }), Channels.spaces({ weight: 1 })],
-    defaultSpaceWeights: { intent: 1, visual: 1 },
+    channels: [
+      Channels.fts({ fields: ["title"], weight: 1 }),
+      Channels.cosine({ embedding: "doc", weight: 1 }),
+      Channels.cosine({ embedding: "visual", weight: 1 }),
+    ],
   },
 });
 

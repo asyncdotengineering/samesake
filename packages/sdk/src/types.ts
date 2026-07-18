@@ -240,6 +240,10 @@ export interface CollectionEmbeddingDef {
   model: string;
   dim: number;
   taskType?: string;
+  kind?: "text" | "image";
+  evidence?: boolean;
+  extract?: (ctx: DerivedDocContext) => string[];
+  describe?: string;
   /**
    * Template for the embedded document when the collection has no `indexing`
    * surfaces (`"$title $brand"` interpolates data/enriched values). Collections
@@ -267,73 +271,19 @@ export type RecencyChannel<F extends string> = {
   weight: number;
 };
 
-export type SpacesChannel = {
-  kind: "spaces";
-  weight: number;
-};
-
 export type TypedSearchChannel<F extends string, E extends string> =
   | FtsChannel<F>
   | CosineChannel<E>
-  | RecencyChannel<F | "updated_at">
-  | SpacesChannel;
+  | RecencyChannel<F | "updated_at">;
 
 export interface SearchChannelDef {
-  kind: "fts" | "cosine" | "recency" | "spaces";
+  kind: "fts" | "cosine" | "recency";
   weight: number;
   fields?: string[];
   embedding?: string;
   field?: string;
   halfLifeDays?: number;
 }
-
-export interface TextSpaceDef {
-  kind: "text";
-  source: string;
-  model: string;
-  dim: number;
-  taskType?: string;
-}
-
-export interface ImageSpaceDef {
-  kind: "image";
-  source: string;
-  model: string;
-  dim: number;
-  taskType?: string;
-}
-
-export interface NumberSpaceDef {
-  kind: "number";
-  field: string;
-  mode: "closer" | "max" | "min";
-  dims: number;
-  min: number;
-  max: number;
-  scale?: "linear" | "log";
-}
-
-export interface RecencySpaceDef {
-  kind: "recency";
-  field: string;
-  halfLifeDays: number;
-  dims: number;
-  staleAfterDays?: number;
-}
-
-export interface CategoricalSpaceDef {
-  kind: "categorical";
-  field: string;
-  values?: readonly string[];
-  dims: number;
-}
-
-export type SpaceDef =
-  | TextSpaceDef
-  | ImageSpaceDef
-  | NumberSpaceDef
-  | RecencySpaceDef
-  | CategoricalSpaceDef;
 
 export type RankingHardAxis = "availability" | "business";
 export type RankingSoftAxis = "newness" | "personalization" | "visual" | "business";
@@ -366,7 +316,6 @@ export interface RankingPolicy {
 export interface CollectionSearchDef {
   channels: SearchChannelDef[];
   combiner?: "rrf";
-  defaultSpaceWeights?: Record<string, number>;
   /**
    * Declared field whose value groups variants of the same product (e.g. a
    * parent/style id). When set, search collapses results to the best-scoring item
@@ -555,7 +504,6 @@ export interface CollectionDef {
   enrich?: PipelineDef;
   sources?: ConnectorDef[];
   embeddings?: Record<string, CollectionEmbeddingDef>;
-  spaces?: Record<string, SpaceDef>;
   search?: CollectionSearchDef;
   /**
    * Cross-vendor offer dedup: cluster listings of the same physical product so search
@@ -582,7 +530,7 @@ export type SearchWeightsInput<S extends string = string> = {
   fts?: number;
   cosine?: number;
   recency?: number;
-  spaces?: number | Partial<Record<S, number>>;
+  aspects?: number | Partial<Record<S, number>>;
 };
 
 /**

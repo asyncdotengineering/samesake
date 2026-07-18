@@ -1,4 +1,4 @@
-import { collection, f, Channels, pipeline, stage, s, fashion } from "@samesake/core";
+import { collection, f, Channels, pipeline, stage, fashion } from "@samesake/core";
 import { createMatcher } from "@samesake/server";
 import {
   CATEGORIES,
@@ -14,43 +14,23 @@ import { NLQ_MODEL, STAGE1_MODEL, STAGE2_MODEL, geminiEmbed, geminiGenerate } fr
 export const PROJECT = "fashionparity";
 export const COLLECTION = "products";
 
-// Visual commerce is the point: spaces + the image space are ON by default. This is now
-// intent-safe because search mode="intent" (the default for text queries) does not weight the
-// spaces/visual leg — so the intent parity gate is unaffected — while mode="similar" and image
-// queries get genuine visual + semantic similarity. Opt out with SPACES=0 / SPACES_VISUAL=0.
-const spacesEnabled = process.env.SPACES !== "0";
-const visualSpaceEnabled = process.env.SPACES_VISUAL !== "0";
-
-const fashionSpaces = {
-  // No `style` text-space here: it would duplicate Channels.cosine({embedding:"doc"}) (same
-  // $enriched.embed_doc source/model/dim) and push the segmented vector past pgvector's 2000-d
-  // HNSW limit. The cosine channel carries text semantics; the spaces leg carries the
-  // *complementary* signals — visual look, price, category, freshness.
-  price: s.number({
-    field: "price",
-    mode: "closer" as const,
-    dims: 8,
-    min: 0,
-    max: 50000,
-    scale: "log" as const,
-  }),
-  freshness: s.recency({ field: "ingested_at", halfLifeDays: 60, dims: 8 }),
-  category: s.categorical({
-    field: "category",
-    values: CATEGORIES.map((c) => c.id),
-    dims: 32,
-  }),
-  ...(visualSpaceEnabled
-    ? {
-        visual: s.image({
-          source: "$image_url",
-          model: "gemini-embedding-2",
-          dim: 768,
-          taskType: "RETRIEVAL_DOCUMENT",
-        }),
-      }
-    : {}),
-};
+function fashionFacetEvidence({ enriched }: { enriched: Record<string, unknown> }): string[] {
+  const claims: string[] = [];
+  const values = (key: string): string[] => {
+    const value = enriched[key];
+    return Array.isArray(value) ? value.map(String).filter((item) => item && item !== "unknown") : [];
+  };
+  for (const color of values("colors")) claims.push(`color ${color}`);
+  for (const occasion of values("occasions")) claims.push(`good for ${occasion}`);
+  for (const style of values("styles")) claims.push(`${style} style`);
+  const pattern = String(enriched.pattern ?? "");
+  if (pattern && pattern !== "unknown") claims.push(`${pattern} pattern`);
+  const material = String(enriched.material ?? "");
+  if (material && material !== "unknown") claims.push(`made from ${material}`);
+  const fit = String(enriched.fit ?? "");
+  if (fit && fit !== "unknown") claims.push(`${fit} fit`);
+  return claims;
+}
 
 export const productsCollection = collection("products", {
   fields: {
@@ -130,32 +110,39 @@ export const productsCollection = collection("products", {
       dim: 1536,
       taskType: "RETRIEVAL_DOCUMENT",
     },
+    visual: {
+      kind: "image",
+      source: "$image_url",
+      model: "gemini-embedding-2",
+      dim: 768,
+      taskType: "RETRIEVAL_DOCUMENT",
+      describe: "visual appearance and silhouette",
+    },
+    facets: {
+      evidence: true,
+      extract: fashionFacetEvidence,
+      model: "gemini-embedding-2",
+      dim: 1536,
+      taskType: "RETRIEVAL_DOCUMENT",
+      describe: "short claims about colors, occasions, styles, pattern, material, and fit",
+    },
   },
-  ...(spacesEnabled ? { spaces: fashionSpaces } : {}),
   search: {
     channels: [
       Channels.fts({ fields: ["title"], weight: 1 }),
       Channels.cosine({ embedding: "doc", weight: 1 }),
+      // ASPECTS=0 zero-weights the aspect legs (gated out of the SQL entirely) for the
+      // C9 same-code same-corpus baseline run; default ON is the gate candidate.
+      // Aspects are secondary signals (same philosophy as the intent-mode keyword tiebreaker):
+      // C9 cal-1 showed full-weight aspect legs dilute the doc+fts core via RRF fusion.
+      Channels.cosine({ embedding: "visual", weight: process.env.ASPECTS === "0" ? 0 : 0.5 }),
+      Channels.cosine({ embedding: "facets", weight: process.env.ASPECTS === "0" ? 0 : 0.3 }),
       Channels.recency({ field: "updated_at", halfLifeDays: 90, weight: 0 }),
-      ...(spacesEnabled ? [Channels.spaces({ weight: 1 })] : []),
     ],
     combiner: "rrf",
     // Absolute cosine floor (FTS matches exempt) — calibrated ≈0.5 for gemini-embedding-2;
     // suppresses no-match padding (queries with no real match return few/no results).
     relevanceFloor: 0.5,
-    ...(spacesEnabled
-      ? {
-          defaultSpaceWeights: {
-            freshness: 0.3,
-            price: 0.5,
-            category: 0.8,
-            // Visual leads the spaces leg so an image / similar-look query ranks by genuine
-            // look. (For text "intent" queries the spaces leg is off; for text "similar" the
-            // image segment is zeroed since there is no query image.)
-            ...(visualSpaceEnabled ? { visual: 2 } : {}),
-          },
-        }
-      : {}),
     nlq: {
       instructions: NLQ_INSTRUCTIONS,
       semanticRewrite: true,

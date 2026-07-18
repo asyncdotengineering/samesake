@@ -10,7 +10,6 @@
     "cli": "bun packages/cli/src/index.ts",
     "examples:hello": "bun examples/hello/run.ts",
     "examples:hello-search": "bun examples/hello-search/run.ts",
-    "examples:hello-spaces": "bun examples/hello-spaces/run.ts",
     "examples:quickstart": "bun examples/quickstart/run.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test packages/sdk packages/server packages/providers",

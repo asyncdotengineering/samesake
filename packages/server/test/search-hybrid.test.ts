@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed, testProductsCollection } from "./fixtures.ts";
-import { collection, f, Channels, gates, s } from "../../sdk/src/index.ts";
+import { collection, f, Channels, gates } from "../../sdk/src/index.ts";
 
 const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
@@ -229,14 +229,10 @@ describeIf("test:search-excludes-quarantined", () => {
     embeddings: {
       doc: { model: "test-embed", dim: 8 },
     },
-    spaces: {
-      style: s.text({ source: "$title", model: "test-embed", dim: 8 }),
-    },
     search: {
       channels: [
         Channels.fts({ fields: ["title"], weight: 1 }),
         Channels.cosine({ embedding: "doc", weight: 1 }),
-        Channels.spaces({ weight: 1 }),
       ],
     },
   });
@@ -267,8 +263,7 @@ describeIf("test:search-excludes-quarantined", () => {
     const { db, close } = createDbFromUrl(databaseUrl!);
     await db.execute(sql.raw(`
       UPDATE ${schemaName}.c_products
-      SET space_vec = embedding,
-          fts_src = title,
+      SET fts_src = title,
           pipeline_status = 'ready'
       WHERE id = '${targetId}'
     `));
@@ -289,26 +284,20 @@ describeIf("test:search-excludes-quarantined", () => {
     if (matcher) await matcher.close();
   });
 
-  test("test:search-excludes-quarantined from fts, cosine, and spaces", async () => {
+  test("test:search-excludes-quarantined from fts and cosine", async () => {
     const fts = await matcher.search(projectSlug, "products", {
       q: "quarantine target unique",
       limit: 10,
-      weights: { fts: 1, cosine: 0, spaces: 0 },
+      weights: { fts: 1, cosine: 0 },
     });
     expect(fts.hits.some((h) => h.id === targetId)).toBe(false);
 
     const cosine = await matcher.search(projectSlug, "products", {
       q: "quarantine target unique",
       limit: 10,
-      weights: { fts: 0, cosine: 1, spaces: 0 },
+      weights: { fts: 0, cosine: 1 },
     });
     expect(cosine.hits.some((h) => h.id === targetId)).toBe(false);
 
-    const spaces = await matcher.search(projectSlug, "products", {
-      q: "quarantine target unique",
-      limit: 10,
-      weights: { fts: 0, cosine: 0, spaces: 1 },
-    });
-    expect(spaces.hits.some((h) => h.id === targetId)).toBe(false);
   });
 });

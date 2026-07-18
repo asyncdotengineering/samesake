@@ -1,8 +1,8 @@
 {
-  "name": "samesake-example-hello-spaces",
+  "name": "samesake-example-hello-aspects",
   "type": "module",
   "private": true,
-  "description": "Spaces demo: segmented vector + query-time weight flip. No LLM required.",
+  "description": "Offline multi-aspect retrieval example with evidence and visual vectors.",
   "dependencies": {
     "drizzle-orm": "^0.45.2",
     "@samesake/core": "workspace:*",
