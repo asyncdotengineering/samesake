@@ -10,19 +10,19 @@ import type { ProjectsService, ProjectRow } from "./projects.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
 import { ftsLanguage } from "./collections-schema-gen.ts";
 import { collectionTableName } from "./db-utils.ts";
-import { assembleQueryVector, weightedSegmentCosines } from "./spaces.ts";
 import { searchResultCache, type SearchCacheKey } from "./search-cache.ts";
 import { buildFilterSql, type FilterCompileOpts, type SearchFilters } from "./search-filter.ts";
 import { applyCutoff, type CutoffEvidence } from "./cutoff.ts";
 import { appendScopeSql, resolveScope } from "./scope.ts";
 import {
-  buildQueryImageVectors,
-  buildQuerySpaceSegments,
+  buildQueryAspectImageVectors,
   parseSearchWeights,
+  resolveAspectPlans,
+  type AspectPlan,
   type ChannelWeights,
 } from "./search-query.ts";
+import { embeddingColumn, embeddingEntries, evidenceEntries, evidenceTable, EVIDENCE_OVERFETCH_FACTOR } from "./aspects.ts";
 
-export { weightedSegmentCosines } from "./spaces.ts";
 export {
   buildFilterSql,
   normalizeFiltersToConstraintPredicates,
@@ -43,6 +43,8 @@ export interface IndexDocumentRow {
   content_hash?: string;
   doc?: string | null;
   embedding?: number[] | null;
+  embeddings?: Record<string, number[] | null>;
+  evidence?: Record<string, Array<{ src: string; vector: number[] }>>;
   fields?: Record<string, unknown>;
 }
 
@@ -79,10 +81,9 @@ export interface ExplainDocBreakdown {
   id: string;
   fts_rank: number | null;
   cosine_rank: number | null;
-  spaces_rank: number | null;
   recency_rank: number | null;
   rrf_score: number;
-  space_cosines?: Record<string, number>;
+  aspect_ranks?: Record<string, { rank: number | null; cosine: number | null }>;
 }
 
 export interface SearchExplainResult {
@@ -168,8 +169,7 @@ interface Retrieval {
   filterOpts: FilterCompileOpts;
   semanticText: string;
   vector: number[] | null;
-  spaceSegments: Awaited<ReturnType<typeof buildQuerySpaceSegments>> | null;
-  spaceVector: number[] | null;
+  aspectPlans: AspectPlan[];
   efSearch: number | null;
 }
 
@@ -266,8 +266,7 @@ async function runHybridQuery(
   def: CollectionDef,
   collection: string,
   q: string,
-  vector: number[] | null,
-  spaceVector: number[] | null,
+  aspectPlans: AspectPlan[],
   filters: SearchFilters,
   filterOpts: FilterCompileOpts,
   weights: ChannelWeights,
@@ -286,56 +285,42 @@ async function runHybridQuery(
 }> {
   const table = collectionTableName(schema, collection);
   const params: unknown[] = [];
-  const addParam = (v: unknown) => {
-    params.push(v);
+  const addParam = (value: unknown): string => {
+    params.push(value);
     return `$${params.length}`;
   };
-
+  const activePlans = aspectPlans.filter((plan) => plan.weight > 0 && plan.queryVector !== null);
   const hasFts = weights.fts > 0;
-  const hasCos = weights.cosine > 0 && vector !== null;
-  const hasSpc = weights.spaces > 0 && spaceVector !== null;
+  const hasCos = activePlans.length > 0;
   const hasRec = weights.recency > 0;
-  // Absolute semantic floor (passed in by the caller, already gated to skip
-  // structured-intent queries). A hit with no FTS keyword match must clear this
-  // query–document cosine similarity, else it is dropped (suppresses no-match
-  // padding). Only applies when a cosine leg is active.
   const needCosFloor = relevanceFloor !== null && hasCos;
   const recField = sanitiseIdent(weights.recencyField);
   const fieldCols = Object.keys(def.fields).map((k) => `d.${sanitiseIdent(k)}`).join(", ");
-  // Dedup collapse/offers need the cluster id on each hit. Selected only for
-  // dedup-enabled collections, so a dedup-less collection's SQL is byte-identical.
   const dedupGroupCol = def.dedup ? sanitiseIdent(def.dedup.groupField ?? "product_group") : null;
   const extraCols = dedupGroupCol ? `, d.${dedupGroupCol}` : "";
-
   const qRef = hasFts ? addParam(q) : null;
-  const vecRef = hasCos && vector ? addParam(toVectorLiteral(vector)) : null;
-  const spcRef = hasSpc && spaceVector ? addParam(toVectorLiteral(spaceVector)) : null;
+  const vectorRefs = new Map<string, string>();
+  for (const plan of activePlans) vectorRefs.set(plan.name, addParam(toVectorLiteral(plan.queryVector!)));
 
-  // Tenancy: the scope is a structural guard on every leg, alongside
-  // pipeline-status visibility — not a caller filter.
   const scopeCond = Object.entries(scopeCols)
-    .map(([col, v]) => `${col} = ${addParam(v)}`)
+    .map(([col, value]) => `${col} = ${addParam(value)}`)
     .join(" AND ");
   const visibility = scopeCond
     ? `(pipeline_status = 'ready' OR pipeline_status IS NULL) AND ${scopeCond}`
     : "(pipeline_status = 'ready' OR pipeline_status IS NULL)";
-
   const compiled = buildFilterSql(filters, def, filterOpts, params.length + 1);
   const where = compiled.where === "true" ? visibility : `${compiled.where} AND ${visibility}`;
   params.push(...compiled.params);
-
   const limitRef = addParam(limit);
   const offsetRef = addParam(offset);
 
   let query: string;
-
-  if (!hasFts && !hasCos && !hasSpc) {
+  if (!hasFts && !hasCos) {
     if (mode === "explain") {
       query = `
         SELECT d.id,
                NULL::int AS fts_rank,
                NULL::int AS cosine_rank,
-               NULL::int AS spaces_rank,
                NULL::int AS recency_rank,
                0::float AS rrf_score
         FROM ${table} d
@@ -358,24 +343,11 @@ async function runHybridQuery(
     }
   } else {
     const ctes: string[] = [];
-    const rankLegs: Array<{ cte: string; alias: string; weight: number }> = [];
-
+    const rankLegs: Array<{ name: string; cte: string; alias: string; weight: number }> = [];
     if (hasFts && qRef) {
-      // AND-coverage-first, OR-fallback lexical match. websearch_to_tsquery ANDs bare terms, so a
-      // multi-term query ("flowy black cocktail dress") matches nothing unless one doc carries
-      // every term — the leg goes inert. We gate candidates with the OR rewrite (recall) but rank
-      // by the strict AND query first, then the OR query: docs matching ALL terms stay on top
-      // (precision preserved for exact queries like "linen shirt men"), and partial matches only
-      // fill in when nothing matches everything (fixes the inert-on-long-queries failure).
-      // The collection's `language` picks the stemmer; unaccent() folds query accents to match
-      // the normalised fts column while preserving websearch operators (quotes, minus) that
-      // samesake_normalise would strip.
       const lang = ftsLanguage(def);
       const andTsq = `websearch_to_tsquery('${lang}', unaccent(${qRef}))`;
       const orTsq = `nullif(replace(${andTsq}::text, '&', '|'), '')::tsquery`;
-      // Cross-script phonetic fallback (search.phonetic + a configured provider):
-      // OR the query's per-token phonetic codes into the candidate set so e.g.
-      // "අම්මා" reaches docs that only carry the Latin transliteration.
       const phonActive = !!def.search?.phonetic && !!ctx.phonetic;
       const phonTsq = phonActive
         ? `nullif(replace(plainto_tsquery('simple', ${sanitiseIdent(ctx.schema)}.samesake_phonetic_tokens(${qRef}))::text, '&', '|'), '')::tsquery`
@@ -388,54 +360,71 @@ async function runHybridQuery(
         WHERE (fts @@ ${orTsq}${phonTsq ? ` OR fts_phon @@ ${phonTsq}` : ""}) AND ${where}
         LIMIT ${CANDIDATES}
       )`);
-      rankLegs.push({ cte: "lex", alias: "l", weight: weights.fts });
+      rankLegs.push({ name: "fts", cte: "lex", alias: "l", weight: weights.fts });
     }
 
-    if (hasCos && vecRef) {
-      // cos is retrieval evidence for the relevanceFloor AND the result-cutoff
-      // layer — always selected (explain mode simply ignores it).
-      const cosCol = `, (1 - (embedding <=> ${vecRef}::halfvec))::float AS cos`;
-      ctes.push(`sem AS (
-        SELECT id, row_number() OVER (ORDER BY embedding <=> ${vecRef}::halfvec) AS rn${cosCol}
-        FROM ${table}
-        WHERE embedding IS NOT NULL AND ${where}
-        ORDER BY embedding <=> ${vecRef}::halfvec
-        LIMIT ${CANDIDATES}
-      )`);
-      rankLegs.push({ cte: "sem", alias: "s", weight: weights.cosine });
+    for (const plan of activePlans) {
+      const allEntries = embeddingEntries(def);
+      const index = allEntries.findIndex(([name]) => name === plan.name);
+      const vecRef = vectorRefs.get(plan.name)!;
+      const safe = sanitiseIdent(plan.name);
+      const cte = activePlans.length === 1 ? "sem" : `aspect_${safe}`;
+      const alias = activePlans.length === 1 ? "s" : `a_${safe}`;
+      if (plan.embedding.evidence === true) {
+        const evAspectRef = addParam(plan.name);
+        const evScope = Object.entries(scopeCols)
+          .map(([col, value]) => `e.${col} = ${addParam(value)}`)
+          .join(" AND ");
+        const innerCompiled = buildFilterSql(filters, def, { ...filterOpts, columnPrefix: "d" }, params.length + 1);
+        params.push(...innerCompiled.params);
+        const innerWhere = innerCompiled.where === "true" ? "true" : innerCompiled.where;
+        const innerGuards = [
+          `e.aspect = ${evAspectRef}`,
+          `(d.pipeline_status = 'ready' OR d.pipeline_status IS NULL)`,
+          evScope || "true",
+          innerWhere,
+        ].join(" AND ");
+        ctes.push(`${cte} AS (
+          SELECT e.doc_id AS id,
+                 row_number() OVER (ORDER BY max(1 - (e.vec <=> ${vecRef}::halfvec)) DESC) AS rn,
+                 max(1 - (e.vec <=> ${vecRef}::halfvec))::float AS cos
+          FROM (
+            SELECT e.doc_id, e.vec
+            FROM ${evidenceTable(schema, collection)} e
+            JOIN ${table} d ON d.id = e.doc_id
+            WHERE ${innerGuards}
+            ORDER BY e.vec <=> ${vecRef}::halfvec
+            LIMIT ${CANDIDATES * EVIDENCE_OVERFETCH_FACTOR}
+          ) e
+          GROUP BY e.doc_id
+          ORDER BY cos DESC
+          LIMIT ${CANDIDATES}
+        )`);
+      } else {
+        const column = embeddingColumn(plan.name, index);
+        ctes.push(`${cte} AS (
+          SELECT id, row_number() OVER (ORDER BY ${column} <=> ${vecRef}::halfvec) AS rn,
+                 (1 - (${column} <=> ${vecRef}::halfvec))::float AS cos
+          FROM ${table}
+          WHERE ${column} IS NOT NULL AND ${where}
+          ORDER BY ${column} <=> ${vecRef}::halfvec
+          LIMIT ${CANDIDATES}
+        )`);
+      }
+      rankLegs.push({ name: plan.name, cte, alias, weight: plan.weight });
     }
 
-    if (hasSpc && spcRef) {
-      ctes.push(`spc AS (
-        SELECT id, row_number() OVER (ORDER BY space_vec <=> ${spcRef}::halfvec) AS rn
-        FROM ${table}
-        WHERE space_vec IS NOT NULL AND ${where}
-        ORDER BY space_vec <=> ${spcRef}::halfvec
-        LIMIT ${CANDIDATES}
-      )`);
-      rankLegs.push({ cte: "spc", alias: "p", weight: weights.spaces });
-    }
-
-    const candidateUnion = rankLegs.map((l) => `SELECT id FROM ${l.cte}`).join(" UNION ");
-
+    const candidateUnion = rankLegs.map((leg) => `SELECT id FROM ${leg.cte}`).join(" UNION ");
     if (hasRec && candidateUnion) {
       ctes.push(`rec AS (
         SELECT t.id,
-               row_number() OVER (
-                 ORDER BY exp(
-                   -ln(2) * extract(epoch FROM (now() - t.${recField})) / 86400.0 / ${weights.recencyHalfLife}
-                 ) DESC
-               ) AS rn
+               row_number() OVER (ORDER BY exp(-ln(2) * extract(epoch FROM (now() - t.${recField})) / 86400.0 / ${weights.recencyHalfLife}) DESC) AS rn
         FROM (${candidateUnion}) c
         JOIN ${table} t ON t.id = c.id
       )`);
     }
-
-    const scoreExprs = rankLegs.map(
-      (l) => `COALESCE(${l.weight}::float / (${RRF_K} + ${l.alias}.rn), 0)`
-    );
+    const scoreExprs = rankLegs.map((leg) => `COALESCE(${leg.weight}::float / (${RRF_K} + ${leg.alias}.rn), 0)`);
     if (hasRec) scoreExprs.push(`COALESCE(${weights.recency}::float / (${RRF_K} + r.rn), 0)`);
-
     let fusedFrom = `FROM ${rankLegs[0]!.cte} ${rankLegs[0]!.alias}`;
     let fusedId = `${rankLegs[0]!.alias}.id`;
     for (let i = 1; i < rankLegs.length; i++) {
@@ -447,11 +436,20 @@ async function runHybridQuery(
       fusedFrom += ` FULL OUTER JOIN rec r ON ${fusedId} = r.id`;
       fusedId = `COALESCE(${fusedId}, r.id)`;
     }
-
     const ftsRankCol = hasFts ? "l.rn::int" : "NULL::int";
-    const cosRankCol = hasCos ? "s.rn::int" : "NULL::int";
-    const spcRankCol = hasSpc ? "p.rn::int" : "NULL::int";
+    const firstAspectLeg = rankLegs.find((leg) => leg.name !== "fts");
+    const cosRankCol = firstAspectLeg ? `${firstAspectLeg.alias}.rn::int` : "NULL::int";
     const recRankCol = hasRec ? "r.rn::int" : "NULL::int";
+    const explainAspects = embeddingEntries(def).length > 1;
+    const aspectFields = explainAspects
+      ? embeddingEntries(def).flatMap(([name]) => {
+          const leg = rankLegs.find((candidate) => candidate.name === name);
+          const safe = sanitiseIdent(name);
+          return leg
+            ? [`${leg.alias}.rn::int AS aspect_${safe}_rank`, `${leg.alias}.cos::float AS aspect_${safe}_cosine`]
+            : [`NULL::int AS aspect_${safe}_rank`, `NULL::float AS aspect_${safe}_cosine`];
+        })
+      : [];
     if (mode === "explain") {
       query = `
         WITH ${ctes.join(", ")},
@@ -459,12 +457,11 @@ async function runHybridQuery(
           SELECT ${fusedId} AS id,
                  ${ftsRankCol} AS fts_rank,
                  ${cosRankCol} AS cosine_rank,
-                 ${spcRankCol} AS spaces_rank,
                  ${recRankCol} AS recency_rank,
-                 (${scoreExprs.join(" + ")}) AS rrf_score
+                 (${scoreExprs.join(" + ")}) AS rrf_score${aspectFields.length ? `, ${aspectFields.join(", ")}` : ""}
           ${fusedFrom}
         )
-        SELECT id, fts_rank, cosine_rank, spaces_rank, recency_rank, rrf_score::float AS rrf_score
+        SELECT id, fts_rank, cosine_rank, recency_rank, rrf_score::float AS rrf_score${aspectFields.length ? `, ${aspectFields.map((field) => field.split(" AS ")[1]).join(", ")}` : ""}
         FROM fused
         WHERE id IS NOT NULL
         ORDER BY rrf_score DESC
@@ -472,11 +469,10 @@ async function runHybridQuery(
       `;
     } else {
       const floorRef = needCosFloor ? addParam(relevanceFloor) : null;
-      // Per-hit retrieval evidence (lexical match, semantic cosine), consumed by
-      // the relevanceFloor WHERE below and the result-cutoff layer in TS.
+      const firstCos = firstAspectLeg ? `${firstAspectLeg.alias}.cos` : "NULL::float";
       const evidenceCols = `,
                  ${hasFts ? "(l.rn IS NOT NULL)" : "FALSE"} AS fts_present,
-                 ${hasCos ? "s.cos" : "NULL::float"} AS cos_sim`;
+                 ${firstCos} AS cos_sim`;
       const floorWhere = needCosFloor ? ` AND (fts_present OR cos_sim >= ${floorRef})` : "";
       query = `
         WITH ${ctes.join(", ")},
@@ -501,38 +497,19 @@ async function runHybridQuery(
     }
   }
 
-  // ANN session settings: iterative scans (pgvector 0.8+) keep filtered vector
-  // queries from under-returning (HNSW post-filter starvation); ef_search is the
-  // caller's recall/latency dial. SET LOCAL scopes both to this transaction.
   const settings: string[] = [];
-  if (hasCos || hasSpc) {
+  if (hasCos) {
     const pgv = await ctx.storage.pgvectorVersion();
     if (pgv) {
-      if (pgv[0] > 0 || pgv[1] >= 8) {
-        settings.push(`SET LOCAL hnsw.iterative_scan = 'relaxed_order'`);
-      }
-      if (efSearch != null) {
-        const ef = Math.max(10, Math.min(1000, Math.floor(efSearch)));
-        settings.push(`SET LOCAL hnsw.ef_search = ${ef}`);
-      }
+      if (pgv[0] > 0 || pgv[1] >= 8) settings.push("SET LOCAL hnsw.iterative_scan = 'relaxed_order'");
+      if (efSearch != null) settings.push(`SET LOCAL hnsw.ef_search = ${Math.max(10, Math.min(1000, Math.floor(efSearch)))}`);
     }
   }
-  const rows = await ctx.storage.unsafeWithSettings(
-    "parameterized search query",
-    settings,
-    query,
-    params
-  );
-  const totalCandidates =
-    mode === "explain"
-      ? rows.length
-      : rows.length > 0
-        ? Number(rows[0]!.total_candidates ?? rows.length)
-        : 0;
+  const rows = await ctx.storage.unsafeWithSettings("parameterized search query", settings, query, params);
   return {
     rows,
     softFieldsUsed: compiled.softFieldsUsed,
-    totalCandidates,
+    totalCandidates: mode === "explain" ? rows.length : rows.length > 0 ? Number(rows[0]!.total_candidates ?? rows.length) : 0,
     filterSql: where,
     filterParams: compiled.params,
   };
@@ -561,22 +538,28 @@ export function makeSearchService(
     if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
 
     const table = collectionTableName(project.schema_name, collectionName);
-    const fieldCols = Object.keys(def.fields).map((k) => sanitiseIdent(k));
+    const fieldKeys = Object.keys(def.fields);
+    const fieldCols = fieldKeys.map((k) => sanitiseIdent(k));
+    const embEntries = embeddingEntries(def);
+    const nonEvidenceEntries = embEntries.filter(([, embedding]) => embedding.evidence !== true);
+    const evidence = evidenceEntries(def);
     let indexed = 0;
 
     for (const row of rows) {
-      const cols = ["id", "data", "enriched", "content_hash", "doc", "embedding", ...fieldCols];
+      const aspectColumns = nonEvidenceEntries.map(([name], index) => embeddingColumn(name, embEntries.findIndex(([key]) => key === name)));
+      const cols = ["id", "data", "enriched", "content_hash", "doc", ...aspectColumns, ...fieldCols];
+      const firstName = embEntries[0]?.[0];
       const values: unknown[] = [
         row.id,
         JSON.stringify(row.data),
         row.enriched ? JSON.stringify(row.enriched) : null,
         row.content_hash ?? "test",
         row.doc ?? null,
-        row.embedding ? toVectorLiteral(row.embedding) : null,
-        ...fieldCols.map((c) => {
-          const orig = Object.keys(def.fields).find((k) => sanitiseIdent(k) === c);
-          return orig ? (row.fields?.[orig] ?? null) : null;
+        ...nonEvidenceEntries.map(([name]) => {
+          const vector = row.embeddings?.[name] ?? (name === firstName ? row.embedding : null);
+          return vector ? toVectorLiteral(vector) : null;
         }),
+        ...fieldKeys.map((name) => row.fields?.[name] ?? null),
       ];
 
       const placeholders = values.map((_, i) => `$${i + 1}`).join(", ");
@@ -591,6 +574,19 @@ export function makeSearchService(
          ON CONFLICT (id) DO UPDATE SET ${updateSet}, indexed_at = now(), pipeline_status = 'ready', updated_at = now()`,
         values
       );
+      if (evidence.length > 0) {
+        const evRows = Object.entries(row.evidence ?? {}).flatMap(([aspect, values]) =>
+          values.map((value, ord) => ({ aspect, ord, src: value.src, vector: toVectorLiteral(value.vector) }))
+        );
+        const evTable = evidenceTable(project.schema_name, collectionName);
+        await ctx.storage.client("parameterized search query").unsafe(`DELETE FROM ${evTable} WHERE doc_id = $1`, [row.id]);
+        for (const ev of evRows) {
+          await ctx.storage.client("parameterized search query").unsafe(
+            `INSERT INTO ${evTable} (doc_id, aspect, ord, vec, src) VALUES ($1, $2, $3, $4, $5)`,
+            [row.id, ev.aspect, ev.ord, ev.vector, ev.src]
+          );
+        }
+      }
       indexed++;
     }
 
@@ -633,46 +629,19 @@ export function makeSearchService(
     };
 
     const semanticText = nlq.parsed.semantic_query || q || "image query";
-    const imageVectors = await buildQueryImageVectors(def, opts.image, embedService, ctx.groundImage);
-
-    let vector: number[] | null = null;
-    const embKey = def.embeddings ? Object.keys(def.embeddings)[0] : null;
-    const needsQueryEmbed =
-      (embKey && weights.cosine > 0) ||
-      (weights.spaces > 0 &&
-        def.spaces &&
-        Object.values(def.spaces).some((s) => s.kind === "text" || s.kind === "image"));
-    if (embKey && needsQueryEmbed) {
-      const embDef = def.embeddings![embKey]!;
-      try {
-        vector = await embedService.embedQuery({
-          text: semanticText,
-          model: embDef.model,
-          dim: embDef.dim,
-          taskType: embDef.taskType ?? "RETRIEVAL_QUERY",
-          inputType: "query",
-        });
-      } catch {
-        vector = null;
-      }
-    }
-
-    let spaceSegments: Awaited<ReturnType<typeof buildQuerySpaceSegments>> | null = null;
-    let spaceVector: number[] | null = null;
-    if (weights.spaces > 0 && def.spaces && Object.keys(def.spaces).length > 0) {
-      spaceSegments = await buildQuerySpaceSegments(
-        def,
-        vector,
-        imageVectors,
-        mergedFilters,
-        weights.spaceSegmentWeights,
-        embedService,
-        semanticText
-      );
-      if (spaceSegments) {
-        spaceVector = assembleQueryVector(spaceSegments.segments, spaceSegments.weights, spaceSegments.dims);
-      }
-    }
+    const imageVectors = await buildQueryAspectImageVectors(def, opts.image, embedService, ctx.groundImage);
+    const aspectPlans = await resolveAspectPlans(
+      def,
+      weights,
+      nlq,
+      semanticText,
+      q,
+      mode,
+      hasImage,
+      imageVectors,
+      embedService
+    );
+    const vector = aspectPlans[0]?.queryVector ?? null;
 
     return {
       project,
@@ -688,8 +657,7 @@ export function makeSearchService(
       filterOpts,
       semanticText,
       vector,
-      spaceSegments,
-      spaceVector,
+      aspectPlans,
       efSearch: opts.efSearch ?? null,
     };
   }
@@ -722,8 +690,7 @@ export function makeSearchService(
       r.def,
       r.collectionName,
       r.q,
-      r.vector,
-      r.spaceVector,
+      r.aspectPlans,
       r.mergedFilters,
       r.filterOpts,
       r.weights,
@@ -748,8 +715,7 @@ export function makeSearchService(
         r.def,
         r.collectionName,
         r.q,
-        r.vector,
-        r.spaceVector,
+        r.aspectPlans,
         r.mergedFilters,
         { ...r.filterOpts, excludeSoft: true },
         r.weights,
@@ -867,46 +833,28 @@ export function makeSearchService(
       "explain"
     );
 
-    const table = collectionTableName(r.project.schema_name, r.collectionName);
-    const spaceCosinesById = new Map<string, Record<string, number>>();
-    if (r.weights.spaces > 0 && r.spaceSegments && rows.length) {
-      const segs = r.spaceSegments;
-      const ids = rows.map((row) => String(row.id));
-      const vecRows = await ctx.storage.client("parameterized search query").unsafe(
-        `SELECT id, space_vec::text AS space_vec FROM ${table} WHERE id = ANY($1::text[])`,
-        [ids]
-      );
-      for (const vr of vecRows) {
-        const id = String(vr.id);
-        const raw = String(vr.space_vec ?? "");
-        const docVec = raw
-          .replace(/^\[/, "")
-          .replace(/\]$/, "")
-          .split(",")
-          .map((x) => Number(x.trim()))
-          .filter((x) => Number.isFinite(x));
-        if (!docVec.length) continue;
-        const cosines = weightedSegmentCosines(docVec, segs.segments, segs.weights, segs.dims);
-        const perSpace: Record<string, number> = {};
-        segs.keys.forEach((k, i) => {
-          perSpace[k] = cosines[i] ?? 0;
-        });
-        spaceCosinesById.set(id, perSpace);
-      }
-    }
-
     const docs: ExplainDocBreakdown[] = rows.map((row) => {
       const id = String(row.id);
       const breakdown: ExplainDocBreakdown = {
         id,
         fts_rank: row.fts_rank == null ? null : Number(row.fts_rank),
         cosine_rank: row.cosine_rank == null ? null : Number(row.cosine_rank),
-        spaces_rank: row.spaces_rank == null ? null : Number(row.spaces_rank),
         recency_rank: row.recency_rank == null ? null : Number(row.recency_rank),
         rrf_score: Number(row.rrf_score ?? 0),
       };
-      const sc = spaceCosinesById.get(id);
-      if (sc) breakdown.space_cosines = sc;
+      if (embeddingEntries(r.def).length > 1) {
+        const aspectRanks: Record<string, { rank: number | null; cosine: number | null }> = {};
+        for (const [name] of embeddingEntries(r.def)) {
+          const safe = sanitiseIdent(name);
+          const rank = row[`aspect_${safe}_rank`];
+          const cosine = row[`aspect_${safe}_cosine`];
+          aspectRanks[name] = {
+            rank: rank == null ? null : Number(rank),
+            cosine: cosine == null ? null : Number(cosine),
+          };
+        }
+        breakdown.aspect_ranks = aspectRanks;
+      }
       return breakdown;
     });
 
