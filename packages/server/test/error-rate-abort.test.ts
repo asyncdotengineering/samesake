@@ -106,7 +106,7 @@ describeIf("test:error-rate-abort (REQ-18)", () => {
     await db.execute(sql.raw(`DROP SCHEMA IF EXISTS ${r.schema} CASCADE`));
     await close();
     await okMatcher.close();
-  });
+  }, 30_000);
 });
 
 describeIf("test:error-rate-abort index path (REQ-18)", () => {

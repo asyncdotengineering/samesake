@@ -97,7 +97,7 @@ describeIf("eval run", () => {
     const { db, close } = createDbFromUrl(databaseUrl!);
     await db.execute(sql.raw(`UPDATE ${schemaName}.c_products SET fts_src = title`));
     await close();
-  });
+  }, 30_000);
 
   afterAll(async () => {
     if (artifactDir) await rm(artifactDir, { recursive: true, force: true });
@@ -108,7 +108,7 @@ describeIf("eval run", () => {
       await close();
     }
     if (matcher) await matcher.close();
-  });
+  }, 30_000);
 
   test("test:eval-run end-to-end writes artifact and evaluates thresholds", { timeout: 20_000 }, async () => {
     // REQ-3 and REQ-9 intentionally add cold parsing and progressive probe/retry work.
