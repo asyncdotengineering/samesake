@@ -24,6 +24,7 @@ function hasIndexing(def: CollectionDef): def is CollectionDef & { indexing: Ind
 
 export interface IndexingPersistResult {
   doc: string | null;
+  denseByEmbedding: Record<string, string>;
   rerank_doc: string | null;
   fts_src: string | null;
   fts_src_a: string | null;
@@ -36,6 +37,7 @@ export function persistIndexingSurfaces(
   ctx: DerivedDocContext
 ): IndexingPersistResult {
   let doc: string | null = null;
+  const denseByEmbedding: Record<string, string> = {};
   let rerank_doc: string | null = null;
   let fts_src: string | null = null;
   let fts_src_a: string | null = null;
@@ -45,6 +47,7 @@ export function persistIndexingSurfaces(
     if (text === "") {
       return {
         doc,
+        denseByEmbedding,
         rerank_doc,
         fts_src,
         fts_src_a,
@@ -52,7 +55,10 @@ export function persistIndexingSurfaces(
         gate_reason: `empty:${key}`,
       };
     }
-    if (surface.kind === "dense") doc = text;
+    if (surface.kind === "dense") {
+      doc = text;
+      if (surface.embedding) denseByEmbedding[surface.embedding] = text;
+    }
     else if (surface.kind === "rerank") rerank_doc = text;
     else if (surface.kind === "fts") {
       if (surface.weight === "A") fts_src_a = text;
@@ -64,6 +70,7 @@ export function persistIndexingSurfaces(
   if (!gateResult.index) {
     return {
       doc,
+      denseByEmbedding,
       rerank_doc,
       fts_src,
       fts_src_a,
@@ -72,7 +79,7 @@ export function persistIndexingSurfaces(
     };
   }
 
-  return { doc, rerank_doc, fts_src, fts_src_a, pipeline_status: "ready", gate_reason: null };
+  return { doc, denseByEmbedding, rerank_doc, fts_src, fts_src_a, pipeline_status: "ready", gate_reason: null };
 }
 
 function imageValidatorsForUrls(

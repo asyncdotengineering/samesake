@@ -1,28 +1,19 @@
-import type { CollectionDef, CollectionFieldDef, PipelineDef } from "@samesake/core";
-import type { MatcherCtx, GroundImageFn } from "../types.ts";
-import type { Observability } from "./observability.ts";
+import type { CollectionDef, CollectionFieldDef, DerivedDocContext, PipelineDef } from "@samesake/core";
+import type { MatcherCtx } from "../types.ts";
 import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
 import type { ProjectsService } from "./projects.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
 import { fetchRemoteImageSafe } from "./fetch-image.ts";
 import { searchResultCache } from "./search-cache.ts";
-import { collectionTableName, getByPath } from "./db-utils.ts";
+import { collectionTableName, getByPath, getPgClient } from "./db-utils.ts";
 import {
   assertErrorRateWithinLimit,
   recordPipelineFailure,
   type ErrorRateOpts,
 } from "./pipeline-failure.ts";
 import { persistIndexingSurfaces } from "./enrich-pipeline.ts";
-import {
-  assembleDocVector,
-  encodeCategorical,
-  encodeImage,
-  encodeNumber,
-  encodeRecency,
-  encodeText,
-  spaceSegmentDim,
-} from "./spaces.ts";
+import { embeddingColumn, embeddingEntries, evidenceEntries, evidenceTable, EVIDENCE_MAX_ROWS } from "./aspects.ts";
 
 const BATCH_SIZE = 24;
 
@@ -84,10 +75,6 @@ function hasEnrichPipeline(def: CollectionDef): boolean {
   return !!enrich?.stages?.length;
 }
 
-function hasSpaces(def: CollectionDef): boolean {
-  return !!def.spaces && Object.keys(def.spaces).length > 0;
-}
-
 /**
  * Indexing surfaces for collections with no enrich pipeline: the embedded doc
  * comes from the embedding's `source` template (fallback: searchable fields),
@@ -118,146 +105,115 @@ export function composeDefaultSurfaces(
   };
 }
 
-function spaceKeys(def: CollectionDef): string[] {
-  return def.spaces ? Object.keys(def.spaces) : [];
+function embeddingText(
+  name: string,
+  source: string | undefined,
+  fallbackDoc: string,
+  data: Record<string, unknown>,
+  enriched: Record<string, unknown> | null
+): string {
+  return (source ? resolveEmbedTemplate(source, data, enriched) : fallbackDoc).trim();
 }
 
-function recencyAgeDays(
-  fieldName: string,
-  fieldDef: CollectionFieldDef | undefined,
-  data: Record<string, unknown>,
-  enriched: Record<string, unknown> | null,
-  ingestedAt: Date | null
-): number | null {
-  if (fieldName === "ingested_at" && ingestedAt) {
-    return (Date.now() - ingestedAt.getTime()) / 86_400_000;
-  }
-  if (!fieldDef) return null;
-  const raw = resolveFieldValue(fieldName, fieldDef, data, enriched);
-  if (raw == null) return null;
-  const ts = raw instanceof Date ? raw : new Date(String(raw));
-  if (Number.isNaN(ts.getTime())) return null;
-  return (Date.now() - ts.getTime()) / 86_400_000;
-}
-
-async function buildDocSpaceSegments(
-  def: CollectionDef,
-  data: Record<string, unknown>,
-  enriched: Record<string, unknown> | null,
-  ingestedAt: Date | null,
-  docEmbedding: number[] | null,
+async function embedDocumentValue(
+  embedding: NonNullable<CollectionDef["embeddings"]>[string],
+  value: string,
   embedService: EmbedService,
-  textEmbedCache: Map<string, number[]>,
-  imageEmbedCache: Map<string, number[]>,
-  observability: Observability,
-  groundImage?: GroundImageFn
-): Promise<{ segments: Array<number[] | null>; dims: number[] }> {
-  const keys = spaceKeys(def);
-  const segments: Array<number[] | null> = [];
-  const dims: number[] = [];
+  groundImage?: MatcherCtx["groundImage"]
+): Promise<number[]> {
+  if (embedding.kind !== "image") {
+    return l2Renormalize(await embedService.embedQuery({
+      text: value,
+      model: embedding.model,
+      dim: embedding.dim,
+      taskType: embedding.taskType ?? "RETRIEVAL_DOCUMENT",
+      inputType: "document",
+    }));
+  }
+  const fetched = await fetchRemoteImageSafe(value);
+  if (!fetched.ok) throw new ImagePipelineError(`image fetch failed: ${fetched.reason}`);
+  let bytes = fetched.bytes;
+  let mimeType = fetched.contentType;
+  let url: string | undefined = value;
+  if (groundImage) {
+    const grounded = await groundImage({ url, bytes, mimeType });
+    if (grounded) {
+      bytes = grounded.bytes;
+      mimeType = grounded.mimeType;
+      url = undefined;
+    }
+  }
+  return l2Renormalize(await embedService.embedQuery({
+    image: { url, bytes, mimeType },
+    model: embedding.model,
+    dim: embedding.dim,
+    taskType: embedding.taskType ?? "RETRIEVAL_DOCUMENT",
+    inputType: "document",
+  }));
+}
 
-  for (const name of keys) {
-    const sdef = def.spaces![name]!;
-    dims.push(spaceSegmentDim(sdef));
-    if (sdef.kind === "text") {
-      let docText = resolveEmbedTemplate(sdef.source, data, enriched).trim();
-      if (!docText) docText = String(data.title ?? "").trim();
-      if (!docText) {
-        segments.push(null);
-        continue;
-      }
-      const cacheKey = `${sdef.model}|${sdef.dim}|${docText}`;
-      let vec = textEmbedCache.get(cacheKey);
-      if (!vec) {
-        vec = await embedService.embedQuery({
-          text: docText,
-          model: sdef.model,
-          dim: sdef.dim,
-          taskType: sdef.taskType ?? "RETRIEVAL_DOCUMENT",
-          inputType: "document",
-        });
-        vec = l2Renormalize(vec);
-        textEmbedCache.set(cacheKey, vec);
-      }
-      segments.push(encodeText(vec));
-      continue;
+async function embedEvidenceValue(
+  embedding: NonNullable<CollectionDef["embeddings"]>[string],
+  value: string,
+  embedService: EmbedService,
+  groundImage?: MatcherCtx["groundImage"]
+): Promise<number[]> {
+  return embedDocumentValue(embedding, value, embedService, groundImage);
+}
+
+async function replaceEvidenceRows(
+  ctx: MatcherCtx,
+  schema: string,
+  collectionName: string,
+  docId: string,
+  scope: Record<string, string>,
+  data: Record<string, unknown>,
+  enriched: Record<string, unknown> | null,
+  def: CollectionDef,
+  embedService: EmbedService
+): Promise<void> {
+  const evidence = embeddingEntries(def).filter(([, embedding]) => embedding.evidence === true);
+  if (!evidence.length) return;
+  const table = evidenceTable(schema, collectionName);
+  const scopeCols = Object.keys(scope);
+  const pending: Array<{ aspect: string; ord: number; src: string; vec: string }> = [];
+  for (const [aspect, embedding] of evidence) {
+    const units = embedding.extract!({ data, enriched: enriched ?? {} } satisfies DerivedDocContext);
+    if (units.length > EVIDENCE_MAX_ROWS) {
+      ctx.observability.log("warn", "embed-index", "evidence rows truncated", {
+        docId,
+        aspect,
+        cap: EVIDENCE_MAX_ROWS,
+      });
     }
-    if (sdef.kind === "image") {
-      const imageUrl = resolveEmbedTemplate(sdef.source, data, enriched).trim();
-      if (!imageUrl) {
-        segments.push(new Array(sdef.dim).fill(0));
-        continue;
-      }
-      const cacheKey = `${sdef.model}|${sdef.dim}|img|${imageUrl}`;
-      let vec = imageEmbedCache.get(cacheKey);
-      if (!vec) {
-        const fetched = await fetchRemoteImageSafe(imageUrl);
-        if (!fetched.ok) {
-          throw new ImagePipelineError(`image fetch failed: ${fetched.reason}`);
-        }
-        try {
-          // Visual grounding: crop the salient product region before embedding (VL-CLIP-style).
-          let imgBytes = fetched.bytes;
-          let imgMime = fetched.contentType;
-          let imgUrl: string | undefined = imageUrl;
-          if (groundImage) {
-            const grounded = await groundImage({ url: imageUrl, bytes: fetched.bytes, mimeType: fetched.contentType });
-            if (grounded) {
-              imgBytes = grounded.bytes;
-              imgMime = grounded.mimeType;
-              imgUrl = undefined;
-            }
-          }
-          vec = await embedService.embedQuery({
-            image: {
-              url: imgUrl,
-              bytes: imgBytes,
-              mimeType: imgMime,
-            },
-            model: sdef.model,
-            dim: sdef.dim,
-            taskType: sdef.taskType ?? "RETRIEVAL_DOCUMENT",
-            inputType: "document",
-          });
-          vec = l2Renormalize(vec);
-          imageEmbedCache.set(cacheKey, vec);
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          if (msg.includes("s.image space")) throw e;
-          throw new ImagePipelineError(`image embed failed: ${msg.slice(0, 200)}`);
-        }
-      }
-      segments.push(encodeImage(vec));
-      continue;
+    for (const [ord, raw] of units.slice(0, EVIDENCE_MAX_ROWS).entries()) {
+      const src = String(raw ?? "").trim();
+      if (!src) continue;
+      const vec = await embedEvidenceValue(embedding, src, embedService, ctx.groundImage);
+      pending.push({ aspect, ord, src, vec: toVectorLiteral(vec) });
     }
-    if (sdef.kind === "number") {
-      const fieldDef = def.fields[sdef.field];
-      const raw = fieldDef
-        ? resolveFieldValue(sdef.field, fieldDef, data, enriched)
-        : data[sdef.field];
-      const num = raw == null ? null : Number(raw);
-      segments.push(encodeNumber(num, sdef));
-      continue;
-    }
-    if (sdef.kind === "recency") {
-      const fieldDef = def.fields[sdef.field];
-      segments.push(
-        encodeRecency(recencyAgeDays(sdef.field, fieldDef, data, enriched, ingestedAt), sdef)
-      );
-      continue;
-    }
-    if (sdef.kind === "categorical") {
-      const fieldDef = def.fields[sdef.field];
-      const raw = fieldDef
-        ? resolveFieldValue(sdef.field, fieldDef, data, enriched)
-        : data[sdef.field];
-      segments.push(encodeCategorical(raw == null ? null : String(raw), sdef));
-      continue;
-    }
-    segments.push(null);
   }
 
-  return { segments, dims };
+  await ctx.storage.transaction(async (tx) => {
+    const client = getPgClient(tx, "embed-index evidence");
+    await client.unsafe(`DELETE FROM ${table} WHERE doc_id = $1`, [docId]);
+    const columns = [...scopeCols, "doc_id", "aspect", "ord", "vec", "src"];
+    for (const row of pending) {
+      const values: unknown[] = [
+        ...scopeCols.map((column) => scope[column]),
+        docId,
+        row.aspect,
+        row.ord,
+        row.vec,
+        row.src,
+      ];
+      const placeholders = values.map((_, index) => `$${index + 1}`).join(", ");
+      await client.unsafe(
+        `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${placeholders})`,
+        values
+      );
+    }
+  });
 }
 
 export function makeEmbedIndexService(
@@ -280,31 +236,25 @@ export function makeEmbedIndexService(
   ): Promise<{ indexed: number }> {
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
+    const projectSchema = project.schema_name;
     const def = await projectsService.getCollectionDef(projectSlug, collectionName);
     if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
-    const hasEmb = !!def.embeddings && Object.keys(def.embeddings).length > 0;
-    const hasSpace = hasSpaces(def);
-    if (!hasEmb && !hasSpace) {
-      throw new Error(
-        `collection "${collectionName}" has no embeddings or spaces configured`
-      );
-    }
-
-    const embKey = hasEmb ? Object.keys(def.embeddings!)[0]! : null;
-    const embDef = embKey ? def.embeddings![embKey]! : null;
+    const embEntries = embeddingEntries(def);
+    const hasEmb = embEntries.length > 0;
+    if (!hasEmb) throw new Error(`collection "${collectionName}" has no embeddings configured`);
     const table = collectionTableName(project.schema_name, collectionName);
     const limit = opts?.limit ?? 100_000;
     const needsEnrich = hasEnrichPipeline(def);
-    const spaceBackfill = hasSpace ? " OR space_vec IS NULL" : "";
-    // The space-backfill clause must stay INSIDE the `pipeline_status = 'ready'` guard,
-    // otherwise a quarantined row (space_vec NULL) would be indexed and promoted to ready,
-    // defeating the gate.
     const staleClause = needsEnrich
-      ? `pipeline_status = 'ready' AND enriched_at IS NOT NULL AND (indexed_at IS NULL OR indexed_at < enriched_at${spaceBackfill})`
-      : `indexed_at IS NULL OR (enriched_at IS NOT NULL AND indexed_at < enriched_at)${spaceBackfill}`;
+      ? "pipeline_status = 'ready' AND enriched_at IS NOT NULL AND (indexed_at IS NULL OR indexed_at < enriched_at)"
+      : "indexed_at IS NULL OR (enriched_at IS NOT NULL AND indexed_at < enriched_at)";
+
+    const scopeKeys = (def.scopes ?? []).map((key) => `scope_${key}`);
+    const hasEvidence = evidenceEntries(def).length > 0;
+    const selectScopeCols = scopeKeys.length ? `, ${scopeKeys.join(", ")}` : "";
 
     const pending = await ctx.storage.client("embed-index").unsafe(
-      `SELECT id, data, enriched, ingested_at, doc FROM ${table}
+      `SELECT id, data, enriched, ingested_at, doc${selectScopeCols} FROM ${table}
        WHERE (${staleClause})
        ORDER BY id LIMIT $1`,
       [limit]
@@ -312,17 +262,23 @@ export function makeEmbedIndexService(
 
     const fieldCols = Object.entries(def.fields);
     let indexed = 0;
-    const textEmbedCache = new Map<string, number[]>();
-    const imageEmbedCache = new Map<string, number[]>();
-
     async function markIndexSkipped(id: string): Promise<void> {
-      const spaceClause = hasSpace ? ", space_vec = NULL" : "";
+      const nullColumns = embEntries
+        .map(([name, embedding], index) => index === 0 || embedding.evidence ? null : `${embeddingColumn(name, index)} = NULL`)
+        .filter((value): value is string => value !== null);
+      const setParts = ["indexed_at = now()", "doc = NULL", "embedding = NULL", ...nullColumns];
       await ctx.storage.client("embed-index").unsafe(
         `UPDATE ${table}
-         SET indexed_at = now(), doc = NULL, embedding = NULL${spaceClause}, updated_at = now()
+         SET ${setParts.join(", ")}, updated_at = now()
          WHERE id = $1`,
         [id]
       );
+      if (hasEvidence) {
+        await ctx.storage.client("embed-index").unsafe(
+          `DELETE FROM ${evidenceTable(projectSchema, collectionName)} WHERE doc_id = $1`,
+          [id]
+        );
+      }
     }
 
     let processed = 0;
@@ -340,13 +296,14 @@ export function makeEmbedIndexService(
 
     for (let i = 0; i < pending.length; i += BATCH_SIZE) {
       const chunk = pending.slice(i, i + BATCH_SIZE);
-      const docs: string[] = [];
       const rows: Array<{
         id: string;
+        doc: string;
         data: Record<string, unknown>;
         enriched: Record<string, unknown> | null;
-        ingestedAt: Date | null;
         surfaces: { ftsSrc: string | null; ftsSrcA: string | null } | null;
+        denseSurfaces: Record<string, string>;
+        scope: Record<string, string>;
       }> = [];
 
       for (const row of chunk) {
@@ -361,13 +318,6 @@ export function makeEmbedIndexService(
             : typeof enrichedRaw === "string"
               ? (JSON.parse(enrichedRaw as string) as Record<string, unknown>)
               : (enrichedRaw as Record<string, unknown>);
-        const ingestedAt =
-          row.ingested_at == null
-            ? null
-            : row.ingested_at instanceof Date
-              ? row.ingested_at
-              : new Date(String(row.ingested_at));
-
         const rowId = String(row.id);
 
         // Enrich-owning collections read the surfaces enrich persisted. Without
@@ -376,6 +326,7 @@ export function makeEmbedIndexService(
         // push → index → search works alone.
         let inline: { doc: string | null; ftsSrc: string | null; ftsSrcA: string | null } | null =
           null;
+        let denseSurfaces: Record<string, string> = {};
         if (!needsEnrich) {
           if (def.indexing) {
             const built = persistIndexingSurfaces(def.indexing, { data, enriched: enriched ?? {} });
@@ -384,13 +335,15 @@ export function makeEmbedIndexService(
               continue;
             }
             inline = { doc: built.doc, ftsSrc: built.fts_src, ftsSrcA: built.fts_src_a };
+            denseSurfaces = built.denseByEmbedding;
           } else {
-            const d = composeDefaultSurfaces(def, embDef?.source, data, enriched);
+            const d = composeDefaultSurfaces(def, embEntries[0]?.[1].source, data, enriched);
             inline = { doc: d.doc, ftsSrc: d.ftsSrc, ftsSrcA: d.ftsSrcA };
+            denseSurfaces = {};
           }
         }
 
-        if (embDef) {
+        if (hasEmb) {
           const docText = needsEnrich
             ? String(row.doc ?? "").trim()
             : (inline!.doc ?? "").trim();
@@ -401,37 +354,20 @@ export function makeEmbedIndexService(
             await markIndexSkipped(rowId);
             continue;
           }
-          docs.push(docText);
-        } else if (!hasSpace) {
-          await markIndexSkipped(rowId);
-          continue;
         }
 
         rows.push({
           id: rowId,
+          doc: needsEnrich ? String(row.doc ?? "").trim() : (inline?.doc ?? "").trim(),
           data,
           enriched,
-          ingestedAt,
           surfaces: inline ? { ftsSrc: inline.ftsSrc, ftsSrcA: inline.ftsSrcA } : null,
+          denseSurfaces,
+          scope: Object.fromEntries(scopeKeys.map((key) => [key, String(row[key] ?? "")])),
         });
       }
 
-      const vectors: number[][] = [];
-      if (embDef) {
-        for (const text of docs) {
-          const vec = await embedService.embedQuery({
-            text,
-            model: embDef.model,
-            dim: embDef.dim,
-            taskType: embDef.taskType ?? "RETRIEVAL_DOCUMENT",
-            inputType: "document",
-          });
-          vectors.push(l2Renormalize(vec));
-        }
-      }
-
-      for (let j = 0; j < rows.length; j++) {
-        const row = rows[j]!;
+      for (const row of rows) {
         try {
           const fieldValues = fieldCols.map(([name, fdef]) => {
             const v = resolveFieldValue(name, fdef, row.data, row.enriched);
@@ -440,33 +376,30 @@ export function makeEmbedIndexService(
           const colNames: string[] = [];
           const params: unknown[] = [];
 
-          if (embDef) {
-            colNames.push("doc", "embedding");
-            params.push(docs[j], toVectorLiteral(vectors[j]!));
+          const vectors = new Map<string, number[]>();
+          for (const [index, [name, embedding]] of embEntries.entries()) {
+            if (embedding.evidence === true) continue;
+            const value = embeddingText(
+              name,
+              row.denseSurfaces[name] ? undefined : embedding.source,
+              row.denseSurfaces[name] ?? row.doc,
+              row.data,
+              row.enriched
+            );
+            if (!value) throw new ImagePipelineError(`embedding source is empty for aspect "${name}"`);
+            vectors.set(name, await embedDocumentValue(embedding, value, embedService, ctx.groundImage));
+            if (index === 0) {
+              colNames.push("doc", embeddingColumn(name, index));
+              params.push(value, toVectorLiteral(vectors.get(name)!));
+            } else {
+              colNames.push(embeddingColumn(name, index));
+              params.push(toVectorLiteral(vectors.get(name)!));
+            }
           }
 
           if (row.surfaces) {
             colNames.push("fts_src", "fts_src_a");
             params.push(row.surfaces.ftsSrc, row.surfaces.ftsSrcA);
-          }
-
-          if (hasSpace) {
-            const docEmb = embDef ? vectors[j]! : null;
-            const { segments, dims } = await buildDocSpaceSegments(
-              def,
-              row.data,
-              row.enriched,
-              row.ingestedAt,
-              docEmb,
-              embedService,
-              textEmbedCache,
-              imageEmbedCache,
-              ctx.observability,
-              ctx.groundImage
-            );
-            const spaceVec = assembleDocVector(segments, dims);
-            colNames.push("space_vec");
-            params.push(toVectorLiteral(spaceVec));
           }
 
           colNames.push(...fieldCols.map(([n]) => sanitiseIdent(n)));
@@ -479,6 +412,7 @@ export function makeEmbedIndexService(
              WHERE id = $${params.length}`,
             params
           );
+          await replaceEvidenceRows(ctx, project.schema_name, collectionName, row.id, row.scope, row.data, row.enriched, def, embedService);
           ctx.observability.inc("index_docs_total");
           indexed++;
           processed++;
@@ -509,19 +443,14 @@ export function makeEmbedIndexService(
     if (!project) throw new Error(`project "${projectSlug}" not found`);
     const def = await projectsService.getCollectionDef(projectSlug, collectionName);
     if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
-    const hasEmb = !!def.embeddings && Object.keys(def.embeddings).length > 0;
-    const hasSpace = hasSpaces(def);
-    if (!hasEmb && !hasSpace) return false;
-
-    const embKey = hasEmb ? Object.keys(def.embeddings!)[0]! : null;
-    const embDef = embKey ? def.embeddings![embKey]! : null;
+    const embEntries = embeddingEntries(def);
+    if (!embEntries.length) return false;
     const table = collectionTableName(project.schema_name, collectionName);
     const fieldCols = Object.entries(def.fields);
-    const textEmbedCache = new Map<string, number[]>();
-    const imageEmbedCache = new Map<string, number[]>();
+    const scopeKeys = (def.scopes ?? []).map((key) => `scope_${key}`);
 
     const rows = await ctx.storage.client("embed-index").unsafe(
-      `SELECT id, data, enriched, ingested_at, doc FROM ${table} WHERE id = $1`,
+      `SELECT id, data, enriched, ingested_at, doc${scopeKeys.length ? `, ${scopeKeys.join(", ")}` : ""} FROM ${table} WHERE id = $1`,
       [rowId]
     );
     if (!rows.length) return false;
@@ -538,116 +467,65 @@ export function makeEmbedIndexService(
         : typeof enrichedRaw === "string"
           ? (JSON.parse(enrichedRaw as string) as Record<string, unknown>)
           : (enrichedRaw as Record<string, unknown>);
-    const ingestedAt =
-      row.ingested_at == null
-        ? null
-        : row.ingested_at instanceof Date
-          ? row.ingested_at
-          : new Date(String(row.ingested_at));
-    const parsedRow = { id: String(row.id), data, enriched, ingestedAt };
     const needsEnrich = hasEnrichPipeline(def);
     let defaultSurfaces: { doc: string | null; ftsSrc: string | null; ftsSrcA: string | null } | null =
       null;
+    let denseSurfaces: Record<string, string> = {};
     if (!needsEnrich) {
       if (def.indexing) {
         const built = persistIndexingSurfaces(def.indexing, { data, enriched: enriched ?? {} });
         if (built.pipeline_status === "quarantined") return false;
         defaultSurfaces = { doc: built.doc, ftsSrc: built.fts_src, ftsSrcA: built.fts_src_a };
+        denseSurfaces = built.denseByEmbedding;
       } else {
-        const d = composeDefaultSurfaces(def, embDef?.source, data, enriched);
+        const d = composeDefaultSurfaces(def, embEntries[0]?.[1].source, data, enriched);
         defaultSurfaces = { doc: d.doc, ftsSrc: d.ftsSrc, ftsSrcA: d.ftsSrcA };
       }
     }
 
-    if (embDef) {
-      const docText = needsEnrich
-        ? String(row.doc ?? "").trim()
-        : (defaultSurfaces!.doc ?? "").trim();
-      if (!docText) return false;
-      const vec = l2Renormalize(
-        await embedService.embedQuery({
-          text: docText,
-          model: embDef.model,
-          dim: embDef.dim,
-          taskType: embDef.taskType ?? "RETRIEVAL_DOCUMENT",
-          inputType: "document",
-        })
-      );
-
-      const fieldValues = fieldCols.map(([name, fdef]) => {
-        const v = resolveFieldValue(name, fdef, parsedRow.data, parsedRow.enriched);
-        return v === undefined ? null : v;
-      });
-      const colNames: string[] = ["doc", "embedding"];
-      const params: unknown[] = [docText, toVectorLiteral(vec)];
-      if (defaultSurfaces) {
-        colNames.push("fts_src", "fts_src_a");
-        params.push(defaultSurfaces.ftsSrc, defaultSurfaces.ftsSrcA);
-      }
-
-      if (hasSpace) {
-        const { segments, dims } = await buildDocSpaceSegments(
-          def,
-          parsedRow.data,
-          parsedRow.enriched,
-          parsedRow.ingestedAt,
-          vec,
-          embedService,
-          textEmbedCache,
-          imageEmbedCache,
-          ctx.observability,
-          ctx.groundImage
-        );
-        colNames.push("space_vec");
-        params.push(toVectorLiteral(assembleDocVector(segments, dims)));
-      }
-
-      colNames.push(...fieldCols.map(([n]) => sanitiseIdent(n)));
-      params.push(...fieldValues, parsedRow.id);
-      const setClause = colNames.map((c, k) => `${c} = $${k + 1}`).join(", ");
-      await ctx.storage.client("embed-index").unsafe(
-        `UPDATE ${table}
-         SET ${setClause}, indexed_at = now(), pipeline_status = 'ready', last_error = NULL, updated_at = now()
-         WHERE id = $${params.length}`,
-        params
-      );
-    } else if (hasSpace) {
-      const fieldValues = fieldCols.map(([name, fdef]) => {
-        const v = resolveFieldValue(name, fdef, parsedRow.data, parsedRow.enriched);
-        return v === undefined ? null : v;
-      });
-      const { segments, dims } = await buildDocSpaceSegments(
-        def,
-        parsedRow.data,
-        parsedRow.enriched,
-        parsedRow.ingestedAt,
-        null,
-        embedService,
-        textEmbedCache,
-        imageEmbedCache,
-        ctx.observability,
-        ctx.groundImage
-      );
-      const colNames = ["space_vec", ...fieldCols.map(([n]) => sanitiseIdent(n))];
-      const params: unknown[] = [
-        toVectorLiteral(assembleDocVector(segments, dims)),
-        ...fieldValues,
-      ];
-      if (defaultSurfaces) {
-        colNames.splice(1, 0, "fts_src", "fts_src_a");
-        params.splice(1, 0, defaultSurfaces.ftsSrc, defaultSurfaces.ftsSrcA);
-      }
-      params.push(parsedRow.id);
-      const setClause = colNames.map((c, k) => `${c} = $${k + 1}`).join(", ");
-      await ctx.storage.client("embed-index").unsafe(
-        `UPDATE ${table}
-         SET ${setClause}, indexed_at = now(), pipeline_status = 'ready', last_error = NULL, updated_at = now()
-         WHERE id = $${params.length}`,
-        params
-      );
-    } else {
-      return false;
+    const firstValue = (needsEnrich ? String(row.doc ?? "") : (defaultSurfaces?.doc ?? "")).trim();
+    if (!firstValue) return false;
+    const colNames: string[] = [];
+    const params: unknown[] = [];
+    for (const [index, [name, embedding]] of embEntries.entries()) {
+      if (embedding.evidence === true) continue;
+      const value = index === 0
+        ? firstValue
+        : embeddingText(name, denseSurfaces[name] ? undefined : embedding.source, denseSurfaces[name] ?? firstValue, data, enriched);
+      if (!value) return false;
+      const vec = await embedDocumentValue(embedding, value, embedService, ctx.groundImage);
+      colNames.push(index === 0 ? "doc" : embeddingColumn(name, index));
+      params.push(index === 0 ? value : toVectorLiteral(vec));
+      if (index === 0) params.push(toVectorLiteral(vec));
     }
+    if (defaultSurfaces) {
+      colNames.push("fts_src", "fts_src_a");
+      params.push(defaultSurfaces.ftsSrc, defaultSurfaces.ftsSrcA);
+    }
+    const fieldValues = fieldCols.map(([name, fdef]) => {
+      const v = resolveFieldValue(name, fdef, data, enriched);
+      return v === undefined ? null : v;
+    });
+    colNames.push(...fieldCols.map(([n]) => sanitiseIdent(n)));
+    params.push(...fieldValues, String(row.id));
+    const setClause = colNames.map((c, k) => `${c} = $${k + 1}`).join(", ");
+    await ctx.storage.client("embed-index").unsafe(
+      `UPDATE ${table}
+       SET ${setClause}, indexed_at = now(), pipeline_status = 'ready', last_error = NULL, updated_at = now()
+       WHERE id = $${params.length}`,
+      params
+    );
+    await replaceEvidenceRows(
+      ctx,
+      project.schema_name,
+      collectionName,
+      String(row.id),
+      Object.fromEntries(scopeKeys.map((key) => [key, String(row[key] ?? "")])),
+      data,
+      enriched,
+      def,
+      embedService
+    );
 
     ctx.observability.inc("index_docs_total");
     searchResultCache.invalidateProjectCollection(projectSlug, collectionName);
