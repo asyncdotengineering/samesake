@@ -366,6 +366,8 @@ describeIf("test:progressive-relax", () => {
     search: {
       channels: [Channels.fts({ fields: ["title"], weight: 1 })],
       nlq: { enable: true },
+      // Contextual before identity-bearing, regardless of selectivity counts.
+      relaxOrder: ["occasion"],
     },
   });
 
@@ -391,6 +393,12 @@ describeIf("test:progressive-relax", () => {
       { id: "d", data: { title: "red dress party" }, doc: "red dress party", fields: { title: "red dress party", color: "red", occasion: "party" } },
       { id: "e", data: { title: "blue suit wedding" }, doc: "blue suit wedding", fields: { title: "blue suit wedding", color: "blue", occasion: "wedding" } },
       { id: "f", data: { title: "green dress wedding" }, doc: "green dress wedding", fields: { title: "green dress wedding", color: "green", occasion: "wedding" } },
+      // g/h invert the selectivity counts to mirror the live corpus (red=6 > wedding=5):
+      // pure least-selective-first would drop `color` and admit e/f — only the declared
+      // relaxOrder keeps the every-red invariant below (live finding 2026-07-19). Their
+      // titles carry no gate tokens, so they never enter results.
+      { id: "g", data: { title: "crimson blazer evening" }, doc: "crimson blazer evening", fields: { title: "crimson blazer evening", color: "red", occasion: "party" } },
+      { id: "h", data: { title: "scarlet scarf evening" }, doc: "scarlet scarf evening", fields: { title: "scarlet scarf evening", color: "red", occasion: "party" } },
     ]);
   }, 30_000);
 
@@ -403,12 +411,13 @@ describeIf("test:progressive-relax", () => {
     if (matcher) await matcher.close();
   });
 
-  test("drops only the least selective derived field until the retrieval gate reaches three", async () => {
+  test("drops declared relaxOrder fields before identity-bearing ones despite selectivity counts", async () => {
     const result = await matcher.search(projectSlug, "relaxation_products", {
       q: "red dress for a wedding",
       limit: 10,
     });
     expect(result.relaxed).toBe(true);
+    expect(result.constraintTrace.relaxationSteps[0]?.field).toBe("occasion");
     expect(result.hits.length).toBe(3);
     expect(result.hits.every((hit) => hit.color === "red")).toBe(true);
     expect(result.hits.map((hit) => hit.id).sort()).toEqual(["a", "b", "d"]);

@@ -864,8 +864,20 @@ export function makeSearchService(
 
     if (allowRelaxation && totalCandidates < target && gateEvidence === "retrieval" && relaxableFields.length > 0) {
       const probeCounts = await probeRelaxableFields(r, relaxableFields);
+      // Declared relaxOrder wins over selectivity: contextual constraints (occasions) drop
+      // before identity-bearing ones (colors) regardless of match counts — pure
+      // least-selective-first inverts on real corpora (red=70 vs wedding=37 would have
+      // dropped `colors` for "red dress for a wedding"; live finding 2026-07-19).
+      const declaredOrder = r.def.search?.relaxOrder ?? [];
+      const declaredPos = (field: string) => {
+        const i = declaredOrder.indexOf(field);
+        return i === -1 ? Number.POSITIVE_INFINITY : i;
+      };
       const ordered = [...relaxableFields].sort(
-        (a, b) => (probeCounts.get(b) ?? 0) - (probeCounts.get(a) ?? 0) || a.localeCompare(b)
+        (a, b) =>
+          declaredPos(a) - declaredPos(b) ||
+          (probeCounts.get(b) ?? 0) - (probeCounts.get(a) ?? 0) ||
+          a.localeCompare(b)
       );
       for (const field of ordered) {
         const nextFilters = { ...effectiveFilters };

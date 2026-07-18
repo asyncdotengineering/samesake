@@ -140,6 +140,9 @@ export const productsCollection = collection("products", {
       Channels.recency({ field: "updated_at", halfLifeDays: 90, weight: 0 }),
     ],
     combiner: "rrf",
+    // Contextual constraints relax before identity-bearing ones: "red dress for a wedding"
+    // degrades to red dresses (occasion dropped), never to black wedding dresses.
+    relaxOrder: ["occasions", "styles"],
     // Absolute cosine floor (FTS matches exempt) — calibrated ≈0.5 for gemini-embedding-2;
     // suppresses no-match padding (queries with no real match return few/no results).
     relevanceFloor: 0.5,
