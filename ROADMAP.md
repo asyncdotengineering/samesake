@@ -52,4 +52,6 @@ The differentiated bet no incumbent OSS alternative has:
 
 LTR/learned rankers (no click data at any installation), SPLADE/ColBERT, a second storage dialect,
 an internal job queue, personalization/behavioral CF, semantic IDs, generative carousels, checkout,
-and precision micro-optimization as a conversion play.
+precision micro-optimization as a conversion play, and a BM25 lexical extension (dropped 2026-07-18
+— product-search incumbents don't use BM25 and no viable Postgres extension fits our deployment
+targets; see `rfcs/rfc-bm25-lexical-leg.md` §0 and the [lexical-scoring guide](./apps/docs/src/content/docs/guides/lexical-scoring.md)).

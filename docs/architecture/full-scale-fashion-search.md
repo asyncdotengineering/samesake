@@ -70,7 +70,7 @@ the moat), and the whole thing runs in **your own Postgres** (own-your-data).
   on a modest box — no exotic vector extension needed (see `postgres-high-scale-search.md`).
 - **BYO models** injected at `createMatcher`: `embed` (gemini-embedding-2) + `generate`
   (gemini-3.1-flash-lite). No model bundled.
-- **Deploy:** the store's app process + Postgres. Fly (controlled VM — the path to BM25 later), or CF
+- **Deploy:** the store's app process + Postgres. Fly (controlled VM), or CF
   Workers + Hyperdrive→managed PG. Two containers, no Redis/Elasticsearch.
 
 ### L1 — Ingestion & enrichment (**the moat**)
@@ -91,7 +91,7 @@ The pipeline that turns a poor catalog into machine-rankable data:
 - **NLQ** parses the query → hard filters (price, color, gender, occasion, negation) + a cleaned
   `semantic_query` + aesthetic→style expansion ("quiet luxury"→minimalist/classic). Hard filters stay
   hard (SQL WHERE); no category-`other` poison.
-- **Hybrid RRF** over three legs: **lexical** (FTS today; BM25 candidate later), **semantic**
+- **Hybrid RRF** over three legs: **lexical** (weighted FTS, fixture-guarded), **semantic**
   (pgvector HNSW cosine), **spaces** (segmented visual + price + category + freshness vectors).
 - **Modes:** `intent` (keyword = tiebreaker) vs `similar` (keyword off; visual/semantic decide;
   auto when an image is present) — the composed "like this, but black" query.
@@ -142,7 +142,7 @@ variant diversify → facets → hits + `/explain`. Analytics event emitted.
 | L2 | Hybrid RRF, intent/similar modes, NLQ→filters, facets, rerank, boosts, variants, explain | **Built** |
 | L2 | NLQ category-`other` poison | **Fixed** (use-case no-results 30%→0%) |
 | L2 | **OOD rejection** (relevanceFloor) | **Open** (P0 — red-team: 7/8 OOD return junk; needs calibration) |
-| L2 | **Lexical BM25** (replace ts_rank) | **Deferred** — measure-first, then bake-off; deployment-gated (see #17) |
+| L2 | Lexical scoring | **Dropped** (2026-07-18) — BM25 extension path dropped; `ts_rank_cd` two-tier + `setweight` stands, guarded by the lexical A/B fixture (see `rfcs/rfc-bm25-lexical-leg.md` §0) |
 | L0 | pgvector HNSW; halfvec + iterative scans | HNSW **built**; halfvec/iterative-scan **P-now adopt** |
 | L3 | autocomplete, auto-synonyms, merchandising, analytics, A/B, highlighting | **To build** (the toolkit gap vs Algolia) |
 | L3 | `@samesake/client` (frontend SDK + headless React) | **To design** (task #16) |
@@ -154,8 +154,9 @@ variant diversify → facets → hits + `/explain`. Analytics event emitted.
 ## Scale path (from `postgres-high-scale-search.md`)
 - **Launch → ~1–2M SKUs/store:** single tuned Postgres + pgvector HNSW + halfvec. No sharding, no
   extra vector extension. Comfortable, sub-100ms warm.
-- **Lexical upgrade (quality, not scale):** on controlled PG, bake-off BM25 (`pg_search` vs
-  `vchord_bm25` vs tuned `ts_rank`) once the eval confirms lexical is the bottleneck.
+- **Lexical quality (not scale):** the lexical leg stays Postgres-native `ts_rank_cd`; quality is
+  guarded by the lexical A/B regression fixture. No extension bake-off is planned (decision record:
+  `rfcs/rfc-bm25-lexical-leg.md` §0).
 - **Multi-million vectors / self-host:** pgvectorscale StreamingDiskANN or VectorChord IVF+RaBitQ.
 - **Escape hatch:** >~few-million SKUs/tenant with sub-second faceted UX → external engine via CDC.
 
