@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { collection, f, s, Channels } from "@samesake/core";
+import { collection, f, Channels } from "@samesake/core";
 import { denseAndFtsIndexingByTitle, ftsIndexingByTitle } from "./fixtures.ts";
 import { parseSearchWeights } from "../src/core/search-query.ts";
 
@@ -9,49 +9,45 @@ const def = collection("products", {
     price: f.number({ filterable: true }),
   },
   indexing: denseAndFtsIndexingByTitle,
-  embeddings: { doc: { model: "m", dim: 8 } },
-  spaces: {
-    style: s.text({ source: "$title", model: "m", dim: 8 }),
-    visual: s.image({ source: "$image_url", model: "m", dim: 8 }),
+  embeddings: {
+    doc: { model: "m", dim: 8 },
+    visual: { kind: "image", model: "m", dim: 8 },
   },
   search: {
     channels: [
       Channels.fts({ fields: ["title"], weight: 1 }),
       Channels.cosine({ embedding: "doc", weight: 1 }),
-      Channels.spaces({ weight: 1 }),
+      Channels.cosine({ embedding: "visual", weight: 0.5 }),
     ],
     combiner: "rrf",
-    defaultSpaceWeights: { style: 1, visual: 0.5 },
   },
 });
 
 describe("parseSearchWeights — mode-aware weighting", () => {
-  test("intent + text: keyword capped to tiebreaker (0.3·cosine), spaces leg off", () => {
+  test("intent + text: keyword capped to tiebreaker (0.3·cosine)", () => {
     const w = parseSearchWeights(def, undefined, "intent", false);
     expect(w.fts).toBe(0.3);
     expect(w.cosine).toBe(1);
-    expect(w.spaces).toBe(0);
+    expect(w.aspects).toEqual({ doc: 1, visual: 0.5 });
   });
 
-  test("similar + text: keyword off, semantic leads, image space zeroed", () => {
+  test("similar + text: keyword off and all aspects stay enabled", () => {
     const w = parseSearchWeights(def, undefined, "similar", false);
     expect(w.fts).toBe(0);
     expect(w.cosine).toBe(1);
-    expect(w.spaceSegmentWeights.style).toBe(1);
-    expect(w.spaceSegmentWeights.visual).toBe(0); // no image query → cross-modal noise zeroed
+    expect(w.aspects).toEqual({ doc: 1, visual: 0.5 });
   });
 
-  test("similar + image: keyword off, visual space kept", () => {
+  test("similar + image: keyword off and all configured aspect weights stay available", () => {
     const w = parseSearchWeights(def, undefined, "similar", true);
     expect(w.fts).toBe(0);
-    expect(w.spaceSegmentWeights.visual).toBe(0.5);
+    expect(w.aspects).toEqual({ doc: 1, visual: 0.5 });
   });
 
-  test("intent + image: spaces leg kept, keyword still a tiebreaker", () => {
+  test("intent + image: keyword remains a tiebreaker", () => {
     const w = parseSearchWeights(def, undefined, "intent", true);
-    expect(w.spaces).toBe(1);
     expect(w.fts).toBe(0.3);
-    expect(w.spaceSegmentWeights.visual).toBe(0.5);
+    expect(w.aspects.visual).toBe(0.5);
   });
 
   test("explicit per-query weights override the mode defaults", () => {

@@ -1,7 +1,7 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels, gates, s } from "../../sdk/src/index.ts";
+import { collection, f, Channels, gates } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed } from "./fixtures.ts";
@@ -104,8 +104,8 @@ describeIf("collection migrations", () => {
     expect(rows[0]!.category).toBe("outerwear");
   });
 
-  test("REQ-V03B-REPRO1: add spaces → space_vec + HNSW index", async () => {
-    const withSpaces = collection("products", {
+  test("REQ-V03B-REPRO1: add aspect → emb_style + HNSW index", async () => {
+    const withAspects = collection("products", {
       fields: {
         title: f.text({ searchable: true }),
         brand: f.text({ filterable: true }),
@@ -113,30 +113,38 @@ describeIf("collection migrations", () => {
         category: f.text({ filterable: true, path: "enriched.category" }),
       },
       indexing: indexingByTitle,
-      embeddings: { doc: { model: "test-embed", dim: 8 } },
-      spaces: { style: s.text({ source: "$title", model: "test-embed", dim: 8 }) },
-      search: { channels: [Channels.fts({ fields: ["title"], weight: 1 }), Channels.spaces({ weight: 1 })] },
+      embeddings: {
+        doc: { model: "test-embed", dim: 8 },
+        style: { source: "$title", model: "test-embed", dim: 8 },
+      },
+      search: {
+        channels: [
+          Channels.fts({ fields: ["title"], weight: 1 }),
+          Channels.cosine({ embedding: "doc", weight: 1 }),
+          Channels.cosine({ embedding: "style", weight: 1 }),
+        ],
+      },
     });
 
-    const r = await matcher.apply(projectSlug, { entities: [], collections: [withSpaces] });
-    expect(r.plan.additions.some((a) => a.includes("space_vec"))).toBe(true);
+    const r = await matcher.apply(projectSlug, { entities: [], collections: [withAspects] });
+    expect(r.plan.additions.some((a) => a.includes("emb_style"))).toBe(true);
 
     const { db, close } = createDbFromUrl(databaseUrl!);
     const col = await db.execute<{ column_name: string }>(sql`
       SELECT column_name FROM information_schema.columns
-      WHERE table_schema = ${schemaName} AND table_name = 'c_products' AND column_name = 'space_vec'
+      WHERE table_schema = ${schemaName} AND table_name = 'c_products' AND column_name = 'emb_style'
     `);
     const idx = await db.execute<{ indexname: string }>(sql`
       SELECT indexname FROM pg_indexes
-      WHERE schemaname = ${schemaName} AND tablename = 'c_products' AND indexname = 'c_products_space_vec_idx'
+      WHERE schemaname = ${schemaName} AND tablename = 'c_products' AND indexname = 'c_products_emb_style_idx'
     `);
     await close();
     expect(col.length).toBe(1);
     expect(idx.length).toBe(1);
   });
 
-  test("REQ-V03B-REPRO2: divergence plan + destructive refusal", async () => {
-    const withoutSpaces = collection("products", {
+  test("REQ-V03B-REPRO2: aspect removal plan + destructive refusal", async () => {
+    const withoutAspect = collection("products", {
       fields: {
         title: f.text({ searchable: true }),
         brand: f.text({ filterable: true }),
@@ -153,19 +161,19 @@ describeIf("collection migrations", () => {
       },
     });
 
-    const plan = await matcher.apply(projectSlug, { entities: [], collections: [withoutSpaces] }, { dryRun: true });
-    expect(plan.plan.destructive.some((d) => d.includes("spaces"))).toBe(true);
+    const plan = await matcher.apply(projectSlug, { entities: [], collections: [withoutAspect] }, { dryRun: true });
+    expect(plan.plan.destructive.some((d) => d.includes("embeddings.style"))).toBe(true);
 
-    await expect(matcher.apply(projectSlug, { entities: [], collections: [withoutSpaces] })).rejects.toThrow(
+    await expect(matcher.apply(projectSlug, { entities: [], collections: [withoutAspect] })).rejects.toThrow(
       /allowDestructive/
     );
 
-    await matcher.apply(projectSlug, { entities: [], collections: [withoutSpaces] }, { allowDestructive: true });
+    await matcher.apply(projectSlug, { entities: [], collections: [withoutAspect] }, { allowDestructive: true });
 
     const { db, close } = createDbFromUrl(databaseUrl!);
     const col = await db.execute<{ column_name: string }>(sql`
       SELECT column_name FROM information_schema.columns
-      WHERE table_schema = ${schemaName} AND table_name = 'c_products' AND column_name = 'space_vec'
+      WHERE table_schema = ${schemaName} AND table_name = 'c_products' AND column_name = 'emb_style'
     `);
     await close();
     expect(col.length).toBe(0);

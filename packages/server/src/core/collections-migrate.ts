@@ -254,6 +254,11 @@ export function planCollectionMigration(
   }
 
   const incomingEvidence = evidenceEntries(incoming);
+  const storedEvidence = evidenceEntries(stored);
+  if (storedEvidence.length > 0 && incomingEvidence.length === 0) {
+    alterStatements.push(`DROP TABLE IF EXISTS ${evidenceTable(schema, coll)}`);
+    plan.destructive.push(`${coll}.evidence: all evidence aspects removed`);
+  }
   if (incomingEvidence.length > 0) {
     const dims = new Set(incomingEvidence.map(([, def]) => def.dim));
     if (dims.size !== 1) throw new Error(`collection ${coll}: evidence embeddings must share one dimension`);

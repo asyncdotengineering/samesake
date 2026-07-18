@@ -63,12 +63,12 @@ function constraintsToFilters(constraints: Record<string, unknown> = {}): Search
 }
 
 function imageOnlyWeights(def: CollectionDef, intent: string, image: SearchOpts["image"]): SearchOpts["weights"] {
-  if (intent || !image || !def.spaces) return undefined;
-  const spaces: Record<string, number> = {};
-  for (const [name, space] of Object.entries(def.spaces)) {
-    spaces[name] = space.kind === "image" ? 4 : 0;
+  if (intent || !image || !def.embeddings) return undefined;
+  const aspects: Record<string, number> = {};
+  for (const [name, embedding] of Object.entries(def.embeddings)) {
+    aspects[name] = embedding.kind === "image" ? 4 : 0;
   }
-  return { fts: 0, cosine: 0, spaces };
+  return { fts: 0, cosine: 0, aspects };
 }
 
 function freshness(lastCheckedAt?: string): "fresh" | "stale" | "unknown" {

@@ -1,7 +1,7 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels, gates, pipeline, stage, s } from "../../sdk/src/index.ts";
+import { collection, f, Channels, gates, pipeline, stage } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { __setImageTransport } from "../src/core/fetch-image.ts";
@@ -121,10 +121,10 @@ describeIf("test:error-rate-abort index path (REQ-18)", () => {
       surfaces: {},
       gate: gates.always,
     },
-    spaces: {
-      visual: s.image({ source: "$image_url", model: "test-img", dim: 8 }),
+    embeddings: {
+      visual: { kind: "image", source: "$image_url", model: "test-img", dim: 8 },
     },
-    search: { channels: [Channels.spaces({ weight: 1 })], defaultSpaceWeights: { visual: 1 } },
+    search: { channels: [Channels.cosine({ embedding: "visual", weight: 1 })] },
   });
 
   beforeAll(async () => {

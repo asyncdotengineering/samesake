@@ -270,7 +270,7 @@ function crossSignalAgrees(ctx: DerivedDocContext): boolean {
   return fromText === fromEnriched;
 }
 
-// Graded/compositional embed text only — hard attrs stay in filters/spaces (REQ-11b).
+// Graded/compositional embed text only — hard attrs stay in filters/aspects (REQ-11b).
 export function composeFashionEmbedDoc(p: { title: string }, a: Record<string, unknown>): string {
   const parts = [
     `${p.title}.`,
@@ -428,7 +428,7 @@ export interface EnrichEvalAttr {
  * Default attribute specs for scoring fashion enrichment accuracy via `matcher.evaluateEnrichment`.
  * The controlled, gate/filter-critical attributes the classify+extract pipeline is expected to get
  * right. `is_apparel_product` has no "unknown" state (true/false are both real), so its empty-set is
- * []. Baked into the template (like fashion.fields/spaces/nlq) so consumers score without hand-rolling.
+ * []. Baked into the template (like fashion.fields/aspects/nlq) so consumers score without hand-rolling.
  */
 export function fashionEvalAttributes(): EnrichEvalAttr[] {
   return [

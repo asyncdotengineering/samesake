@@ -9,7 +9,6 @@ import { sql } from "drizzle-orm";
 import {
   fashion,
   fashionSearchFields,
-  fashionSpaces,
   fashionEnrichPipeline,
   collection,
   Channels,
@@ -24,7 +23,6 @@ const smoke = collection(COLL, {
   fields: fashionSearchFields(),
   indexing: fashion.indexing(),
   embeddings: { doc: { model: "gemini-embedding-2", dim: 1536, taskType: "RETRIEVAL_DOCUMENT" } },
-  spaces: fashionSpaces({ visual: false }), // text-only smoke; visual proven in repro-visual
   enrich: fashionEnrichPipeline(),
   search: {
     channels: [Channels.fts({ fields: ["title"], weight: 1 }), Channels.cosine({ embedding: "doc", weight: 1 })],

@@ -45,6 +45,7 @@ export interface IndexDocumentRow {
   embedding?: number[] | null;
   embeddings?: Record<string, number[] | null>;
   evidence?: Record<string, Array<{ src: string; vector: number[] }>>;
+  scope?: Record<string, string>;
   fields?: Record<string, unknown>;
 }
 
@@ -292,6 +293,8 @@ async function runHybridQuery(
   const activePlans = aspectPlans.filter((plan) => plan.weight > 0 && plan.queryVector !== null);
   const hasFts = weights.fts > 0;
   const hasCos = activePlans.length > 0;
+  const hasColumnAspect = activePlans.some((plan) => plan.embedding.evidence !== true);
+  const needsBaseWhere = hasFts || hasColumnAspect;
   const hasRec = weights.recency > 0;
   const needCosFloor = relevanceFloor !== null && hasCos;
   const recField = sanitiseIdent(weights.recencyField);
@@ -302,15 +305,17 @@ async function runHybridQuery(
   const vectorRefs = new Map<string, string>();
   for (const plan of activePlans) vectorRefs.set(plan.name, addParam(toVectorLiteral(plan.queryVector!)));
 
-  const scopeCond = Object.entries(scopeCols)
-    .map(([col, value]) => `${col} = ${addParam(value)}`)
-    .join(" AND ");
+  const scopeCond = needsBaseWhere
+    ? Object.entries(scopeCols)
+        .map(([col, value]) => `${col} = ${addParam(value)}`)
+        .join(" AND ")
+    : "";
   const visibility = scopeCond
     ? `(pipeline_status = 'ready' OR pipeline_status IS NULL) AND ${scopeCond}`
     : "(pipeline_status = 'ready' OR pipeline_status IS NULL)";
   const compiled = buildFilterSql(filters, def, filterOpts, params.length + 1);
   const where = compiled.where === "true" ? visibility : `${compiled.where} AND ${visibility}`;
-  params.push(...compiled.params);
+  if (needsBaseWhere) params.push(...compiled.params);
   const limitRef = addParam(limit);
   const offsetRef = addParam(offset);
 
@@ -543,11 +548,25 @@ export function makeSearchService(
     const embEntries = embeddingEntries(def);
     const nonEvidenceEntries = embEntries.filter(([, embedding]) => embedding.evidence !== true);
     const evidence = evidenceEntries(def);
+    const scopeCols = (def.scopes ?? []).map((scope) => `scope_${sanitiseIdent(scope)}`);
+    const scopeValue = (row: IndexDocumentRow, column: string): string | null =>
+      row.scope?.[column] ?? row.scope?.[column.slice("scope_".length)] ?? null;
     let indexed = 0;
 
     for (const row of rows) {
-      const aspectColumns = nonEvidenceEntries.map(([name], index) => embeddingColumn(name, embEntries.findIndex(([key]) => key === name)));
-      const cols = ["id", "data", "enriched", "content_hash", "doc", ...aspectColumns, ...fieldCols];
+      const aspectColumns = nonEvidenceEntries.map(([name]) => embeddingColumn(name, embEntries.findIndex(([key]) => key === name)));
+      const cols = [
+        "id",
+        "data",
+        "enriched",
+        "content_hash",
+        "doc",
+        "fts_src",
+        "fts_src_a",
+        ...aspectColumns,
+        ...scopeCols,
+        ...fieldCols,
+      ];
       const firstName = embEntries[0]?.[0];
       const values: unknown[] = [
         row.id,
@@ -555,10 +574,13 @@ export function makeSearchService(
         row.enriched ? JSON.stringify(row.enriched) : null,
         row.content_hash ?? "test",
         row.doc ?? null,
+        row.doc ?? null,
+        null,
         ...nonEvidenceEntries.map(([name]) => {
           const vector = row.embeddings?.[name] ?? (name === firstName ? row.embedding : null);
           return vector ? toVectorLiteral(vector) : null;
         }),
+        ...scopeCols.map((column) => scopeValue(row, column)),
         ...fieldKeys.map((name) => row.fields?.[name] ?? null),
       ];
 
@@ -581,9 +603,11 @@ export function makeSearchService(
         const evTable = evidenceTable(project.schema_name, collectionName);
         await ctx.storage.client("parameterized search query").unsafe(`DELETE FROM ${evTable} WHERE doc_id = $1`, [row.id]);
         for (const ev of evRows) {
+          const evColumns = [...scopeCols, "doc_id", "aspect", "ord", "vec", "src"];
+          const evValues = [...scopeCols.map((column) => scopeValue(row, column)), row.id, ev.aspect, ev.ord, ev.vector, ev.src];
           await ctx.storage.client("parameterized search query").unsafe(
-            `INSERT INTO ${evTable} (doc_id, aspect, ord, vec, src) VALUES ($1, $2, $3, $4, $5)`,
-            [row.id, ev.aspect, ev.ord, ev.vector, ev.src]
+            `INSERT INTO ${evTable} (${evColumns.join(", ")}) VALUES (${evValues.map((_, index) => `$${index + 1}`).join(", ")})`,
+            evValues
           );
         }
       }
@@ -613,7 +637,7 @@ export function makeSearchService(
     const mode: SearchMode = opts.mode ?? (hasImage ? "similar" : "intent");
     const weights = parseSearchWeights(def, opts.weights, mode, hasImage);
     // Pure image similarity: an image query with no text has no meaningful text vector
-    // (the cosine leg would embed the "image query" placeholder). Let the visual space carry
+    // (the cosine leg would embed the "image query" placeholder). Let the visual aspect carry
     // it. Explicit cosine override still wins.
     if (mode === "similar" && hasImage && !q && opts.weights?.cosine === undefined) {
       weights.cosine = 0;

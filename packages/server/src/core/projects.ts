@@ -32,7 +32,6 @@ function validateProjectConfig(config: ProjectConfig): void {
     assertIdent(c.name, "collection");
     assertNoIdentCollisions(Object.keys(c.fields ?? {}), "field");
     for (const k of Object.keys(c.embeddings ?? {})) assertIdent(k, "embedding");
-    for (const k of Object.keys(c.spaces ?? {})) assertIdent(k, "space");
     validateCollectionIndexingManifest(c);
   }
 }

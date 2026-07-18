@@ -87,15 +87,12 @@ function buildWeights(
     weights.fts ??= 0;
     weights.cosine ??= 0;
   }
-  if (image && def.spaces && weights.spaces === undefined) {
-    const spaceWeights: Record<string, number> = {};
-    for (const [name, sdef] of Object.entries(def.spaces)) {
-      if (sdef.kind === "image") spaceWeights[name] = 4;
-      if (sdef.kind === "text") spaceWeights[name] = q ? 1 : 0;
-      if (sdef.kind === "number" || sdef.kind === "categorical") spaceWeights[name] = 0.4;
-      if (sdef.kind === "recency") spaceWeights[name] = 0.2;
+  if (image && def.embeddings && weights.aspects === undefined) {
+    const aspects: Record<string, number> = {};
+    for (const [name, embedding] of Object.entries(def.embeddings)) {
+      aspects[name] = embedding.kind === "image" ? 4 : q ? 1 : 0;
     }
-    weights.spaces = spaceWeights;
+    weights.aspects = aspects;
   }
   return Object.keys(weights).length ? weights : undefined;
 }
@@ -166,9 +163,9 @@ function relaxFilters(
 function visualCosines(explain: Awaited<ReturnType<SearchService["searchExplain"]>> | null): Map<string, number> {
   const out = new Map<string, number>();
   for (const doc of explain?.docs ?? []) {
-    const values = Object.entries(doc.space_cosines ?? {})
+    const values = Object.entries(doc.aspect_ranks ?? {})
       .filter(([name]) => name.toLowerCase().includes("visual") || name.toLowerCase().includes("image"))
-      .map(([, value]) => Number(value));
+      .map(([, value]) => Number(value.cosine));
     if (values.length) out.set(doc.id, Math.max(...values));
   }
   return out;

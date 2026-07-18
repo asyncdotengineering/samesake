@@ -7,7 +7,6 @@ import {
   fashionExtractSchema,
   fashionEnrichPipeline,
   fashionSearchFields,
-  fashionSpaces,
   composeFashionEmbedDoc,
   fashionNlqSchema,
   collection,
@@ -175,14 +174,6 @@ describe("fashion enrichment template", () => {
     expect(f.price).toMatchObject({ type: "number", budget: true });
   });
 
-  test("spaces include visual by default; opt out", () => {
-    const s = fashionSpaces();
-    expect(s.visual).toBeDefined();
-    expect((s.visual as { kind: string }).kind).toBe("image");
-    expect((s.price as { kind: string }).kind).toBe("number");
-    expect(fashionSpaces({ visual: false }).visual).toBeUndefined();
-  });
-
   test("extract/classify prompts use structured prompting (role, named rules, few-shot)", () => {
     const p = fashionEnrichPipeline();
     const extract = p.stages[1]!.prompt({ data: { title: "x" }, enriched: { category: "dresses" } });
@@ -214,8 +205,16 @@ describe("fashion enrichment template", () => {
     const c = collection("products", {
       fields: fashionSearchFields(),
       indexing: fashion.indexing(),
-      embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
-      spaces: fashionSpaces({ visual: false }),
+      embeddings: {
+        doc: { model: "gemini-embedding-2", dim: 1536 },
+        visual: { kind: "image", model: "gemini-embedding-2", dim: 768 },
+        facets: {
+          evidence: true,
+          model: "gemini-embedding-2",
+          dim: 1536,
+          extract: ({ enriched }: { enriched: Record<string, unknown> }) => [String(enriched.category ?? "")].filter(Boolean),
+        },
+      } as const,
       enrich: fashionEnrichPipeline(),
       search: {
         channels: [Channels.cosine({ embedding: "doc", weight: 1 })],
