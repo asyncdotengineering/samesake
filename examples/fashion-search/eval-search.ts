@@ -28,8 +28,134 @@ const flag = (k: string, d: string) => (args.find((a) => a.startsWith(`--${k}=`)
 const PHASE = flag("phase", "baseline");
 const K = Number(flag("limit", "5"));
 const QUERIES = Number(flag("queries", "0")); // 0 = all
+const FIXTURE = args.includes("--fixture");
 
 interface Q { id: string; type: string; query: string }
+
+interface FixtureProduct {
+  id: string;
+  title: string;
+  brand: string;
+  category: string;
+  colors: string[];
+  material: string;
+  price: number;
+  available: boolean;
+}
+
+interface FixtureQuery {
+  id: string;
+  type: string;
+  query: string;
+  filters?: Record<string, unknown>;
+  relevant: string[];
+}
+
+const fixtureProducts: FixtureProduct[] = [
+  { id: "red-dress", title: "red cotton summer dress", brand: "Luna", category: "dresses", colors: ["red"], material: "cotton", price: 72, available: true },
+  { id: "blue-dress", title: "blue linen office dress", brand: "Aster", category: "dresses", colors: ["blue"], material: "linen", price: 118, available: true },
+  { id: "black-jeans", title: "black denim straight jeans", brand: "North", category: "bottoms", colors: ["black"], material: "denim", price: 64, available: true },
+  { id: "sold-red", title: "red party dress", brand: "Aster", category: "dresses", colors: ["red"], material: "polyester", price: 140, available: false },
+];
+
+const fixtureQueries: FixtureQuery[] = [
+  { id: "keyword", type: "keyword", query: "red dress", filters: { available: true }, relevant: ["red-dress"] },
+  { id: "color-required", type: "color-required", query: "office dress in blue", filters: { colors: ["blue"], available: true }, relevant: ["blue-dress"] },
+  { id: "color-excluded", type: "color-excluded", query: "straight jeans not blue", filters: { available: true }, relevant: ["black-jeans"] },
+  { id: "price-cap", type: "price-cap", query: "dress under 100", filters: { price: { $lte: 100 }, available: true }, relevant: ["red-dress"] },
+  { id: "empty", type: "empty", query: "laptop", filters: { available: true }, relevant: [] },
+];
+
+function fixtureTokens(value: string): string[] {
+  return value.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+
+function fixturePassesFilters(product: FixtureProduct, filters: Record<string, unknown> = {}): boolean {
+  for (const [field, expected] of Object.entries(filters)) {
+    const actual = product[field as keyof FixtureProduct];
+    if (expected && typeof expected === "object" && !Array.isArray(expected)) {
+      const ops = expected as Record<string, unknown>;
+      if (typeof ops.$lte === "number" && !(typeof actual === "number" && actual <= ops.$lte)) return false;
+      if (typeof ops.$gte === "number" && !(typeof actual === "number" && actual >= ops.$gte)) return false;
+      continue;
+    }
+    if (Array.isArray(expected)) {
+      if (!Array.isArray(actual) || !expected.some((value) => actual.includes(value))) return false;
+    } else if (actual !== expected) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function fixtureSearch(query: FixtureQuery): FixtureProduct[] {
+  const terms = fixtureTokens(query.query);
+  return fixtureProducts
+    .filter((product) => fixturePassesFilters(product, query.filters))
+    .map((product) => {
+      const text = fixtureTokens(`${product.title} ${product.brand} ${product.category} ${product.colors.join(" ")} ${product.material}`);
+      return { product, score: terms.reduce((total, term) => total + (text.includes(term) ? 1 : 0), 0) };
+    })
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score || left.product.id.localeCompare(right.product.id))
+    .map(({ product }) => product);
+}
+
+function fixtureMetrics(rows: Array<{ query: FixtureQuery; hits: FixtureProduct[] }>, k = 10) {
+  const byType = new Map<string, typeof rows>();
+  for (const row of rows) (byType.get(row.query.type) ?? (byType.set(row.query.type, []), byType.get(row.query.type)!)).push(row);
+  const metrics = (subset: typeof rows) => {
+    const meanAt10 = subset.length === 0 ? 0 : subset.reduce((sum, row) => {
+      const relevant = row.hits.slice(0, k).filter((hit) => row.query.relevant.includes(hit.id)).length;
+      return sum + relevant / Math.max(1, Math.min(k, row.query.relevant.length || 1));
+    }, 0) / subset.length;
+    const pAt5 = subset.length === 0 ? 0 : subset.reduce((sum, row) => {
+      const relevant = row.hits.slice(0, 5).filter((hit) => row.query.relevant.includes(hit.id)).length;
+      return sum + relevant / 5;
+    }, 0) / subset.length;
+    return {
+      meanAt10: Math.round(meanAt10 * 1000) / 1000,
+      pAt5: Math.round(pAt5 * 1000) / 1000,
+      zeroResultRate: subset.length === 0 ? 0 : subset.filter((row) => row.hits.length === 0).length / subset.length,
+      hitAt10: subset.length === 0 ? 0 : subset.filter((row) => row.hits.slice(0, k).some((hit) => row.query.relevant.includes(hit.id))).length / subset.length,
+    };
+  };
+  return {
+    overall: metrics(rows),
+    byType: Object.fromEntries([...byType.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([type, subset]) => [type, metrics(subset)])),
+  };
+}
+
+async function runFixture(): Promise<void> {
+  const selected = QUERIES > 0 ? fixtureQueries.slice(0, QUERIES) : fixtureQueries;
+  const rows = selected.map((query) => ({ query, hits: fixtureSearch(query) }));
+  const common = fixtureMetrics(rows, 10);
+  const artifact = {
+    phase: PHASE,
+    mode: "fixture",
+    corpus: { products: fixtureProducts.length, queries: rows.length },
+    k: 10,
+    common,
+    perQuery: rows.map(({ query, hits }) => ({ id: query.id, type: query.type, q: query.query, hits: hits.length, topIds: hits.slice(0, 10).map((hit) => hit.id) })),
+  };
+  await mkdir(RUNS_DIR, { recursive: true });
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const base = join(RUNS_DIR, `${ts}-search-${PHASE}-fixture`);
+  await writeFile(`${base}.json`, JSON.stringify(artifact, null, 2) + "\n");
+  const md = [
+    `# Search eval — ${PHASE} fixture`,
+    "",
+    `**Overall:** mean@10 ${common.overall.meanAt10} · P@5 ${common.overall.pAt5} · zero-results ${(common.overall.zeroResultRate * 100).toFixed(0)}% · Hit@10 ${common.overall.hitAt10.toFixed(3)}`,
+    "",
+    "| query type | mean@10 | P@5 | zero-results | Hit@10 |",
+    "|---|---:|---:|---:|---:|",
+    ...Object.entries(common.byType).map(([type, value]) => `| ${type} | ${value.meanAt10} | ${value.pAt5} | ${(value.zeroResultRate * 100).toFixed(0)}% | ${value.hitAt10.toFixed(3)} |`),
+    "",
+  ].join("\n");
+  await writeFile(`${base}.md`, md + "\n");
+  console.log(md);
+  console.log(`artifact: ${base}.json`);
+}
 
 async function loadQueries(): Promise<Q[]> {
   const g = JSON.parse(await readFile(GOLDEN, "utf8")) as { queries: Q[] };
@@ -43,6 +169,10 @@ function mean(xs: number[]): number {
 }
 
 async function main(): Promise<void> {
+  if (FIXTURE) {
+    await runFixture();
+    return;
+  }
   const queries = await loadQueries();
   const byQ = new Map(queries.map((q) => [q.query, q]));
   const matcher = createFashionMatcher();
