@@ -369,7 +369,9 @@ export function makeEmbedIndexService(
         });
       }
 
-      for (const row of rows) {
+      // Bounded per-doc concurrency: a doc's indexing is ~1 visual + ~10 evidence embed calls,
+      // all row-scoped — serial processing makes backfill wall-clock scale with API latency.
+      const processRow = async (row: (typeof rows)[number]) => {
         try {
           const fieldValues = fieldCols.map(([name, fdef]) => {
             const v = resolveFieldValue(name, fdef, row.data, row.enriched);
@@ -422,10 +424,14 @@ export function makeEmbedIndexService(
           if (e instanceof ImagePipelineError) {
             await recordPipelineFailure(ctx, table, row.id, e);
             onRowFailure(e);
-            continue;
+            return;
           }
           throw e;
         }
+      };
+      const INDEX_CONCURRENCY = 8;
+      for (let i = 0; i < rows.length; i += INDEX_CONCURRENCY) {
+        await Promise.all(rows.slice(i, i + INDEX_CONCURRENCY).map(processRow));
       }
     }
 

@@ -131,8 +131,10 @@ export const productsCollection = collection("products", {
     channels: [
       Channels.fts({ fields: ["title"], weight: 1 }),
       Channels.cosine({ embedding: "doc", weight: 1 }),
-      Channels.cosine({ embedding: "visual", weight: 1 }),
-      Channels.cosine({ embedding: "facets", weight: 0.6 }),
+      // ASPECTS=0 zero-weights the aspect legs (gated out of the SQL entirely) for the
+      // C9 same-code same-corpus baseline run; default ON is the gate candidate.
+      Channels.cosine({ embedding: "visual", weight: process.env.ASPECTS === "0" ? 0 : 1 }),
+      Channels.cosine({ embedding: "facets", weight: process.env.ASPECTS === "0" ? 0 : 0.6 }),
       Channels.recency({ field: "updated_at", halfLifeDays: 90, weight: 0 }),
     ],
     combiner: "rrf",
