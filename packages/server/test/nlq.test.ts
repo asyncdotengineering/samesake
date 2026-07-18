@@ -234,6 +234,23 @@ describe("parseNlq", () => {
 });
 
 describe("deterministic soft-enum guard", () => {
+  test("test:enum-token-short-query derives red with zero generation calls", async () => {
+    let calls = 0;
+    const result = await parseNlq(
+      {
+        generateConfigured: false,
+        generate: async () => {
+          calls++;
+          return {};
+        },
+      } as unknown as MatcherCtx,
+      testProductsCollection,
+      "red dress"
+    );
+    expect(result.filters).toEqual({ colors: ["red"] });
+    expect(calls).toBe(0);
+  });
+
   test("matches normalized enum tokens without generation", () => {
     const filters = deriveEnumTokenFilters("RED, dress", testProductsCollection);
     expect(filters).toEqual({ colors: ["red"] });
