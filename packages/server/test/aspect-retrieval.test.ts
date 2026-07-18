@@ -84,6 +84,14 @@ describe("test:aspect-ddl", () => {
     );
   });
 
+  test("no-open-vocab collections keep the legacy system-column DDL snapshot", () => {
+    expect(
+      createHash("sha256")
+        .update(JSON.stringify(gen.ensureCollectionSystemColumns("project_demo", "products", aspectCollection)))
+        .digest("hex")
+    ).toBe("b91e0a8053498afd693ced9e43bb8519a52cbf3ae723e372e07fab2d87abc53c");
+  });
+
   test("multi-aspect DDL emits named columns and evidence storage", () => {
     const ddl = gen.collectionTableDDL("project_demo", aspectCollection).join("\n");
     expect(ddl).toContain("emb_visual halfvec(8)");

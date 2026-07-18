@@ -169,6 +169,14 @@ describeIf("embed-index integration", () => {
     // halfvec (fp16) storage quantizes components — the round-tripped norm is
     // unit-length only to ~1e-3.
     expect(norm).toBeCloseTo(1, 3);
+
+    const { db: vocabDb, close: closeVocab } = createDbFromUrl(databaseUrl!);
+    const vocab = await vocabDb.execute<{ field: string; value: string; count: number }>(sql.raw(`
+      SELECT field, value, count FROM ${schemaName}.c_products_vocab
+      WHERE field = 'brand'
+    `));
+    await closeVocab();
+    expect(Array.from(vocab)).toEqual([{ field: "brand", value: "zara", count: 1 }]);
   });
 
   test("re-index only stale docs after enrich update", async () => {
@@ -195,6 +203,14 @@ describeIf("embed-index integration", () => {
     await close2();
     expect(rows[0]!.brand).toBe("hm");
     expect(rows[0]!.colors).toEqual(["blue"]);
+
+    const { db: vocabDb, close: closeVocab } = createDbFromUrl(databaseUrl!);
+    const vocab = await vocabDb.execute<{ field: string; value: string; count: number }>(sql.raw(`
+      SELECT field, value, count FROM ${schemaName}.c_products_vocab
+      WHERE field = 'brand'
+    `));
+    await closeVocab();
+    expect(Array.from(vocab)).toEqual([{ field: "brand", value: "hm", count: 1 }]);
   });
 });
 
