@@ -14,7 +14,9 @@ await matcher.migrate();
 const applied = await ensureProject(matcher);
 console.log(`[backfill] apply done (${JSON.stringify(applied ?? {}).slice(0, 200)})`);
 
-const res = await matcher.index(PROJECT, COLLECTION, {});
+const res = await matcher.index(PROJECT, COLLECTION, {
+  limit: Number(process.env.BF_LIMIT ?? 100_000),
+});
 console.log(
   `[backfill] indexed=${JSON.stringify(res)} in ${Math.round((Date.now() - t0) / 1000)}s`
 );

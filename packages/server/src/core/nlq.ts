@@ -132,28 +132,36 @@ export function deriveNlqSchema(def: CollectionDef): Record<string, unknown> {
     description:
       "descriptive intent stripped of price and negation constraints; never empty",
   };
-  if (embeddingEntries(def).length > 0) {
-    properties.aspects = {
-      type: "OBJECT",
-      description: "Aspect routing for retrieval. Omit aspects not referenced by the query.",
-      properties: Object.fromEntries(
-        embeddingEntries(def).map(([name, embedding]) => [name, {
-          type: "OBJECT",
-          properties: {
-            subQuery: { type: "STRING", description: "Focused fragment for this aspect" },
-            weight: { type: "NUMBER", minimum: 0, maximum: 1 },
-          },
-          required: ["weight"],
-          description: embedding.describe ?? name,
-        }])
-      ),
-    };
-  }
+  const fragment = aspectsSchemaFragment(def);
+  if (fragment) properties.aspects = fragment;
 
   return {
     type: "OBJECT",
     properties,
     required: ["semantic_query"],
+  };
+}
+
+// Shared with parseNlq: custom nlq schemas (predating aspects, or filter-only) must still be
+// able to emit routing — without this property in the structured-output schema, constrained
+// decoding silently disables routing and every query runs all aspect legs at default weights
+// (the V02g flat-weights failure).
+export function aspectsSchemaFragment(def: CollectionDef): Record<string, unknown> | null {
+  if (embeddingEntries(def).length === 0) return null;
+  return {
+    type: "OBJECT",
+    description: "Aspect routing for retrieval. Omit aspects not referenced by the query.",
+    properties: Object.fromEntries(
+      embeddingEntries(def).map(([name, embedding]) => [name, {
+        type: "OBJECT",
+        properties: {
+          subQuery: { type: "STRING", description: "Focused fragment for this aspect" },
+          weight: { type: "NUMBER", minimum: 0, maximum: 1 },
+        },
+        required: ["weight"],
+        description: embedding.describe ?? name,
+      }])
+    ),
   };
 }
 
@@ -313,7 +321,15 @@ export async function parseNlq(
     return fallback;
   }
 
-  const schema = normalizeSchema(def.search?.nlq?.schema ?? deriveNlqSchema(def));
+  const schema = normalizeSchema(def.search?.nlq?.schema ?? deriveNlqSchema(def)) as {
+    properties?: Record<string, unknown>;
+  };
+  // Custom (filter-only / pre-aspects) schemas still get the routing property — without it,
+  // constrained decoding can never emit `aspects` and routing silently dies (V02g redux).
+  const aspectFragment = aspectsSchemaFragment(def);
+  if (aspectFragment && schema?.properties && !schema.properties.aspects) {
+    schema.properties.aspects = aspectFragment;
+  }
   const instructions = def.search?.nlq?.instructions;
   // Caching is best-effort: minimal test/embedded contexts may lack system tables.
   const cache = ctx.systemTables?.samesakeStageCache ? makeStageCacheService(ctx) : null;

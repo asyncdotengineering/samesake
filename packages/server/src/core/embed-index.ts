@@ -293,7 +293,9 @@ export function makeEmbedIndexService(
       assertErrorRateWithinLimit(processed, failed, errorRateOpts);
     }
 
+    console.log(`[timing] pending=${pending.length} batchSize=${BATCH_SIZE}`);
     for (let i = 0; i < pending.length; i += BATCH_SIZE) {
+      console.log(`[timing] chunk offset=${i}`);
       const chunk = pending.slice(i, i + BATCH_SIZE);
       const rows: Array<{
         id: string;
@@ -372,6 +374,10 @@ export function makeEmbedIndexService(
       // Bounded per-doc concurrency: a doc's indexing is ~1 visual + ~10 evidence embed calls,
       // all row-scoped — serial processing makes backfill wall-clock scale with API latency.
       const processRow = async (row: (typeof rows)[number]) => {
+        console.log(`[timing] start doc=${row.id}`);
+        const tRow = Date.now();
+        let tEmbeds = 0;
+        let tEvidence = 0;
         try {
           const fieldValues = fieldCols.map(([name, fdef]) => {
             const v = resolveFieldValue(name, fdef, row.data, row.enriched);
@@ -391,7 +397,9 @@ export function makeEmbedIndexService(
               row.enriched
             );
             if (!value) throw new ImagePipelineError(`embedding source is empty for aspect "${name}"`);
+            const tE = Date.now();
             vectors.set(name, await embedDocumentValue(embedding, value, embedService, ctx.groundImage));
+            tEmbeds += Date.now() - tE;
             if (index === 0) {
               colNames.push("doc", embeddingColumn(name, index));
               params.push(value, toVectorLiteral(vectors.get(name)!));
@@ -416,10 +424,14 @@ export function makeEmbedIndexService(
              WHERE id = $${params.length}`,
             params
           );
+          const tEv = Date.now();
           await replaceEvidenceRows(ctx, project.schema_name, collectionName, row.id, row.scope, row.data, row.enriched, def, embedService);
+          tEvidence = Date.now() - tEv;
           ctx.observability.inc("index_docs_total");
           indexed++;
           processed++;
+          // Temporary C9-backfill instrumentation: per-doc phase timing (remove after gate).
+          console.log(`[timing] doc=${row.id} total=${Date.now() - tRow}ms embeds=${tEmbeds}ms evidence=${tEvidence}ms`);
         } catch (e) {
           if (e instanceof ImagePipelineError) {
             await recordPipelineFailure(ctx, table, row.id, e);
@@ -429,9 +441,11 @@ export function makeEmbedIndexService(
           throw e;
         }
       };
-      // 3 keeps sustained request rate under typical embed-API RPM ceilings — 8 provoked a
-      // 429 retry-backoff collapse (measured: zero rows in 3 min against a ~100 RPM key).
-      const INDEX_CONCURRENCY = 3;
+      // Env-tunable for backfills; default is conservative for unknown embed-API tiers.
+      // (Tier-3 Gemini allows 20K RPM — measured peak here was 175, so high values are safe
+      // when the provider allows; the earlier "429 collapse" reading was a misdiagnosis of
+      // stale-dist code.)
+      const INDEX_CONCURRENCY = Math.max(1, Number(process.env.SAMESAKE_INDEX_CONCURRENCY ?? 8));
       for (let i = 0; i < rows.length; i += INDEX_CONCURRENCY) {
         await Promise.all(rows.slice(i, i + INDEX_CONCURRENCY).map(processRow));
       }
