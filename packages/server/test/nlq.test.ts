@@ -8,6 +8,8 @@ import { collection, f, Channels, type CollectionDef } from "@samesake/core";
 import {
   deriveNlqSchema,
   deriveEnumTokenFilters,
+  dropUncorroboratedHardEnumFilters,
+  guardLexicalQuery,
   mergeDeterministicSoftFilters,
   nlqCacheKey,
   mergeFilters,
@@ -230,6 +232,147 @@ describe("parseNlq", () => {
     expect(received).toBeDefined();
     expect(received!.type).toBe("object");
     expect((received!.properties as Record<string, unknown>).semantic_query).toEqual({ type: "string" });
+  });
+});
+
+describe("dropUncorroboratedHardEnumFilters", () => {
+  const coll = collection("apparel", {
+    fields: {
+      title: f.text({ searchable: true }),
+      category: f.enum(["tops", "dresses", "ethnic", "outerwear"] as const, { filterable: true }),
+      gender: f.enum(["men", "women"] as const, { filterable: true, alsoMatch: ["unisex"] }),
+      styles: f.array(f.enum(["streetwear", "formal"] as const), { filterable: true }),
+      colors: f.array(f.enum(["red", "blue"] as const), { filterable: true, soft: true }),
+    },
+    indexing: ftsIndexingByTitle,
+    search: { channels: [Channels.fts({ fields: ["title"], weight: 1 })] },
+  }) as CollectionDef;
+
+  test("drops a hard enum value with no token support (saree blous -> category tops)", () => {
+    const { filters, dropped } = dropUncorroboratedHardEnumFilters(
+      { category: "tops", gender: "women" },
+      coll,
+      "saree blous",
+      "saree blouse"
+    );
+    expect(filters).toEqual({});
+    expect(dropped).toEqual({ category: ["tops"], gender: ["women"] });
+  });
+
+  test("keeps a hard enum value corroborated with plural tolerance (dress -> dresses)", () => {
+    const { filters, dropped } = dropUncorroboratedHardEnumFilters(
+      { category: "dresses" },
+      coll,
+      "summer dress not floral",
+      "summer dress not floral"
+    );
+    expect(filters).toEqual({ category: "dresses" });
+    expect(dropped).toEqual({});
+  });
+
+  test("corroborates via corrected lexical_query tokens (floral dres)", () => {
+    const { filters } = dropUncorroboratedHardEnumFilters(
+      { category: "dresses" },
+      coll,
+      "floral dres",
+      "floral dress"
+    );
+    expect(filters).toEqual({ category: "dresses" });
+  });
+
+  test("filters uncorroborated values out of hard array enums", () => {
+    const { filters, dropped } = dropUncorroboratedHardEnumFilters(
+      { styles: ["streetwear", "formal"] },
+      coll,
+      "formal shirt",
+      undefined
+    );
+    expect(filters).toEqual({ styles: ["formal"] });
+    expect(dropped).toEqual({ styles: ["streetwear"] });
+  });
+
+  test("corroborates via alsoMatch aliases", () => {
+    const { filters } = dropUncorroboratedHardEnumFilters(
+      { gender: "women" },
+      coll,
+      "unisex hoodie",
+      undefined
+    );
+    expect(filters).toEqual({ gender: "women" });
+  });
+
+  test("leaves soft fields and exclusions untouched", () => {
+    const { filters, dropped } = dropUncorroboratedHardEnumFilters(
+      { colors: ["red"], pattern: { $nin: ["floral"] }, category: { $nin: ["ethnic"] } } as never,
+      coll,
+      "plain top",
+      undefined
+    );
+    expect(filters).toEqual({ colors: ["red"], pattern: { $nin: ["floral"] }, category: { $nin: ["ethnic"] } });
+    expect(dropped).toEqual({});
+  });
+});
+
+describe("guardLexicalQuery", () => {
+  test("accepts typo corrections within edit distance", () => {
+    expect(guardLexicalQuery("hoddie", "hoodie")).toBe("hoodie");
+    expect(guardLexicalQuery("denim jaket", "denim jacket")).toBe("denim jacket");
+    expect(guardLexicalQuery("saree blous", "saree blouse")).toBe("saree blouse");
+  });
+
+  test("accepts constraint removal (fewer tokens than the query)", () => {
+    expect(guardLexicalQuery("red dress under 5000", "red dress")).toBe("red dress");
+  });
+
+  test("rejects expansion, translation, and unrelated substitution", () => {
+    // observed live: "hoddie" -> "streetwear hoodie" (invented token + count growth)
+    expect(guardLexicalQuery("hoddie", "streetwear hoodie")).toBeUndefined();
+    // observed live: "saree blous" -> "saree blouse hattaya" (translated synonym injected)
+    expect(guardLexicalQuery("saree blous", "saree blouse hattaya")).toBeUndefined();
+    expect(guardLexicalQuery("hoddie", "sweatshirt")).toBeUndefined();
+  });
+
+  test("requires exact match for very short tokens", () => {
+    expect(guardLexicalQuery("xl tee", "xl tee")).toBe("xl tee");
+    expect(guardLexicalQuery("xl tee", "xxl tee")).toBeUndefined();
+  });
+
+  test("passes non-latin scripts through unchanged", () => {
+    expect(guardLexicalQuery("சிவப்பு ஆடை", "சிவப்பு ஆடை")).toBe("சிவப்பு ஆடை");
+  });
+
+  test("drops empty or non-string values", () => {
+    expect(guardLexicalQuery("red dress", "")).toBeUndefined();
+    expect(guardLexicalQuery("red dress", undefined)).toBeUndefined();
+  });
+});
+
+describe("parseNlq lexical guard", () => {
+  test("test:lexical-guard-drop strips an expanded lexical_query from the parse", async () => {
+    const ctx = {
+      generateConfigured: true,
+      generate: async () => ({
+        semantic_query: "oversized streetwear hoodie",
+        lexical_query: "streetwear hoodie",
+      }),
+    } as unknown as MatcherCtx;
+
+    const result = await parseNlq(ctx, testProductsCollection, "hoddie");
+    expect(result.degraded).toBe(false);
+    expect(result.parsed.lexical_query).toBeUndefined();
+  });
+
+  test("test:lexical-guard-keep preserves a faithful correction", async () => {
+    const ctx = {
+      generateConfigured: true,
+      generate: async () => ({
+        semantic_query: "denim jacket",
+        lexical_query: "denim jacket",
+      }),
+    } as unknown as MatcherCtx;
+
+    const result = await parseNlq(ctx, testProductsCollection, "denim jaket");
+    expect(result.parsed.lexical_query).toBe("denim jacket");
   });
 });
 

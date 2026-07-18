@@ -265,7 +265,7 @@ function augmentNlqSchema(
     properties.semantic_query = { type: "STRING", description: "descriptive intent stripped of constraints; never empty" };
   }
   if (!Object.hasOwn(properties, "lexical_query")) {
-    properties.lexical_query = { type: "STRING", description: "corrected keyword surface with structured constraints removed" };
+    properties.lexical_query = { type: "STRING", description: "the user's own words with spelling corrected and structured constraints removed; never add, translate, or expand terms" };
   }
   const aspectFragment = aspectsSchemaFragment(def);
   if (aspectFragment && !Object.hasOwn(properties, "aspects")) properties.aspects = aspectFragment;
@@ -357,6 +357,98 @@ export function deriveEnumTokenFilters(q: string, def: CollectionDef): SearchFil
     else filters[field] = { $in: values };
   }
   return filters;
+}
+
+function pluralInsensitiveEquals(a: string, b: string): boolean {
+  return a === b || a === `${b}s` || a === `${b}es` || b === `${a}s` || b === `${a}es`;
+}
+
+function valueTokensCorroborated(tokens: string[], surface: string[]): boolean {
+  return tokens.length > 0 && tokens.every((token) => surface.some((s) => pluralInsensitiveEquals(token, s)));
+}
+
+// A query-side LLM cannot reliably replicate the doc-side taxonomy: live corpus evidence showed
+// "saree blous" parsed to category=tops while every saree blouse is enriched category=ethnic —
+// the hard eq filter deleted the entire relevant set, and count-based relaxation never fires
+// because the wrong pool is plentiful. So a hard (non-soft) enum filter derived by the LLM is
+// applied only when the enum value itself (or an alsoMatch alias) appears in the user's words —
+// raw q or the guard-validated lexical_query, so corrected typos still corroborate. Soft fields
+// keep LLM synonym mapping (bounded blast radius); exclusions ($nin/$ne) are exempt because
+// negation intent is explicit in the query by construction.
+export function dropUncorroboratedHardEnumFilters(
+  filters: SearchFilters,
+  def: CollectionDef,
+  q: string,
+  lexical?: string
+): { filters: SearchFilters; dropped: Record<string, string[]> } {
+  const surface = [...enumTokens(q), ...(typeof lexical === "string" ? enumTokens(lexical) : [])];
+  const dropped: Record<string, string[]> = {};
+  const out: SearchFilters = { ...filters };
+
+  for (const [field, raw] of Object.entries(filters)) {
+    const fieldDef = def.fields[field];
+    const isHardEnum =
+      !!fieldDef &&
+      fieldDef.filterable === true &&
+      fieldDef.soft !== true &&
+      (fieldDef.type === "enum" || (fieldDef.type === "array" && fieldDef.itemType === "enum"));
+    if (!isHardEnum) continue;
+
+    const aliases = new Map<string, string[][]>();
+    for (const value of fieldDef.values ?? []) aliases.set(value, [enumTokens(value)]);
+    if (fieldDef.type === "enum") {
+      for (const alias of fieldDef.alsoMatch ?? []) {
+        for (const tokenSets of aliases.values()) tokenSets.push(enumTokens(alias));
+      }
+    }
+    const corroborated = (value: string): boolean => {
+      const tokenSets = aliases.get(value) ?? [enumTokens(value)];
+      return tokenSets.some((tokens) => valueTokensCorroborated(tokens, surface));
+    };
+
+    const keepValues = (values: string[]): string[] => values.filter(corroborated);
+    if (typeof raw === "string") {
+      if (!corroborated(raw)) {
+        dropped[field] = [raw];
+        delete out[field];
+      }
+    } else if (Array.isArray(raw)) {
+      const kept = keepValues(raw.filter((v): v is string => typeof v === "string"));
+      const removed = raw.filter((v): v is string => typeof v === "string" && !kept.includes(v));
+      if (removed.length) {
+        dropped[field] = removed;
+        if (kept.length) out[field] = kept;
+        else delete out[field];
+      }
+    } else if (raw && typeof raw === "object") {
+      const record = { ...(raw as Record<string, unknown>) };
+      let removedAny: string[] = [];
+      for (const op of ["$eq", "$in"]) {
+        const value = record[op];
+        if (typeof value === "string") {
+          if (!corroborated(value)) {
+            removedAny.push(value);
+            delete record[op];
+          }
+        } else if (Array.isArray(value)) {
+          const strings = value.filter((v): v is string => typeof v === "string");
+          const kept = keepValues(strings);
+          const removed = strings.filter((v) => !kept.includes(v));
+          if (removed.length) {
+            removedAny = removedAny.concat(removed);
+            if (kept.length) record[op] = kept;
+            else delete record[op];
+          }
+        }
+      }
+      if (removedAny.length) {
+        dropped[field] = removedAny;
+        if (Object.keys(record).length) out[field] = record as SearchFilters[string];
+        else delete out[field];
+      }
+    }
+  }
+  return { filters: out, dropped };
 }
 
 export function mergeDeterministicSoftFilters(
@@ -477,6 +569,14 @@ function buildNlqPrompt(
   if (Object.keys(candidates).length > 0) {
     parts.push(`Catalog-grounded filter candidates (JSON data; use only values represented by the schema enums):\n${JSON.stringify(candidates)}`);
   }
+  parts.push(
+    [
+      "Parse contract:",
+      "- Derive filters only from constraints the query states or directly implies. Never invent attributes, styles, or qualities the user did not express — a bare product word implies no style, occasion, or color.",
+      "- lexical_query: the user's own words with spelling corrected and structured constraints removed. Never add, translate, or expand terms.",
+      "- semantic_query: a faithful restatement of the stated intent with spelling corrected. Do not embellish with unstated qualities.",
+    ].join("\n")
+  );
   parts.push(`Query: "${q}"`);
   return parts.join("\n\n");
 }
@@ -569,6 +669,59 @@ function applyGrounding(
   return { filters: out, dropped: [...new Set(dropped)] };
 }
 
+function lexicalGuardTokens(text: string): string[] {
+  return text
+    .normalize("NFKC")
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+
+function editDistanceWithin(a: string, b: string, max: number): boolean {
+  if (Math.abs(a.length - b.length) > max) return false;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    let rowMin = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      const value = Math.min(prev[j]! + 1, next[j - 1]! + 1, prev[j - 1]! + cost);
+      next.push(value);
+      if (value < rowMin) rowMin = value;
+    }
+    if (rowMin > max) return false;
+    prev = next;
+  }
+  return prev[b.length]! <= max;
+}
+
+// Keyed off the shorter of the pair so code-like tokens ("xl", "38") demand exact matches
+// even against a longer emitted token ("xxl").
+function lexicalPairBudget(a: string, b: string): number {
+  const len = Math.min(a.length, b.length);
+  if (len <= 2) return 0;
+  if (len <= 5) return 1;
+  return 2;
+}
+
+// LLMs "helpfully" expand short queries — "hoddie" became lexical_query "streetwear hoodie",
+// "saree blous" became "saree blouse hattaya" (a translated synonym injected into the FTS
+// surface). Both regressed the typo bucket. The lexical_query contract is: the user's own
+// tokens, typo-corrected, structured constraints removed — so every emitted token must map to
+// an original token within a small edit distance and the token count must not grow. Violations
+// drop the whole lexical_query (FTS falls back to the raw q, i.e. pre-NLQ behavior).
+export function guardLexicalQuery(q: string, lexical: unknown): string | undefined {
+  if (typeof lexical !== "string" || !lexical.trim()) return undefined;
+  const originals = lexicalGuardTokens(q);
+  const corrected = lexicalGuardTokens(lexical);
+  if (corrected.length === 0 || corrected.length > originals.length) return undefined;
+  for (const token of corrected) {
+    const ok = originals.some((orig) => editDistanceWithin(token, orig, lexicalPairBudget(token, orig)));
+    if (!ok) return undefined;
+  }
+  return lexical.trim();
+}
+
 function appendDroppedSemantic(semantic: string, dropped: string[]): string {
   let out = semantic.trim();
   for (const value of dropped) {
@@ -629,7 +782,27 @@ export async function parseNlq(
   const cacheKey = nlqCacheKey(def, q, schemaCandidates);
 
   const finishParsed = async (parsed: NlqParsed, degraded: boolean): Promise<NlqParseResult> => {
-    const { filters: parsedFilters, excludeTerms, budgetHints } = nlqParsedToFilters(parsed, def);
+    const guardedLexical = guardLexicalQuery(q, parsed.lexical_query);
+    if (guardedLexical !== parsed.lexical_query) {
+      parsed = { ...parsed };
+      if (guardedLexical === undefined) {
+        delete parsed.lexical_query;
+        ctx.observability?.inc("nlq_lexical_guard_drops");
+      } else {
+        parsed.lexical_query = guardedLexical;
+      }
+    }
+    const { filters: rawParsedFilters, excludeTerms, budgetHints } = nlqParsedToFilters(parsed, def);
+    const corroboration = dropUncorroboratedHardEnumFilters(
+      rawParsedFilters,
+      def,
+      q,
+      parsed.lexical_query
+    );
+    if (Object.keys(corroboration.dropped).length) {
+      ctx.observability?.inc("nlq_uncorroborated_enum_drops");
+    }
+    const parsedFilters = corroboration.filters;
     const vocabValues = openVocabFilterValues(parsedFilters, def);
     let groundedValues: Record<string, GroundedValueDecision[]> = {};
     if (Object.keys(vocabValues).length > 0) {

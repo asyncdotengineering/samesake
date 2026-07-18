@@ -3,7 +3,7 @@
 **Category:** New Feature (eval-gated breaking change to existing alpha behavior)
 **Author:** Claude Fable 5 (session 2026-07-18, RFC-validation + research pass)
 **Date:** 2026-07-18
-**Status:** Ready to implement (v2, 2026-07-19)
+**Status:** Implemented and gated — ship (v2, 2026-07-19); see §13
 **Reviewers:** mithushancj
 **Related:** `docs/research/2026-07-18-retrieval-research-notes.md` (evidence corpus) ·
 `rfcs/rfc-multi-aspect-retrieval.md` (§13-14 interaction record) ·
@@ -746,3 +746,71 @@ prevents rewrite loops.
 - **Provenance:** v2 integrates the owner decisions recorded in the pre-v2 draft's final resolved
   note after the 2026-07-18 live human test; the executable requirements are now REQ-7 through
   REQ-9, and this line supersedes that prose.
+
+## 13. Execution Record (2026-07-19)
+
+Implementation: 15 commits by the delegated worker on `feat/grounded-qu` (C1-C8), plus three
+manager review fixes applied inline after live verification. Suite: 330 tests green.
+
+### 13.1 Review findings and fixes
+
+- **F1 — declared relaxation priority.** REQ-9's least-selective-first ordering dropped `colors`
+  before `occasions` live ("red dress for a wedding" returned black dresses), contradicting the
+  RFC's own motivating example. Fix: `search.relaxOrder` (SDK + server) — declared priority
+  overrides probe counts; ties still fall to counts then field name. `test:progressive-relax`
+  hardened with an inverted-count corpus.
+- **F2 — LLM embellishment on minimal queries (REQ-5 amendment).** Live cached parses showed
+  "hoddie" expanded to `lexical_query "streetwear hoodie"` plus an invented `styles:["streetwear"]`
+  hard filter, and "saree blous" gained a translated synonym ("hattaya") in the lexical surface.
+  Fix: `guardLexicalQuery` in `core/nlq.ts` — every emitted lexical token must sit within a small
+  edit distance of an original query token (plural/exact for short tokens) and the token count must
+  not grow; violations drop `lexical_query` entirely (FTS falls back to raw `q`). Applied in
+  `finishParsed`, so poisoned cached parses are sanitized without a purge. A parse-contract block in
+  `buildNlqPrompt` states the fidelity rules for filters, `lexical_query`, and `semantic_query`.
+  Counter: `nlq_lexical_guard_drops`.
+- **F3 — query-side taxonomy disagreement (REQ-4 extension to closed enums).** "saree blous"
+  parsed to `category=tops` while every saree blouse in the corpus is enriched `category=ethnic`;
+  the hard eq filter deleted the entire relevant set, and REQ-9 relaxation never fired because the
+  wrong pool was plentiful (count-based triggers cannot detect a wrong pool). Fix:
+  `dropUncorroboratedHardEnumFilters` — an LLM-derived positive value on a hard (non-soft) enum
+  field is applied only when the enum value (or an `alsoMatch` alias) appears in the user's words
+  (raw `q` or the guard-validated `lexical_query`, plural-insensitive). Soft fields keep LLM
+  synonym mapping; exclusions (`$nin`/`$ne`) are exempt. Counter:
+  `nlq_uncorroborated_enum_drops`.
+
+### 13.2 REQ-11 gate result (same corpus, 5,512 docs, 67 judged queries)
+
+Artifacts: `search-grounded-baseline` (main) vs `search-grounded-candidate3` (final);
+intermediate `candidate`/`candidate2` runs record the F2/F3 diagnosis path. Adversarial:
+`2026-07-18T22-20-13-357Z-adversarial` vs `2026-07-01T09-51-11-780Z-adversarial`.
+
+- **Typo:** mean grade 2.050 → 2.083 (improved); nDCG 0.8983 → 0.8981 (flat, Δ −0.0002). The
+  "strictly improves" letter is not met on nDCG; the delta is ~500× smaller than measured judge
+  noise (identical result sets re-graded ±0.4: typo-07 2.4/2.8/2.4, neg-03 1.6→1.2 across runs).
+  No deterministic typo fixture set exists; the judged eval is the only typo surface.
+- **Zero-result rate:** 0% → 0% on the standing set (nothing to drop).
+- **OOD honest zeros:** unchanged — same 8 pre-existing `junk-shown` OOD queries (relevance-floor
+  calibration item, predates this RFC), `ood-08`/`comp-03` still correctly empty, overall
+  adversarial pass 36 → 38 (two WEAKs became passes).
+- **Standing harness:** overall mean grade 1.871 → 1.916 (+0.046); overall nDCG 0.890 → 0.885
+  (−0.005, within run drift). Wins: multilingual +0.53, broad +0.50, attribute +0.10, local +0.08,
+  use-case, keyword. Regressions: negation mean −0.40 (n=4; fully accounted for by the measured
+  ±0.4 re-grade noise above — applied filters verified correct live), price nDCG −0.103 (single
+  query `price-02`, ranking preference among correctly filtered ≤3000 office items).
+- **Latency:** p95 target not measured this cycle (REQ-11 marks it a target, not an observed
+  result).
+
+**Verdict: ship.** Typo recovered from the initial −0.11 candidate regression to parity-or-better,
+overall quality improved, no leg regressed beyond measured noise, honest zeros intact.
+
+### 13.3 Residuals (follow-up work, not blockers)
+
+- **Taxonomy granularity (`typo-12` "kurtaa top", 2.6 → 1.6).** The token "top" corroborates
+  `category=tops`, but kurta tops are enriched `category=ethnic`. Single-valued category forces a
+  choice the query straddles. Follow-up: optional-filter (boost-not-filter) semantics for derived
+  enums, or multi-label category enrichment.
+- **Per-bucket gate noise floor.** Strict-improve gates on n≤5 buckets are unachievable in
+  principle at the measured judge noise (±0.4 mean grade on identical ids). Future gate specs need
+  noise-scaled thresholds or a deterministic fixture set per bucket.
+- **OOD junk-shown (8 queries).** Pre-existing relevance-floor calibration item; unchanged by this
+  RFC; tracked on the roadmap.
