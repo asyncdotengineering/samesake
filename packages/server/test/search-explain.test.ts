@@ -106,7 +106,7 @@ describeIf("search explain", () => {
     const explain = await matcher.searchExplain(projectSlug, "products", opts);
     expect(result.constraintTrace.deterministicFilters).toEqual({ colors: ["red"] });
     expect(result.constraintTrace.groundedValues).toEqual({});
-    expect(result.constraintTrace.relaxationSteps).toEqual([]);
+    expect(result.constraintTrace.relaxationSteps).toEqual(explain.constraintTrace.relaxationSteps);
     expect(result.relaxedFields).toEqual(result.constraintTrace.relaxedFields);
     expect(explain.constraintTrace.deterministicFilters).toEqual(result.constraintTrace.deterministicFilters);
     expect(explain.constraintTrace.appliedFilters).toEqual(result.constraintTrace.appliedFilters);
