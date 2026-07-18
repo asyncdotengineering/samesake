@@ -87,6 +87,46 @@ offline eval loop.
   documented re-embed/migration path before it happens by accident (Netflix realigns spaces
   with an orthogonal transform; for samesake a versioned re-embed pipeline is enough).
 
+## Controlled-vocabulary (enum) design — census, principle, precedent (added 2026-07-19)
+
+**Census (fashion template):** 12 vocabularies, ~141 values — categories 15, colors 25,
+materials 19, neckline 14, pattern 13, styles 13, occasions 10, length 10, fit 8,
+sleeve_length 7, gender 4, modesty 3. Eight are filterable collection fields today
+(category, gender, colors, occasions, styles, pattern, material, fit); neckline/length/
+sleeve_length/modesty are enrichment-only — natural filter-field candidates since golden
+queries already use their values verbatim ("off shoulder maxi dress").
+
+**Principle:** an attribute earns enum status when it is must-match or facet-critical —
+enums are what make filters hard, facets unfragmented, enrichment measurable (the 97.8% F1
+gold set requires a closed vocabulary), and deterministic query-side matching possible
+(grounded-QU REQ-8). Language-like open vocabularies (brand, product_type) stay text and get
+*grounding* (matched against live catalog values), never a frozen list. Over-enuming is a
+real failure mode (enrichment burden, taxonomy maintenance, facet sprawl); expected mature
+size ≈ 15 vocabularies / ~200 values, not thousands.
+
+**Industry precedent — the most universal pattern in the whole survey:** every production
+LLM-QU system constrains output to a controlled vocabulary (survey synthesis #4). DoorDash
+tags queries into a fixed taxonomy and measured the constraint as +8.3pp of a +13pp gain,
+with free-text mapped INTO controlled terms ("no-milk"→"dairy-free" — our `alsoMatch`
+shape); Instacart forces the LLM to choose among retrieved candidate categories; Walmart's
+relevance models consume structured attribute slots ([SEP] brand [SEP] color [SEP] gender);
+Google Merchant made color/pattern/material + item_group_id the canonical feed contract;
+Algolia/Typesense/Meilisearch presume declared filterable attributes, and the case studies'
+measurable wins (SidelineSwap size, Batch gender) came from moving must-match attributes OUT
+of embeddings into deterministic handling. Samesake's differentiation is the fill side: the
+enrichment pipeline populates these vocabularies from messy vendor data at measured accuracy
+— the part incumbents make merchants do by hand. The deterministic matcher closes the loop:
+the same ~140 words recognized on both sides of the search box.
+
+**Multilingual extension (follow-up):** the deterministic matcher is Unicode-correct (NFKC,
+whole-token; Sinhala/Tamil are space-separated) but the vocabulary is English — non-English
+queries are covered by the LLM layer (schema-constrained to English enum output). The
+sanctioned zero-LLM extension is `alsoMatch` synonym packs per value (red → ["රතු",
+"சிவப்பு"]): tiny closed lists, authored once into the fashion template, LLM-generated +
+human-reviewed, asserted by extended `ml-*` goldens. Highest value exactly where it matters
+most: non-English queries skew tail → cold/degraded parses → the deterministic guard's
+coverage window.
+
 ## Enthusiast (upsidelab) — competitive read
 
 Their retrieval is dense-only with a hard FTS gate (`ts_rank > 0.05` then pure cosine order),
