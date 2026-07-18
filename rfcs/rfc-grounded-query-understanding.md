@@ -347,6 +347,14 @@ lookup so tenant A's vendor names never appear in tenant B's prompts (REQ-2).
     (Interaction: the multi-aspect D1/F1 skip-to-first routing rule keys off the same
     heuristic — with the skip removed, short queries get real parses and route normally;
     degraded parses still fall back to first-aspect-only.)
+  - **REQ-15: progressive soft-filter relaxation.** Live finding ("red dress for a wedding",
+    2026-07-18): the corpus holds exactly 3 docs matching {dresses, red, wedding guest}; the
+    <3-results retry dropped ALL soft filters wholesale, so color-mismatched items filled the
+    page while the trace still displayed `colors: [red]`. Relax one soft filter at a time,
+    least-selective first (measured by per-filter match counts, one cheap count query), and
+    stop as soon as results ≥ threshold — "red dress for a wedding" should relax to red
+    dresses, never to black ones. The trace must report relaxation prominently
+    (`relaxedFields` exists; surface it in appliedFilters rendering).
   - **REQ-14: deterministic enum-token layer.** A zero-LLM token matcher over declared enum
     vocabularies (+ `alsoMatch` synonyms) derives soft filters instantly — serving the cold
     first hit (before/while the LLM parse lands), degraded-parse fallback, and as a guardrail

@@ -89,7 +89,10 @@ async function run() {
     for (const col of data.columns) {
       const div = document.createElement("div");
       div.className = "col";
-      div.innerHTML = `<h2>${col.label}</h2><div class="meta">${col.took_ms}ms · ${col.hits.length} hits</div>`;
+      const relaxNote = col.relaxed
+        ? `<div class="meta" style="color:#ffb454">⚠ soft filters RELAXED — constraints below were dropped, not applied</div>`
+        : "";
+      div.innerHTML = `<h2>${col.label}</h2><div class="meta">${col.took_ms}ms · ${col.hits.length} hits</div>${relaxNote}`;
       col.hits.forEach((h, i) => {
         const legs = h.legs
           ? Object.entries(h.legs).map(([n, v]) => {
