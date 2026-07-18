@@ -1,6 +1,8 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { sql } from "drizzle-orm";
 import { collection, f, Channels } from "../../sdk/src/index.ts";
 import type { MatcherCtx } from "../src/types.ts";
@@ -182,7 +184,30 @@ describe("test:routing", () => {
   });
 });
 
-describeIf("test:maxsim-leg and test:explain-aspects", () => {
+describe("test:no-spaces-gate", () => {
+  test("contains no removed spaces symbols in active SDK or server core", () => {
+    const repoRoot = join(import.meta.dir, "../../..");
+    const paths = [
+      "packages/server/src/core",
+      "packages/sdk/src",
+    ];
+    const symbols = /space_vec|SpacesChannel|spaceSegmentWeights|buildQuerySpace/;
+    const offenders: string[] = [];
+    for (const relative of paths) {
+      const files = Bun.spawnSync(["rg", "--files", join(repoRoot, relative)])
+        .stdout.toString()
+        .trim()
+        .split("\n")
+        .filter(Boolean);
+      for (const file of files) {
+        if (symbols.test(readFileSync(file, "utf8"))) offenders.push(file);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+describeIf("test:aspect-index and test:aspect-leg-sql and test:maxsim-leg and test:explain-aspects", () => {
   const projectSlug = `t_${Math.random().toString(36).slice(2, 10)}`;
   let matcher: ReturnType<typeof createMatcher>;
   let schemaName = "";
@@ -229,6 +254,37 @@ describeIf("test:maxsim-leg and test:explain-aspects", () => {
       await close();
     }
     if (matcher) await matcher.close();
+  });
+
+  test("test:aspect-index replaces evidence rows on reindex", async () => {
+    const row = (src: string) => ({
+      id: "reindex",
+      data: { title: "reindex", price: 5 },
+      doc: "reindex",
+      embeddings: { doc: stubEmbed("reindex", 8), visual: stubEmbed("reindex", 8) },
+      evidence: { facets: [{ src, vector: stubEmbed(src, 8) }] },
+      fields: { title: "reindex", price: 5 },
+    });
+    await matcher.indexDocuments(projectSlug, "products", [row("old claim")]);
+    await matcher.indexDocuments(projectSlug, "products", [row("new claim")]);
+    const { db, close } = createDbFromUrl(databaseUrl!);
+    const rows = await db.execute<{ src: string }>(sql.raw(
+      `SELECT src FROM ${schemaName}.c_products_evidence WHERE doc_id = 'reindex' ORDER BY ord`
+    ));
+    await close();
+    expect(Array.from(rows)).toEqual([{ src: "new claim" }]);
+  });
+
+  test("test:aspect-leg-sql emits only weighted aspect legs", async () => {
+    const result = await matcher.searchExplain(projectSlug, "products", {
+      q: "target",
+      mode: "similar",
+      limit: 3,
+      weights: { fts: 0, aspects: { doc: 1, visual: 0, facets: 0 } },
+    });
+    expect(result.docs[0]?.aspect_ranks?.doc).toEqual(expect.any(Object));
+    expect(result.docs[0]?.aspect_ranks?.visual?.rank).toBeNull();
+    expect(result.docs[0]?.aspect_ranks?.facets?.rank).toBeNull();
   });
 
   test("MaxSim uses the best evidence row and survives a selective filter", async () => {
