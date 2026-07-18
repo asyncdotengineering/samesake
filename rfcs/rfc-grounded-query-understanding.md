@@ -338,3 +338,11 @@ lookup so tenant A's vendor names never appear in tenant B's prompts (REQ-2).
 - Q3: Session context (broad→narrow refinement, Walmart-style) — follow-up RFC once this
   lands; the prompt seam this RFC creates (candidates block) is where prior-query context
   would slot.
+- Q4 (added 2026-07-18, from human testing): **deterministic enum-token derivation for
+  skip-NLQ queries.** "red dress" (≤2 tokens → NLQ skipped) returned black garments at
+  ranks 7-8 via the color-blind dense leg — no parse means no `colors: red` constraint even
+  though "red" is a DECLARED enum value of a filterable field. Requirement candidate: a
+  zero-LLM token matcher over declared enum vocabularies (+ alsoMatch synonyms) derives soft
+  filters for short queries at zero latency/cost, closing the head-query constraint gap the
+  skip heuristic creates. Evidence: human-test session 2026-07-18; the same query with ≥3
+  tokens (NLQ active) derives the color filter and excludes the mismatches.
