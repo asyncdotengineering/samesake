@@ -2,11 +2,12 @@ import type { CollectionDef, CollectionFieldDef, DerivedDocContext, PipelineDef 
 import type { MatcherCtx } from "../types.ts";
 import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
+import { sql } from "drizzle-orm";
 import type { ProjectsService } from "./projects.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
 import { fetchRemoteImageSafe } from "./fetch-image.ts";
 import { searchResultCache } from "./search-cache.ts";
-import { collectionTableName, getByPath, getPgClient } from "./db-utils.ts";
+import { collectionTableName, getByPath } from "./db-utils.ts";
 import {
   assertErrorRateWithinLimit,
   recordPipelineFailure,
@@ -195,8 +196,7 @@ async function replaceEvidenceRows(
   }
 
   await ctx.storage.transaction(async (tx) => {
-    const client = getPgClient(tx, "embed-index evidence");
-    await client.unsafe(`DELETE FROM ${table} WHERE doc_id = $1`, [docId]);
+    await tx.execute(sql`DELETE FROM ${sql.raw(table)} WHERE doc_id = ${docId}`);
     const columns = [...scopeCols, "doc_id", "aspect", "ord", "vec", "src"];
     for (const row of pending) {
       const values: unknown[] = [
@@ -207,10 +207,9 @@ async function replaceEvidenceRows(
         row.vec,
         row.src,
       ];
-      const placeholders = values.map((_, index) => `$${index + 1}`).join(", ");
-      await client.unsafe(
-        `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${placeholders})`,
-        values
+      await tx.execute(
+        sql`INSERT INTO ${sql.raw(table)} (${sql.join(columns.map((column) => sql.identifier(column)), sql`, `)})
+            VALUES (${sql.join(values.map((value) => sql`${value}`), sql`, `)})`
       );
     }
   });
@@ -343,20 +342,23 @@ export function makeEmbedIndexService(
           }
         }
 
-        if (hasEmb) {
-          const docText = needsEnrich
-            ? String(row.doc ?? "").trim()
-            : (inline!.doc ?? "").trim();
-          if (!docText) {
-            ctx.observability.log("warn", "embed-index", "skipping doc — empty embedding document", {
-              docId: rowId,
-            });
-            await markIndexSkipped(rowId);
-            continue;
+          const needsTextDocument = embEntries.some(
+            ([, embedding]) => embedding.evidence !== true && embedding.kind !== "image"
+          );
+          if (needsTextDocument) {
+            const docText = needsEnrich
+              ? String(row.doc ?? "").trim()
+              : (inline!.doc ?? "").trim();
+            if (!docText) {
+              ctx.observability.log("warn", "embed-index", "skipping doc — empty embedding document", {
+                docId: rowId,
+              });
+              await markIndexSkipped(rowId);
+              continue;
+            }
           }
-        }
 
-        rows.push({
+          rows.push({
           id: rowId,
           doc: needsEnrich ? String(row.doc ?? "").trim() : (inline?.doc ?? "").trim(),
           data,
@@ -494,9 +496,13 @@ export function makeEmbedIndexService(
         : embeddingText(name, denseSurfaces[name] ? undefined : embedding.source, denseSurfaces[name] ?? firstValue, data, enriched);
       if (!value) return false;
       const vec = await embedDocumentValue(embedding, value, embedService, ctx.groundImage);
-      colNames.push(index === 0 ? "doc" : embeddingColumn(name, index));
-      params.push(index === 0 ? value : toVectorLiteral(vec));
-      if (index === 0) params.push(toVectorLiteral(vec));
+      if (index === 0) {
+        colNames.push("doc", embeddingColumn(name, index));
+        params.push(value, toVectorLiteral(vec));
+      } else {
+        colNames.push(embeddingColumn(name, index));
+        params.push(toVectorLiteral(vec));
+      }
     }
     if (defaultSurfaces) {
       colNames.push("fts_src", "fts_src_a");

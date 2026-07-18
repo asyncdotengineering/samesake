@@ -229,8 +229,6 @@ export const Channels = {
   },
 } as const;
 
-const PGVECTOR_HNSW_MAX_DIMS = 4000;
-
 type CollectionInput<
   TFields extends Record<string, CollectionFieldDef>,
   TEmbeddings extends Record<string, CollectionEmbeddingDef>,
@@ -300,11 +298,6 @@ export function collection<
   if (embeddings.length > 0) {
     assertNoIdentCollisions(embeddings.map(([key]) => key), "embedding");
     for (const [index, [key, embedding]] of embeddings.entries()) {
-      if (!Number.isInteger(embedding.dim) || embedding.dim <= 0 || embedding.dim > PGVECTOR_HNSW_MAX_DIMS) {
-        throw new Error(
-          `collection "${name}": embedding "${key}" dim ${embedding.dim} exceeds the pgvector HNSW limit of ${PGVECTOR_HNSW_MAX_DIMS}`
-        );
-      }
       if (embedding.evidence !== true && embedding.extract !== undefined) {
         throw new Error(`collection "${name}": embedding "${key}" defines extract without evidence:true`);
       }
