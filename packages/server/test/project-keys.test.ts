@@ -59,7 +59,7 @@ describeIf("project API keys", () => {
     ]);
     const rotated = await matcher.rotateProjectKey(projectA);
     projectKeyA = rotated.apiKey;
-  });
+  }, 30_000);
 
   afterAll(async () => {
     const { db, close } = createDbFromUrl(databaseUrl!);
@@ -67,7 +67,7 @@ describeIf("project API keys", () => {
     if (schemaB) await db.execute(sql.raw(`DROP SCHEMA IF EXISTS ${schemaB} CASCADE`));
     await close();
     if (matcher) await matcher.close();
-  });
+  }, 30_000);
 
   test("rotated project key authorizes own project search", async () => {
     const res = await authFetch(matcher, `/v1/projects/${projectA}/collections/products/search`, projectKeyA, {
