@@ -61,6 +61,18 @@ export function parseSearchWeights(
   } else if (cosine > 0) {
     fts = Math.min(fts, KEYWORD_TIEBREAK * cosine);
   }
+  // C9 gate verdict (2026-07-18, artifacts evals/runs/*aspects-*): non-primary aspect legs
+  // are OFF by default for text intent queries — across the gate run and two calibration
+  // runs they diluted the doc+fts core (style 2.075→1.65-1.83, overall 1.916→1.81-1.86)
+  // despite query-aware routing. They still serve `similar`/image-query mode fully, and a
+  // per-query `weights.aspects` override (below) re-enables them for experiments — the same
+  // mode rule + override escape the spaces leg had. Facets-only intent retest is the
+  // recorded follow-up hypothesis (use-case +0.18, negation +0.30 were real gains).
+  if (mode === "intent" && !_hasImage) {
+    for (const name of Object.keys(aspects)) {
+      if (name !== firstAspect) aspects[name] = 0;
+    }
+  }
 
   if (override?.fts !== undefined) fts = override.fts;
   if (override?.cosine !== undefined) {
@@ -193,9 +205,17 @@ export async function resolveAspectPlans(
       if (skipToFirst) {
         if (index !== 0) continue;
       } else if (routed) {
-        if (!route || route.weight <= 0) continue;
-        weight *= route.weight;
-        text = route.subQuery ?? semanticText;
+        if (route) {
+          if (route.weight <= 0) continue;
+          weight *= route.weight;
+          text = route.subQuery ?? semanticText;
+        } else if (index !== 0) {
+          // Unrouted non-primary aspects stay off (the V02g noise fix). The primary
+          // aspect is the retrieval workhorse: it never silently drops out just because
+          // the router omitted it (C9 run 1 measured −0.11 overall from exactly that).
+          // An explicit route with weight 0 still zeroes it deliberately.
+          continue;
+        }
       }
     } else if (mode === "intent" && routed && route) {
       if (route.weight <= 0) continue;

@@ -539,3 +539,33 @@ execution MUST address:
   gate AFTER the lexical A/B fixture exists (BM25 itself was dropped 2026-07-18; the fixture
   survives — `rfc-bm25-lexical-leg.md` §0), so per-leg attribution can separate lexical-leg
   effects from aspect effects on the same harness.
+
+## 14. C9 execution record (2026-07-18, same night as the build)
+
+Built at full scope (C1–C10) and gated the same night on the real 5,512-doc corpus
+(full visual + facets backfill). Result: **gate FAILED — run 1 plus both protocol
+calibration runs** (artifacts `evals/runs/2026-07-18T*aspects-*`; summary table in
+`BENCHMARKS.md` "Aspects gate"). Verdict executed per §11: **intent-mode non-primary aspect
+legs OFF by default** (`parseSearchWeights` mode rule — the same rule + per-query
+`weights.aspects` override escape the spaces leg had); the capability ships; `similar`/image
+mode unaffected.
+
+Findings that amend this RFC's spec:
+
+- **REQ-5 amendment (calibration 1, kept):** the PRIMARY aspect never drops below its
+  configured weight when the router omits it — omit-means-zero applies to non-primary
+  aspects only. Run 1 measured −0.11 overall from the router silencing the doc leg
+  (the LLM omits `doc` routinely); an explicit routed weight of 0 still zeroes it.
+- **Thesis verdict:** "routing was V02g's missing piece" is falsified for the VISUAL aspect
+  on text intent — style regressed under every configuration (2.075 → 1.65–1.83); visual
+  similarity is not intent similarity, and the doc embedding already carries style. The
+  FACETS evidence leg showed real, consistent gains (use-case +0.18, negation +0.30) —
+  **follow-up experiment: facets-only intent aspects** via the per-query override.
+- **REQ-10 verified** after fixing an incomplete port found by live smoke: the image-only
+  rule zeroed the derived `weights.cosine` mirror but not `weights.aspects` — pure-image
+  queries ran text-kind legs on the "image query" placeholder at full weight. Fixed: image-
+  only queries run image-kind aspects exclusively. Parity proof: the query image's own
+  product returns at rank 1 via the visual leg (412ms, live corpus). Spaces deletion stands.
+- **Ingest findings** from the backfill (concurrency, watchdog, dead-letter direction, batch
+  APIs) are recorded in `docs/research/2026-07-18-ingestion-at-scale-notes.md` and feed the
+  ingest-at-scale RFC.

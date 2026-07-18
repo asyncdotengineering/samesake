@@ -136,7 +136,9 @@ describe("test:routing", () => {
 
   test("confident routing multiplies weights and uses focused subqueries", async () => {
     embedCalls.length = 0;
-    const weights = parseSearchWeights(aspectCollection, undefined, "intent", false);
+    // Intent-mode non-primary aspects are OFF by default (C9 gate verdict); the per-query
+    // aspects override is the sanctioned way to enable them for routing experiments.
+    const weights = parseSearchWeights(aspectCollection, { aspects: { visual: 1 } }, "intent", false);
     const plans = await resolveAspectPlans(
       aspectCollection,
       weights,

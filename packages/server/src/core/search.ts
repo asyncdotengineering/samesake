@@ -641,6 +641,14 @@ export function makeSearchService(
     // it. Explicit cosine override still wins.
     if (mode === "similar" && hasImage && !q && opts.weights?.cosine === undefined) {
       weights.cosine = 0;
+      // Pure image query: text-kind aspect legs would embed the "image query" placeholder —
+      // noise at full weight that drowns the visual leg (REQ-10 smoke). Only image-kind
+      // aspects carry an image-only query; explicit per-query weights still override.
+      for (const [name, embedding] of embeddingEntries(def)) {
+        if (embedding.kind !== "image" && weights.aspects[name] !== undefined) {
+          weights.aspects[name] = 0;
+        }
+      }
     }
 
     const nlq = await parseNlq(ctx, def, q);

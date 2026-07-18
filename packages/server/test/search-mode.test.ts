@@ -28,7 +28,9 @@ describe("parseSearchWeights — mode-aware weighting", () => {
     const w = parseSearchWeights(def, undefined, "intent", false);
     expect(w.fts).toBe(0.3);
     expect(w.cosine).toBe(1);
-    expect(w.aspects).toEqual({ doc: 1, visual: 0.5 });
+    // Non-primary aspects OFF for text intent by default (C9 gate verdict 2026-07-18);
+    // per-query weights.aspects override re-enables.
+    expect(w.aspects).toEqual({ doc: 1, visual: 0 });
   });
 
   test("similar + text: keyword off and all aspects stay enabled", () => {

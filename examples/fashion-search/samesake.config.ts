@@ -133,8 +133,10 @@ export const productsCollection = collection("products", {
       Channels.cosine({ embedding: "doc", weight: 1 }),
       // ASPECTS=0 zero-weights the aspect legs (gated out of the SQL entirely) for the
       // C9 same-code same-corpus baseline run; default ON is the gate candidate.
-      Channels.cosine({ embedding: "visual", weight: process.env.ASPECTS === "0" ? 0 : 1 }),
-      Channels.cosine({ embedding: "facets", weight: process.env.ASPECTS === "0" ? 0 : 0.6 }),
+      // Aspects are secondary signals (same philosophy as the intent-mode keyword tiebreaker):
+      // C9 cal-1 showed full-weight aspect legs dilute the doc+fts core via RRF fusion.
+      Channels.cosine({ embedding: "visual", weight: process.env.ASPECTS === "0" ? 0 : 0.5 }),
+      Channels.cosine({ embedding: "facets", weight: process.env.ASPECTS === "0" ? 0 : 0.3 }),
       Channels.recency({ field: "updated_at", halfLifeDays: 90, weight: 0 }),
     ],
     combiner: "rrf",

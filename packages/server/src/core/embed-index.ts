@@ -293,9 +293,7 @@ export function makeEmbedIndexService(
       assertErrorRateWithinLimit(processed, failed, errorRateOpts);
     }
 
-    console.log(`[timing] pending=${pending.length} batchSize=${BATCH_SIZE}`);
     for (let i = 0; i < pending.length; i += BATCH_SIZE) {
-      console.log(`[timing] chunk offset=${i}`);
       const chunk = pending.slice(i, i + BATCH_SIZE);
       const rows: Array<{
         id: string;
@@ -374,10 +372,6 @@ export function makeEmbedIndexService(
       // Bounded per-doc concurrency: a doc's indexing is ~1 visual + ~10 evidence embed calls,
       // all row-scoped — serial processing makes backfill wall-clock scale with API latency.
       const processRow = async (row: (typeof rows)[number]) => {
-        console.log(`[timing] start doc=${row.id}`);
-        const tRow = Date.now();
-        let tEmbeds = 0;
-        let tEvidence = 0;
         try {
           const fieldValues = fieldCols.map(([name, fdef]) => {
             const v = resolveFieldValue(name, fdef, row.data, row.enriched);
@@ -397,9 +391,7 @@ export function makeEmbedIndexService(
               row.enriched
             );
             if (!value) throw new ImagePipelineError(`embedding source is empty for aspect "${name}"`);
-            const tE = Date.now();
             vectors.set(name, await embedDocumentValue(embedding, value, embedService, ctx.groundImage));
-            tEmbeds += Date.now() - tE;
             if (index === 0) {
               colNames.push("doc", embeddingColumn(name, index));
               params.push(value, toVectorLiteral(vectors.get(name)!));
@@ -424,14 +416,11 @@ export function makeEmbedIndexService(
              WHERE id = $${params.length}`,
             params
           );
-          const tEv = Date.now();
           await replaceEvidenceRows(ctx, project.schema_name, collectionName, row.id, row.scope, row.data, row.enriched, def, embedService);
-          tEvidence = Date.now() - tEv;
           ctx.observability.inc("index_docs_total");
           indexed++;
           processed++;
           // Temporary C9-backfill instrumentation: per-doc phase timing (remove after gate).
-          console.log(`[timing] doc=${row.id} total=${Date.now() - tRow}ms embeds=${tEmbeds}ms evidence=${tEvidence}ms`);
         } catch (e) {
           if (e instanceof ImagePipelineError) {
             await recordPipelineFailure(ctx, table, row.id, e);
