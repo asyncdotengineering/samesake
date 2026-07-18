@@ -42,15 +42,14 @@ no actual deodorant/perfume because those rows are **quarantined**.
 - `demo-store-products.json` — the curated raw catalog (50 items, source attributes
   kept under `_truth` for reference). Image URLs are the HF datasets-server assets.
 - `rebuild-demo-store.ts` — rebuilds the store from scratch (apply → push → **enrich
-  via Gemini** → index). Run with `SPACES_VISUAL=0` (the HF dataset images are served
-  as `binary/octet-stream`, which the image fetcher rejects, so enrichment is text-only
-  and the visual space is off).
+  via Gemini** → index). The HF dataset images are served as `binary/octet-stream`,
+  which the image fetcher rejects, so the rebuild remains text-only.
 
 Regenerate the seed after a collection-schema change:
 
 ```bash
 cd examples/fashion-search
-SPACES_VISUAL=0 bun --env-file=../../.env rebuild-demo-store.ts   # rebuilds project_demo_store
+bun --env-file=../../.env rebuild-demo-store.ts   # rebuilds project_demo_store
 # then re-dump (pg_dump >= server version), strip pg18 \restrict lines, rename slug → demo_store:
 pg_dump "$SAMESAKE_DATABASE_URL" --schema=project_demo_store --no-owner --no-privileges --no-comments \
   | sed '/^\\restrict/d; /^\\unrestrict/d' > /tmp/schema.sql
