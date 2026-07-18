@@ -666,37 +666,37 @@ export async function parseNlq(
   };
 
   if (cache) {
+    let hit: Record<string, unknown> | null = null;
     try {
-      const hit = (await cache.getStageCache(cacheKey)) as Record<string, unknown> | null;
-      if (hit && typeof hit.semantic_query === "string") {
-        ctx.observability?.inc("nlq_cache_hits");
-        const parsed = normalizeAspectRoutes(def, { ...hit, semantic_query: hit.semantic_query });
-        return finishParsed(parsed, false);
-      }
+      hit = (await cache.getStageCache(cacheKey)) as Record<string, unknown> | null;
     } catch {
       // cache read failures never block the query path
     }
+    if (hit && typeof hit.semantic_query === "string") {
+      ctx.observability?.inc("nlq_cache_hits");
+      const parsed = normalizeAspectRoutes(def, { ...hit, semantic_query: hit.semantic_query });
+      return finishParsed(parsed, false);
+    }
   }
 
+  let raw: Record<string, unknown>;
   try {
-    const raw = (await generateWithTimeout(ctx, {
+    raw = (await generateWithTimeout(ctx, {
       model: def.search?.nlq?.model,
       prompt: buildNlqPrompt(q, def, instructions, schemaCandidates),
       system: instructions,
       schema,
     })) as Record<string, unknown>;
-
-    const semantic =
-      typeof raw.semantic_query === "string" && raw.semantic_query.trim()
-        ? raw.semantic_query.trim()
-        : q;
-
-    const parsed = normalizeAspectRoutes(def, { ...raw, semantic_query: semantic });
-    cache
-      ?.setStageCache(cacheKey, NLQ_CACHE_STAGE, parsed, def.search?.nlq?.model ?? "default", NLQ_CACHE_TTL_DAYS)
-      .catch(() => {});
-    return finishParsed(parsed, false);
   } catch {
     return fallback;
   }
+  const semantic =
+    typeof raw.semantic_query === "string" && raw.semantic_query.trim()
+      ? raw.semantic_query.trim()
+      : q;
+  const parsed = normalizeAspectRoutes(def, { ...raw, semantic_query: semantic });
+  cache
+    ?.setStageCache(cacheKey, NLQ_CACHE_STAGE, parsed, def.search?.nlq?.model ?? "default", NLQ_CACHE_TTL_DAYS)
+    .catch(() => {});
+  return finishParsed(parsed, false);
 }

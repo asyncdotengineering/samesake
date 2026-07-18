@@ -467,7 +467,7 @@ describeIf("NLQ search integration", () => {
     generateCalls = 0;
     const result = await matcher.search(projectSlug, "products", {
       q: `nike running shoes under 100 dollars ${runToken}`,
-      limit: 10,
+      limit: 1,
     });
     expect(generateCalls).toBe(1);
     expect(result.parsed?.semantic_query).toBe("running shoes");
@@ -506,7 +506,7 @@ describeIf("NLQ search integration", () => {
 
   test("short query invokes generate at search time", async () => {
     generateCalls = 0;
-    await matcher.search(projectSlug, "products", { q: `red shoes ${runToken}`, limit: 5 });
+    await matcher.search(projectSlug, "products", { q: `red shoes ${runToken}`, limit: 1 });
     expect(generateCalls).toBe(1);
   });
 });

@@ -6,6 +6,9 @@ import type {
   ConstraintTraceItem,
   ConstraintTraceKind,
   ConstraintTraceSource,
+  GroundedValueDecision,
+  RelaxationStep,
+  RewriteRecord,
 } from "@samesake/core";
 import { normalizeFiltersToConstraintPredicates, type SearchFilters } from "./search-filter.ts";
 
@@ -58,12 +61,14 @@ function sourceForAppliedField(
   field: string,
   input: {
     derivedFilters: SearchFilters;
+    deterministicFilters?: SearchFilters;
     explicitFilters: SearchFilters;
     appliedFilters: SearchFilters;
     budgetHints?: Record<string, "cheap" | "premium">;
   }
 ): ConstraintTraceSource {
   if (Object.hasOwn(input.explicitFilters, field)) return "explicit";
+  if (Object.hasOwn(input.deterministicFilters ?? {}, field)) return "deterministic";
   if (
     Object.hasOwn(input.budgetHints ?? {}, field) &&
     !Object.hasOwn(input.derivedFilters, field) &&
@@ -78,6 +83,7 @@ function buildConstraintPlan(
   def: CollectionDef,
   input: {
     derivedFilters: SearchFilters;
+    deterministicFilters?: SearchFilters;
     explicitFilters: SearchFilters;
     appliedFilters: SearchFilters;
     relaxedFields?: string[];
@@ -118,9 +124,13 @@ export function buildConstraintTrace(
   input: {
     semanticQuery?: string;
     derivedFilters: SearchFilters;
+    deterministicFilters?: SearchFilters;
     explicitFilters?: SearchFilters;
     appliedFilters: SearchFilters;
     relaxedFields?: string[];
+    relaxationSteps?: RelaxationStep[];
+    groundedValues?: Record<string, GroundedValueDecision[]>;
+    rewritten?: RewriteRecord;
     excludedTerms?: string[];
     budgetHints?: Record<string, "cheap" | "premium">;
   }
@@ -128,6 +138,7 @@ export function buildConstraintTrace(
   const explicitFilters = input.explicitFilters ?? {};
   const plan = buildConstraintPlan(def, {
     derivedFilters: input.derivedFilters,
+    deterministicFilters: input.deterministicFilters ?? {},
     explicitFilters,
     appliedFilters: input.appliedFilters,
     relaxedFields: input.relaxedFields,
@@ -145,5 +156,9 @@ export function buildConstraintTrace(
     relaxedFields: [...new Set(input.relaxedFields ?? [])].sort(),
     excludedTerms: [...(input.excludedTerms ?? [])],
     budgetHints: { ...(input.budgetHints ?? {}) },
+    deterministicFilters: cloneFilters(input.deterministicFilters),
+    groundedValues: JSON.parse(JSON.stringify(input.groundedValues ?? {})) as Record<string, GroundedValueDecision[]>,
+    relaxationSteps: [...(input.relaxationSteps ?? [])],
+    ...(input.rewritten ? { rewritten: input.rewritten } : {}),
   };
 }

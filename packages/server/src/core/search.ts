@@ -14,6 +14,7 @@ import { collectionTableName } from "./db-utils.ts";
 import { searchResultCache, type SearchCacheKey } from "./search-cache.ts";
 import { buildFilterSql, type FilterCompileOpts, type SearchFilters } from "./search-filter.ts";
 import { applyCutoff, type CutoffEvidence } from "./cutoff.ts";
+import { proposeRewrites, type RewriteRecord } from "./query-rewrite.ts";
 import { appendScopeSql, resolveScope } from "./scope.ts";
 import {
   buildQueryAspectImageVectors,
@@ -70,6 +71,7 @@ export interface SearchResult {
   constraintTrace: ConstraintTrace;
   nlq_degraded?: boolean;
   relaxed: boolean;
+  relaxedFields: string[];
   took_ms: number;
   facets?: Record<string, import("../db/postgres/facets.ts").FacetResult>;
   total_candidates?: number;
@@ -77,6 +79,7 @@ export interface SearchResult {
   cutoff_dropped?: number;
   /** true when served from the in-process result cache */
   cached?: boolean;
+  rewritten?: RewriteRecord;
 }
 
 export interface ExplainDocBreakdown {
@@ -95,10 +98,12 @@ export interface SearchExplainResult {
   nlq_degraded?: boolean;
   filters: { sql: string; params: Array<{ index: number; type: string }> };
   relaxation: boolean;
+  relaxedFields: string[];
   cache_hit: boolean;
   weights: ChannelWeights;
   docs: ExplainDocBreakdown[];
   took_ms: number;
+  rewritten?: RewriteRecord;
 }
 
 export interface SearchOpts {
@@ -174,6 +179,31 @@ interface Retrieval {
   vector: number[] | null;
   aspectPlans: AspectPlan[];
   efSearch: number | null;
+}
+
+interface RetrieveRetryContext {
+  original: Retrieval;
+  query: string;
+}
+
+interface RankedRun {
+  rows: Array<Record<string, unknown>>;
+  totalCandidates: number;
+  filterSql: string;
+  filterParams: unknown[];
+  relaxed: boolean;
+  relaxedFields: string[];
+  effectiveFilters: SearchFilters;
+  relaxationSteps: Array<{ field: string; standaloneMatchCount: number; resultCount: number }>;
+  gateEvidence: "retrieval" | "relevance_floor" | "none";
+}
+
+interface ResolvedExecution {
+  retrieval: Retrieval;
+  ranked: RankedRun;
+  rows: Array<Record<string, unknown>>;
+  cutoffDropped: number;
+  rewritten?: RewriteRecord;
 }
 
 const MAX_OFFSET = 200;
@@ -653,14 +683,15 @@ export function makeSearchService(
   async function retrieve(
     projectSlug: string,
     collectionName: string,
-    opts: SearchOpts
+    opts: SearchOpts,
+    retryContext?: RetrieveRetryContext
   ): Promise<Retrieval> {
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
     const def = await getCollectionDef(projectSlug, collectionName);
     if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
 
-    const q = opts.q?.trim() ?? "";
+    const q = (retryContext?.query ?? opts.q)?.trim() ?? "";
     if (!q && !opts.image) throw new Error("search requires a non-empty q or image");
 
     const scopeCols = resolveScope(def, collectionName, opts.scope, "search");
@@ -684,26 +715,33 @@ export function makeSearchService(
       }
     }
 
-    const candidates = shouldSkipNlq(def, q)
-      ? { available: true, candidates: {} }
-      : await vocabCandidates(ctx, project.schema_name, collectionName, def, q, scopeCols);
-    const nlq = await parseNlq(ctx, def, q, {
-      candidates,
-      schema: project.schema_name,
-      collection: collectionName,
-      scopeCols,
-    });
-    const explicitFilters = opts.filters ?? {};
-    const mergedFilters = mergeFilters(nlq.filters, explicitFilters);
-    await resolveBudgetHints(ctx, project.schema_name, collectionName, def, nlq.budgetHints, mergedFilters);
+    const nlq = retryContext?.original.nlq ?? await (async () => {
+      const candidates = shouldSkipNlq(def, q)
+        ? { available: true, candidates: {} }
+        : await vocabCandidates(ctx, project.schema_name, collectionName, def, q, scopeCols);
+      return parseNlq(ctx, def, q, {
+        candidates,
+        schema: project.schema_name,
+        collection: collectionName,
+        scopeCols,
+      });
+    })();
+    const explicitFilters = retryContext?.original.explicitFilters ?? opts.filters ?? {};
+    const mergedFilters = retryContext
+      ? { ...retryContext.original.mergedFilters }
+      : mergeFilters(nlq.filters, explicitFilters);
+    if (!retryContext) {
+      await resolveBudgetHints(ctx, project.schema_name, collectionName, def, nlq.budgetHints, mergedFilters);
+    }
     const filterOpts: FilterCompileOpts = {
       soft: true,
       excludeTerms: nlq.excludeTerms,
     };
 
-    const semanticText = nlq.parsed.semantic_query || q || "image query";
-    const lexicalText =
-      !nlq.degraded && typeof nlq.parsed.lexical_query === "string" && nlq.parsed.lexical_query.trim()
+    const semanticText = retryContext ? q || "image query" : nlq.parsed.semantic_query || q || "image query";
+    const lexicalText = retryContext
+      ? q
+      : !nlq.degraded && typeof nlq.parsed.lexical_query === "string" && nlq.parsed.lexical_query.trim()
         ? nlq.parsed.lexical_query.trim()
         : q;
     const imageVectors = await buildQueryAspectImageVectors(def, opts.image, embedService, ctx.groundImage);
@@ -778,18 +816,9 @@ export function makeSearchService(
   async function runRanked(
     r: Retrieval,
     limit: number,
-    mode: "search" | "explain"
-  ): Promise<{
-    rows: Array<Record<string, unknown>>;
-    totalCandidates: number;
-    filterSql: string;
-    filterParams: unknown[];
-    relaxed: boolean;
-    relaxedFields: string[];
-    effectiveFilters: SearchFilters;
-    relaxationSteps: Array<{ field: string; standaloneMatchCount: number; resultCount: number }>;
-    gateEvidence: "retrieval" | "relevance_floor" | "none";
-  }> {
+    mode: "search" | "explain",
+    allowRelaxation = true
+  ): Promise<RankedRun> {
     // Structured-intent bypass: when NLQ derived hard filters, those filters define
     // relevance — skip the semantic floor so filter-dominated queries are not emptied.
     const effectiveFloor =
@@ -833,7 +862,7 @@ export function makeSearchService(
       )
       .sort();
 
-    if (totalCandidates < target && gateEvidence === "retrieval" && relaxableFields.length > 0) {
+    if (allowRelaxation && totalCandidates < target && gateEvidence === "retrieval" && relaxableFields.length > 0) {
       const probeCounts = await probeRelaxableFields(r, relaxableFields);
       const ordered = [...relaxableFields].sort(
         (a, b) => (probeCounts.get(b) ?? 0) - (probeCounts.get(a) ?? 0) || a.localeCompare(b)
@@ -878,8 +907,122 @@ export function makeSearchService(
     return { rows, totalCandidates, filterSql, filterParams, relaxed, relaxedFields, effectiveFilters, relaxationSteps, gateEvidence };
   }
 
-  async function finishSearch(r: Retrieval, opts: SearchOpts, t0: number): Promise<SearchResult> {
-    const { rows, totalCandidates, relaxed, relaxedFields, effectiveFilters } = await runRanked(r, opts.limit ?? 20, "search");
+  function rowsToHits(r: Retrieval, rows: Array<Record<string, unknown>>): SearchHit[] {
+    const fieldKeys = Object.keys(r.def.fields);
+    return rows.map((row) => {
+      const hit: SearchHit = {
+        id: String(row.id),
+        score: Number(row.score),
+        data: (typeof row.data === "string" ? JSON.parse(row.data as string) : row.data) as Record<string, unknown>,
+      };
+      for (const k of fieldKeys) hit[k] = row[sanitiseIdent(k)] ?? row[k];
+      if (r.def.dedup) {
+        const groupColumn = sanitiseIdent(r.def.dedup.groupField ?? "product_group");
+        if (row[groupColumn] != null) hit[groupColumn] = row[groupColumn];
+      }
+      if (row.rerank_doc != null) hit.rerank_doc = row.rerank_doc;
+      return hit;
+    });
+  }
+
+  function applySearchCutoff(
+    r: Retrieval,
+    ranked: RankedRun
+  ): { rows: Array<Record<string, unknown>>; dropped: number } {
+    const hits = rowsToHits(r, ranked.rows);
+    const hasFilters = Object.keys(ranked.effectiveFilters).length > 0;
+    const cutoffDef = r.def.search?.cutoff;
+    const hasEvidence = ranked.rows.length > 0 && ("fts_present" in ranked.rows[0]! || "cos_sim" in ranked.rows[0]!);
+    if (hasFilters || !hasEvidence || cutoffDef?.strategy === "none") return { rows: ranked.rows, dropped: 0 };
+    const evidence: CutoffEvidence[] = ranked.rows.map((row, i) => ({
+      ftsPresent: row.fts_present === true,
+      cos: row.cos_sim == null ? null : Number(row.cos_sim),
+      value: cutoffDef?.field ? hits[i]![cutoffDef.field] : undefined,
+    }));
+    const cut = applyCutoff(hits, evidence, cutoffDef);
+    if (cut.dropped === 0) return { rows: ranked.rows, dropped: 0 };
+    const kept = new Set(cut.hits.map((hit) => hit.id));
+    return { rows: ranked.rows.filter((row) => kept.has(String(row.id))), dropped: cut.dropped };
+  }
+
+  function cosineSimilarity(left: number[], right: number[]): number {
+    if (left.length !== right.length || left.length === 0) return -1;
+    let dot = 0;
+    let leftNorm = 0;
+    let rightNorm = 0;
+    for (let i = 0; i < left.length; i++) {
+      dot += left[i]! * right[i]!;
+      leftNorm += left[i]! * left[i]!;
+      rightNorm += right[i]! * right[i]!;
+    }
+    return leftNorm === 0 || rightNorm === 0 ? -1 : dot / Math.sqrt(leftNorm * rightNorm);
+  }
+
+  async function primaryTextEmbedding(def: CollectionDef, query: string): Promise<number[] | null> {
+    const primary = embeddingEntries(def)[0]?.[1];
+    if (!primary || primary.kind === "image") return null;
+    return embedService.embedQuery({
+      text: query,
+      model: primary.model,
+      dim: primary.dim,
+      taskType: primary.taskType ?? "RETRIEVAL_QUERY",
+      inputType: "query",
+    });
+  }
+
+  async function resolveExecution(r: Retrieval, opts: SearchOpts, limit: number): Promise<ResolvedExecution> {
+    const ranked = await runRanked(r, limit, "search");
+    const cut = applySearchCutoff(r, ranked);
+    if (cut.dropped > 0) ctx.observability.inc("search_cutoff_dropped_total", cut.dropped);
+
+    const target = Math.min(3, Math.max(1, limit));
+    const zeroCause = cut.dropped > 0 ? "cutoff" : ranked.gateEvidence;
+    const eligible =
+      cut.rows.length < target &&
+      zeroCause === "retrieval" &&
+      r.q.trim().length > 0 &&
+      !shouldSkipNlq(r.def, r.q) &&
+      !r.nlq.degraded &&
+      Object.keys(r.explicitFilters).length === 0;
+    if (!eligible) return { retrieval: r, ranked, rows: cut.rows, cutoffDropped: cut.dropped };
+
+    const originalVector = await primaryTextEmbedding(r.def, r.q);
+    if (!originalVector) return { retrieval: r, ranked, rows: cut.rows, cutoffDropped: cut.dropped };
+
+    const proposals = await proposeRewrites(ctx, r.def, r.q, cut.rows.length === 0 ? "empty" : "thin");
+    for (const proposal of proposals) {
+      const replacementVector = await primaryTextEmbedding(r.def, proposal.query);
+      if (!replacementVector || cosineSimilarity(originalVector, replacementVector) < 0.6) continue;
+      const retry = await retrieve(r.project.slug, r.collectionName, { ...opts, q: proposal.query }, {
+        original: r,
+        query: proposal.query,
+      });
+      const retryRanked = await runRanked(retry, limit, "search");
+      const retryCut = applySearchCutoff(retry, retryRanked);
+      if (retryCut.rows.length <= cut.rows.length) {
+        return { retrieval: r, ranked, rows: cut.rows, cutoffDropped: cut.dropped };
+      }
+      return {
+        retrieval: retry,
+        ranked: retryRanked,
+        rows: retryCut.rows,
+        cutoffDropped: retryCut.dropped,
+        rewritten: { type: proposal.type, from: r.q, to: proposal.query },
+      };
+    }
+    return { retrieval: r, ranked, rows: cut.rows, cutoffDropped: cut.dropped };
+  }
+
+  async function finishSearch(
+    input: Retrieval,
+    opts: SearchOpts,
+    t0: number,
+    resolved?: ResolvedExecution
+  ): Promise<SearchResult> {
+    const execution = resolved ?? await resolveExecution(input, opts, opts.limit ?? 20);
+    const r = execution.retrieval;
+    const { totalCandidates, relaxed, relaxedFields, effectiveFilters, relaxationSteps } = execution.ranked;
+    const rows = execution.rows;
 
     let facets: SearchResult["facets"];
     if (opts.facets?.length) {
@@ -894,47 +1037,7 @@ export function makeSearchService(
       });
     }
 
-    const fieldKeys = Object.keys(r.def.fields);
-    const hits: SearchHit[] = rows.map((row) => {
-      const hit: SearchHit = {
-        id: String(row.id),
-        score: Number(row.score),
-        data: (typeof row.data === "string" ? JSON.parse(row.data as string) : row.data) as Record<
-          string,
-          unknown
-        >,
-      };
-      for (const k of fieldKeys) {
-        hit[k] = row[sanitiseIdent(k)] ?? row[k];
-      }
-      if (r.def.dedup) {
-        const gc = sanitiseIdent(r.def.dedup.groupField ?? "product_group");
-        if (row[gc] != null) hit[gc] = row[gc];
-      }
-      if (row.rerank_doc != null) hit.rerank_doc = row.rerank_doc;
-      return hit;
-    });
-
-    // Result cutoff: end the list where the evidence honestly ends. Bypassed
-    // whenever hard filters (explicit or NLQ-derived) shape the query —
-    // structured intent defines relevance there and filtered recall must stay
-    // total ("hard filters stay hard").
-    let finalHits = hits;
-    let cutoffDropped = 0;
-    const hasFilters = Object.keys(effectiveFilters).length > 0;
-    const cutoffDef = r.def.search?.cutoff;
-    const hasEvidence = rows.length > 0 && ("fts_present" in rows[0]! || "cos_sim" in rows[0]!);
-    if (!hasFilters && hasEvidence && cutoffDef?.strategy !== "none") {
-      const evidence: CutoffEvidence[] = rows.map((row, i) => ({
-        ftsPresent: row.fts_present === true,
-        cos: row.cos_sim == null ? null : Number(row.cos_sim),
-        value: cutoffDef?.field ? hits[i]![cutoffDef.field] : undefined,
-      }));
-      const cut = applyCutoff(hits, evidence, cutoffDef);
-      finalHits = cut.hits;
-      cutoffDropped = cut.dropped;
-      if (cutoffDropped > 0) ctx.observability.inc("search_cutoff_dropped_total", cutoffDropped);
-    }
+    const finalHits = rowsToHits(r, rows);
 
     const result: SearchResult = {
       hits: finalHits,
@@ -944,14 +1047,20 @@ export function makeSearchService(
         explicitFilters: r.explicitFilters,
         appliedFilters: effectiveFilters,
         relaxedFields,
+        relaxationSteps,
+        deterministicFilters: r.nlq.deterministicFilters,
+        groundedValues: r.nlq.groundedValues,
+        rewritten: execution.rewritten,
         excludedTerms: r.nlq.excludeTerms,
         budgetHints: r.nlq.budgetHints,
       }),
       relaxed,
+      relaxedFields,
       took_ms: Date.now() - t0,
       total_candidates: totalCandidates,
     };
-    if (cutoffDropped > 0) result.cutoff_dropped = cutoffDropped;
+    if (execution.cutoffDropped > 0) result.cutoff_dropped = execution.cutoffDropped;
+    if (execution.rewritten) result.rewritten = execution.rewritten;
 
     if (r.def.search?.nlq && !shouldSkipNlq(r.def, r.q)) {
       result.parsed = r.nlq.parsed;
@@ -967,12 +1076,22 @@ export function makeSearchService(
     return result;
   }
 
-  async function finishExplain(r: Retrieval, opts: SearchOpts, t0: number): Promise<SearchExplainResult> {
-    const { rows, filterSql, filterParams, relaxed, relaxedFields, effectiveFilters } = await runRanked(
-      r,
+  async function finishExplain(
+    input: Retrieval,
+    opts: SearchOpts,
+    t0: number,
+    resolved?: ResolvedExecution
+  ): Promise<SearchExplainResult> {
+    const execution = resolved ?? await resolveExecution(input, opts, Math.min(opts.limit ?? 20, 20));
+    const r = execution.retrieval;
+    const explainRetrieval = { ...r, mergedFilters: execution.ranked.effectiveFilters };
+    const { rows, filterSql, filterParams } = await runRanked(
+      explainRetrieval,
       Math.min(opts.limit ?? 20, 20),
-      "explain"
+      "explain",
+      false
     );
+    const { relaxed, relaxedFields, effectiveFilters, relaxationSteps } = execution.ranked;
 
     const docs: ExplainDocBreakdown[] = rows.map((row) => {
       const id = String(row.id);
@@ -1007,16 +1126,22 @@ export function makeSearchService(
         explicitFilters: r.explicitFilters,
         appliedFilters: effectiveFilters,
         relaxedFields,
+        relaxationSteps,
+        deterministicFilters: r.nlq.deterministicFilters,
+        groundedValues: r.nlq.groundedValues,
+        rewritten: execution.rewritten,
         excludedTerms: r.nlq.excludeTerms,
         budgetHints: r.nlq.budgetHints,
       }),
       relaxation: relaxed,
+      relaxedFields,
       cache_hit: false,
       weights: r.weights,
       filters: { sql: filterSql, params: redactFilterParams(filterParams) },
       docs,
       took_ms: Date.now() - t0,
     };
+    if (execution.rewritten) explain.rewritten = execution.rewritten;
 
     if (r.def.search?.nlq && !shouldSkipNlq(r.def, r.q)) {
       explain.parsed = r.nlq.parsed;
@@ -1147,13 +1272,15 @@ export function makeSearchService(
     // Pull a deeper pool when a second stage will reorder/collapse it, so the final
     // top-`limit` is chosen from real candidates rather than a pre-truncated set.
     const poolLimit = wantDiversify || wantRerank ? Math.max(limit, RERANK_POOL) : limit;
-    const result = await finishSearch(retrieval, { ...opts, limit: poolLimit }, t0);
+    const execution = await resolveExecution(retrieval, { ...opts, limit: poolLimit }, poolLimit);
+    const chosenRetrieval = execution.retrieval;
+    const result = await finishSearch(chosenRetrieval, { ...opts, limit: poolLimit }, t0, execution);
 
     if (wantDiversify && collapseField) result.hits = diversifyHits(result.hits, collapseField);
     if (wantRerank && result.hits.length > 1) {
-      result.hits = await rerankHits(retrieval.q, opts.image, result.hits, limit);
+      result.hits = await rerankHits(chosenRetrieval.q, opts.image, result.hits, limit);
     }
-    const rankingPolicy = retrieval.def.search?.rankingPolicy;
+    const rankingPolicy = chosenRetrieval.def.search?.rankingPolicy;
     if (rankingPolicy && result.hits.length > 0) {
       result.hits = applyRankingPolicy(result.hits, rankingPolicy).hits;
     }
@@ -1161,12 +1288,12 @@ export function makeSearchService(
 
     // Offers ride the final page: one batched query per page, only when the collection
     // declares dedup and the page carries clustered hits (REQ-6, REQ-8).
-    if (retrieval.def.dedup && opts.offers !== false) {
-      await attachOffers(retrieval, result.hits);
+    if (chosenRetrieval.def.dedup && opts.offers !== false) {
+      await attachOffers(chosenRetrieval, result.hits);
     }
     result.took_ms = Date.now() - t0;
 
-    if (cacheKey && !retrieval.nlq.degraded) {
+    if (cacheKey && !chosenRetrieval.nlq.degraded) {
       searchResultCache.set(cacheKey, result);
     }
     return result;
@@ -1180,7 +1307,8 @@ export function makeSearchService(
     const t0 = Date.now();
     ctx.observability.inc("searches_total");
     const retrieval = await retrieve(projectSlug, collectionName, opts);
-    return finishExplain(retrieval, opts, t0);
+    const execution = await resolveExecution(retrieval, opts, Math.min(opts.limit ?? 20, 20));
+    return finishExplain(execution.retrieval, opts, t0, execution);
   }
 
   // Single-pass hits + explain: the expensive embed/image-fetch/NLQ work in retrieve()
@@ -1193,9 +1321,10 @@ export function makeSearchService(
     const t0 = Date.now();
     ctx.observability.inc("searches_total");
     const retrieval = await retrieve(projectSlug, collectionName, opts);
+    const execution = await resolveExecution(retrieval, opts, Math.min(opts.limit ?? 20, 20));
     const [result, explain] = await Promise.all([
-      finishSearch(retrieval, opts, t0),
-      finishExplain(retrieval, opts, t0),
+      finishSearch(execution.retrieval, opts, t0, execution),
+      finishExplain(execution.retrieval, opts, t0, execution),
     ]);
     return { result, explain };
   }

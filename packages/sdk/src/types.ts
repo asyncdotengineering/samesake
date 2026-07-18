@@ -543,7 +543,27 @@ export type SearchWeightsInput<S extends string = string> = {
  */
 export type SearchMode = "intent" | "similar";
 
-export type ConstraintTraceSource = "nlq" | "explicit" | "budget_hint" | "agent";
+export type ConstraintTraceSource = "nlq" | "deterministic" | "explicit" | "budget_hint" | "agent";
+
+export interface RelaxationStep {
+  field: string;
+  standaloneMatchCount: number;
+  resultCount: number;
+}
+
+export interface GroundedValueDecision {
+  parsed: string;
+  mapped?: string;
+  action: "kept" | "mapped" | "dropped";
+}
+
+export type RewriteType = "spellfix" | "synonym" | "broader" | "substitute";
+
+export interface RewriteRecord {
+  type: RewriteType;
+  from: string;
+  to: string;
+}
 
 export type ConstraintFieldType = "text" | "number" | "boolean" | "enum" | "array";
 
@@ -606,6 +626,10 @@ export interface ConstraintTrace {
   relaxedFields: string[];
   excludedTerms: string[];
   budgetHints: Record<string, "cheap" | "premium">;
+  deterministicFilters: Record<string, unknown>;
+  groundedValues: Record<string, GroundedValueDecision[]>;
+  relaxationSteps: RelaxationStep[];
+  rewritten?: RewriteRecord;
 }
 
 export interface ShopSearchImageInput {

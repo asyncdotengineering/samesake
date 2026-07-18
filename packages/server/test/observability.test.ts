@@ -85,9 +85,9 @@ describeIf("observability counters", () => {
     // the query fresh each run to guarantee a genuine cold miss.
     const q = `another obs nlq phrase ${Math.random().toString(36).slice(2, 10)}`;
     generateCalls = 0;
-    await matcher.search(projectSlug, "obs", { q, cache: false });
+    await matcher.search(projectSlug, "obs", { q, cache: false, limit: 1 });
     expect(generateCalls).toBe(1);
-    await matcher.search(projectSlug, "obs", { q: q.toUpperCase(), cache: false });
+    await matcher.search(projectSlug, "obs", { q: q.toUpperCase(), cache: false, limit: 1 });
     expect(generateCalls).toBe(1);
     expect(matcher.metrics().nlq_cache_hits).toBe(before + 1);
   });
