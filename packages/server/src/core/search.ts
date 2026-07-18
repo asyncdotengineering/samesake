@@ -4,7 +4,7 @@ import { mergeBlendedRerank, rerankCandidateText } from "./rerank.ts";
 import { applyRankingPolicy } from "./ranking.ts";
 import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
-import { buildConstraintTrace, relaxedSoftFields } from "./constraint-trace.ts";
+import { buildConstraintTrace } from "./constraint-trace.ts";
 import { mergeFilters, parseNlq, shouldSkipNlq } from "./nlq.ts";
 import { vocabCandidates } from "./field-vocab.ts";
 import type { ProjectsService, ProjectRow } from "./projects.ts";
@@ -283,6 +283,9 @@ async function runHybridQuery(
   rows: Array<Record<string, unknown>>;
   softFieldsUsed: string[];
   totalCandidates: number;
+  preFloorCandidates: number;
+  postFloorCandidates: number;
+  gateEvidence: "retrieval" | "relevance_floor" | "none";
   filterSql: string;
   filterParams: unknown[];
 }> {
@@ -488,18 +491,30 @@ async function runHybridQuery(
                  (${scoreExprs.join(" + ")}) AS score${evidenceCols}
           ${fusedFrom}
         ),
-        ranked AS (
-          SELECT id, score, fts_present, cos_sim, count(*) OVER ()::int AS total_candidates
+        eligible AS (
+          SELECT id, score, fts_present, cos_sim
           FROM fused
           WHERE id IS NOT NULL${floorWhere}
+        ),
+        metadata AS (
+          SELECT
+            (SELECT count(*)::int FROM fused WHERE id IS NOT NULL) AS pre_floor_candidates,
+            (SELECT count(*)::int FROM eligible) AS post_floor_candidates
+        ),
+        ranked AS (
+          SELECT id, score, fts_present, cos_sim
+          FROM eligible
           ORDER BY score DESC
           LIMIT ${limitRef} OFFSET ${offsetRef}
         )
         SELECT d.id, d.data, d.rerank_doc, ${fieldCols}${extraCols}, r.score::float AS score,
-               r.fts_present, r.cos_sim, r.total_candidates
-        FROM ranked r
-        JOIN ${table} d ON d.id = r.id
-        ORDER BY r.score DESC
+               r.fts_present, r.cos_sim,
+               m.pre_floor_candidates, m.post_floor_candidates,
+               m.post_floor_candidates AS total_candidates
+        FROM metadata m
+        LEFT JOIN ranked r ON TRUE
+        LEFT JOIN ${table} d ON d.id = r.id
+        ORDER BY r.score DESC NULLS LAST
       `;
     }
   }
@@ -512,11 +527,27 @@ async function runHybridQuery(
       if (efSearch != null) settings.push(`SET LOCAL hnsw.ef_search = ${Math.max(10, Math.min(1000, Math.floor(efSearch)))}`);
     }
   }
-  const rows = await ctx.storage.unsafeWithSettings("parameterized search query", settings, query, params);
+  const rawRows = await ctx.storage.unsafeWithSettings("parameterized search query", settings, query, params);
+  const preFloorCandidates = mode === "search"
+    ? Number(rawRows[0]?.pre_floor_candidates ?? rawRows[0]?.total_candidates ?? rawRows.length)
+    : rawRows.length;
+  const postFloorCandidates = mode === "search"
+    ? Number(rawRows[0]?.post_floor_candidates ?? rawRows[0]?.total_candidates ?? rawRows.length)
+    : rawRows.length;
+  const rows = mode === "search" ? rawRows.filter((row) => row.id != null) : rawRows;
+  const gateTarget = Math.min(3, Math.max(1, limit));
   return {
     rows,
     softFieldsUsed: compiled.softFieldsUsed,
-    totalCandidates: mode === "explain" ? rows.length : rows.length > 0 ? Number(rows[0]!.total_candidates ?? rows.length) : 0,
+    totalCandidates: postFloorCandidates,
+    preFloorCandidates,
+    postFloorCandidates,
+    gateEvidence:
+      preFloorCandidates < gateTarget
+        ? "retrieval"
+        : postFloorCandidates < gateTarget
+          ? "relevance_floor"
+          : "none",
     filterSql: where,
     filterParams: compiled.params,
   };
@@ -711,6 +742,39 @@ export function makeSearchService(
 
   // Run the hybrid query for one mode, retrying once with soft filters dropped
   // when too few rows come back. Shared by the search and explain finishers.
+  async function probeRelaxableFields(
+    r: Retrieval,
+    relaxableFields: string[]
+  ): Promise<Map<string, number>> {
+    const baseFilters: SearchFilters = Object.fromEntries(
+      Object.entries(r.mergedFilters).filter(([field]) => !relaxableFields.includes(field))
+    );
+    const params: unknown[] = [];
+    const selects: string[] = [];
+    const table = collectionTableName(r.project.schema_name, r.collectionName);
+    for (const field of relaxableFields) {
+      const compiled = buildFilterSql(
+        { ...baseFilters, [field]: r.mergedFilters[field] },
+        r.def,
+        r.filterOpts,
+        params.length + 1
+      );
+      params.push(...compiled.params);
+      const scope = Object.entries(r.scopeCols)
+        .map(([column, value]) => {
+          params.push(value);
+          return `${column} = $${params.length}`;
+        })
+        .join(" AND ");
+      const visibility = `(pipeline_status = 'ready' OR pipeline_status IS NULL)${scope ? ` AND ${scope}` : ""}`;
+      const where = compiled.where === "true" ? visibility : `${compiled.where} AND ${visibility}`;
+      selects.push(`SELECT '${field.replace(/'/g, "''")}'::text AS field, count(*)::int AS count FROM ${table} WHERE ${where}`);
+    }
+    if (!selects.length) return new Map();
+    const rows = await ctx.storage.client("soft-filter probes").unsafe(selects.join(" UNION ALL "), params);
+    return new Map(rows.map((row) => [String(row.field), Number(row.count ?? 0)]));
+  }
+
   async function runRanked(
     r: Retrieval,
     limit: number,
@@ -722,6 +786,9 @@ export function makeSearchService(
     filterParams: unknown[];
     relaxed: boolean;
     relaxedFields: string[];
+    effectiveFilters: SearchFilters;
+    relaxationSteps: Array<{ field: string; standaloneMatchCount: number; resultCount: number }>;
+    gateEvidence: "retrieval" | "relevance_floor" | "none";
   }> {
     // Structured-intent bypass: when NLQ derived hard filters, those filters define
     // relevance — skip the semantic floor so filter-dominated queries are not emptied.
@@ -731,7 +798,7 @@ export function makeSearchService(
         : typeof r.def.search?.relevanceFloor === "number"
           ? r.def.search.relevanceFloor
           : null;
-    let { rows, softFieldsUsed, totalCandidates, filterSql, filterParams } = await runHybridQuery(
+    let { rows, totalCandidates, filterSql, filterParams, gateEvidence } = await runHybridQuery(
       ctx,
       r.project.schema_name,
       r.def,
@@ -751,45 +818,72 @@ export function makeSearchService(
 
     let relaxed = false;
     let relaxedFields: string[] = [];
-    const hasSoftFilters =
-      softFieldsUsed.length > 0 ||
-      Object.keys(r.mergedFilters).some((k) => r.def.fields[k]?.soft);
+    let effectiveFilters = { ...r.mergedFilters };
+    const relaxationSteps: Array<{ field: string; standaloneMatchCount: number; resultCount: number }> = [];
+    const target = Math.min(3, Math.max(1, limit));
+    const derivedSoftFields = new Set([
+      ...Object.keys(r.nlq.filters),
+      ...Object.keys(r.nlq.deterministicFilters),
+    ]);
+    const relaxableFields = Object.keys(r.mergedFilters)
+      .filter((field) =>
+        r.def.fields[field]?.soft === true &&
+        derivedSoftFields.has(field) &&
+        !Object.hasOwn(r.explicitFilters, field)
+      )
+      .sort();
 
-    if (rows.length < 3 && hasSoftFilters) {
-      const retry = await runHybridQuery(
-        ctx,
-        r.project.schema_name,
-        r.def,
-        r.collectionName,
-        r.lexicalText,
-        r.aspectPlans,
-        r.mergedFilters,
-        { ...r.filterOpts, excludeSoft: true },
-        r.weights,
-        effectiveFloor,
-        limit,
-        r.offset,
-        r.efSearch,
-        r.scopeCols,
-        mode
+    if (totalCandidates < target && gateEvidence === "retrieval" && relaxableFields.length > 0) {
+      const probeCounts = await probeRelaxableFields(r, relaxableFields);
+      const ordered = [...relaxableFields].sort(
+        (a, b) => (probeCounts.get(b) ?? 0) - (probeCounts.get(a) ?? 0) || a.localeCompare(b)
       );
-      rows = retry.rows;
-      totalCandidates = retry.totalCandidates;
-      filterSql = retry.filterSql;
-      filterParams = retry.filterParams;
-      relaxed = true;
-      relaxedFields = relaxedSoftFields(r.def, r.mergedFilters, softFieldsUsed);
+      for (const field of ordered) {
+        const nextFilters = { ...effectiveFilters };
+        delete nextFilters[field];
+        const retry = await runHybridQuery(
+          ctx,
+          r.project.schema_name,
+          r.def,
+          r.collectionName,
+          r.lexicalText,
+          r.aspectPlans,
+          nextFilters,
+          r.filterOpts,
+          r.weights,
+          effectiveFloor,
+          limit,
+          r.offset,
+          r.efSearch,
+          r.scopeCols,
+          mode
+        );
+        effectiveFilters = nextFilters;
+        rows = retry.rows;
+        totalCandidates = retry.totalCandidates;
+        filterSql = retry.filterSql;
+        filterParams = retry.filterParams;
+        gateEvidence = retry.gateEvidence;
+        relaxed = true;
+        relaxedFields.push(field);
+        relaxationSteps.push({
+          field,
+          standaloneMatchCount: probeCounts.get(field) ?? 0,
+          resultCount: retry.totalCandidates,
+        });
+        if (retry.totalCandidates >= target) break;
+      }
     }
 
-    return { rows, totalCandidates, filterSql, filterParams, relaxed, relaxedFields };
+    return { rows, totalCandidates, filterSql, filterParams, relaxed, relaxedFields, effectiveFilters, relaxationSteps, gateEvidence };
   }
 
   async function finishSearch(r: Retrieval, opts: SearchOpts, t0: number): Promise<SearchResult> {
-    const { rows, totalCandidates, relaxed, relaxedFields } = await runRanked(r, opts.limit ?? 20, "search");
+    const { rows, totalCandidates, relaxed, relaxedFields, effectiveFilters } = await runRanked(r, opts.limit ?? 20, "search");
 
     let facets: SearchResult["facets"];
     if (opts.facets?.length) {
-      const compiled = buildFilterSql(r.mergedFilters, r.def, r.filterOpts, 1);
+      const compiled = buildFilterSql(effectiveFilters, r.def, r.filterOpts, 1);
       const scoped = appendScopeSql(compiled.where, compiled.params, r.scopeCols);
       facets = await ctx.storage.facets({
         table: collectionTableName(r.project.schema_name, r.collectionName),
@@ -827,7 +921,7 @@ export function makeSearchService(
     // total ("hard filters stay hard").
     let finalHits = hits;
     let cutoffDropped = 0;
-    const hasFilters = Object.keys(r.mergedFilters).length > 0;
+    const hasFilters = Object.keys(effectiveFilters).length > 0;
     const cutoffDef = r.def.search?.cutoff;
     const hasEvidence = rows.length > 0 && ("fts_present" in rows[0]! || "cos_sim" in rows[0]!);
     if (!hasFilters && hasEvidence && cutoffDef?.strategy !== "none") {
@@ -848,7 +942,7 @@ export function makeSearchService(
         semanticQuery: r.semanticText,
         derivedFilters: r.nlq.filters,
         explicitFilters: r.explicitFilters,
-        appliedFilters: r.mergedFilters,
+        appliedFilters: effectiveFilters,
         relaxedFields,
         excludedTerms: r.nlq.excludeTerms,
         budgetHints: r.nlq.budgetHints,
@@ -874,7 +968,7 @@ export function makeSearchService(
   }
 
   async function finishExplain(r: Retrieval, opts: SearchOpts, t0: number): Promise<SearchExplainResult> {
-    const { rows, filterSql, filterParams, relaxed, relaxedFields } = await runRanked(
+    const { rows, filterSql, filterParams, relaxed, relaxedFields, effectiveFilters } = await runRanked(
       r,
       Math.min(opts.limit ?? 20, 20),
       "explain"
@@ -911,7 +1005,7 @@ export function makeSearchService(
         semanticQuery: r.semanticText,
         derivedFilters: r.nlq.filters,
         explicitFilters: r.explicitFilters,
-        appliedFilters: r.mergedFilters,
+        appliedFilters: effectiveFilters,
         relaxedFields,
         excludedTerms: r.nlq.excludeTerms,
         budgetHints: r.nlq.budgetHints,

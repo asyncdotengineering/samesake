@@ -146,7 +146,8 @@ describeIf("hybrid search", () => {
       filters: { colors: ["red"], tag: "nonexistent-tag" },
       limit: 10,
     });
-    expect(result.relaxed).toBe(true);
+    // REQ-9: explicit soft filters are immutable and never qualify for relaxation.
+    expect(result.relaxed).toBe(false);
     expect(result.hits.length).toBeGreaterThanOrEqual(0);
   });
 
@@ -349,5 +350,67 @@ describeIf("test:lex-corrected", () => {
     });
     expect(result.parsed?.lexical_query).toBe("adidas sneakers");
     expect(result.hits.map((hit) => hit.id)).toEqual(["s1"]);
+  }, 30_000);
+});
+
+describeIf("test:progressive-relax", () => {
+  const projectSlug = `t_${Math.random().toString(36).slice(2, 10)}`;
+  let schemaName = "";
+  let matcher: ReturnType<typeof createMatcher>;
+  const relaxationCollection = collection("relaxation_products", {
+    fields: {
+      title: f.text({ searchable: true }),
+      color: f.text({ filterable: true, soft: true }),
+      occasion: f.text({ filterable: true, soft: true }),
+    },
+    search: {
+      channels: [Channels.fts({ fields: ["title"], weight: 1 })],
+      nlq: { enable: true },
+    },
+  });
+
+  beforeAll(async () => {
+    matcher = createMatcher({
+      databaseUrl: databaseUrl!,
+      apiKey: "test-api-key-12345",
+      migrate: "eager",
+      embed: async () => [],
+      generate: async () => ({
+        semantic_query: "red dress wedding",
+        lexical_query: "red dress wedding",
+        color: "red",
+        occasion: "wedding",
+      }),
+    });
+    await matcher.migrate();
+    schemaName = (await matcher.apply(projectSlug, { entities: [], collections: [relaxationCollection] })).schema;
+    await matcher.indexDocuments(projectSlug, "relaxation_products", [
+      { id: "a", data: { title: "red dress wedding" }, doc: "red dress wedding", fields: { title: "red dress wedding", color: "red", occasion: "wedding" } },
+      { id: "b", data: { title: "red gown wedding" }, doc: "red gown wedding", fields: { title: "red gown wedding", color: "red", occasion: "wedding" } },
+      { id: "c", data: { title: "formal gown" }, doc: "formal gown", fields: { title: "formal gown", color: "red", occasion: "wedding" } },
+      { id: "d", data: { title: "red dress party" }, doc: "red dress party", fields: { title: "red dress party", color: "red", occasion: "party" } },
+      { id: "e", data: { title: "blue suit wedding" }, doc: "blue suit wedding", fields: { title: "blue suit wedding", color: "blue", occasion: "wedding" } },
+      { id: "f", data: { title: "green dress wedding" }, doc: "green dress wedding", fields: { title: "green dress wedding", color: "green", occasion: "wedding" } },
+    ]);
+  }, 30_000);
+
+  afterAll(async () => {
+    if (schemaName) {
+      const { db, close } = createDbFromUrl(databaseUrl!);
+      await db.execute(sql.raw(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`));
+      await close();
+    }
+    if (matcher) await matcher.close();
+  });
+
+  test("drops only the least selective derived field until the retrieval gate reaches three", async () => {
+    const result = await matcher.search(projectSlug, "relaxation_products", {
+      q: "red dress for a wedding",
+      limit: 10,
+    });
+    expect(result.relaxed).toBe(true);
+    expect(result.hits.length).toBe(3);
+    expect(result.hits.every((hit) => hit.color === "red")).toBe(true);
+    expect(result.hits.map((hit) => hit.id).sort()).toEqual(["a", "b", "d"]);
   }, 30_000);
 });
