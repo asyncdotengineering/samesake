@@ -110,7 +110,8 @@ describeIf("eval run", () => {
     if (matcher) await matcher.close();
   });
 
-  test("test:eval-run end-to-end writes artifact and evaluates thresholds", async () => {
+  test("test:eval-run end-to-end writes artifact and evaluates thresholds", { timeout: 20_000 }, async () => {
+    // REQ-3 and REQ-9 intentionally add cold parsing and progressive probe/retry work.
     const judge = makeLlmJudge(stubJudgeGenerate, { version: "run-v1" });
     const queries = [
       { id: "q1", type: "keyword", query: "red dress" },
