@@ -301,3 +301,53 @@ describeIf("test:search-excludes-quarantined", () => {
 
   });
 });
+
+describeIf("test:lex-corrected", () => {
+  const projectSlug = `t_${Math.random().toString(36).slice(2, 10)}`;
+  let schemaName = "";
+  let matcher: ReturnType<typeof createMatcher>;
+  const correctedCollection = collection("lexical_products", {
+    fields: { title: f.text({ searchable: true }) },
+    embeddings: { doc: { source: "$title", model: "test-embed", dim: 8 } },
+    search: {
+      channels: [Channels.fts({ fields: ["title"], weight: 1 })],
+      nlq: { enable: true },
+    },
+  });
+
+  beforeAll(async () => {
+    matcher = createMatcher({
+      databaseUrl: databaseUrl!,
+      apiKey: "test-api-key-12345",
+      migrate: "eager",
+      embed: async ({ text, dim }) => stubEmbed(text, dim),
+      generate: async () => ({
+        semantic_query: "adidas sneakers",
+        lexical_query: "adidas sneakers",
+      }),
+    });
+    await matcher.migrate();
+    schemaName = (await matcher.apply(projectSlug, { entities: [], collections: [correctedCollection] })).schema;
+    await matcher.pushDocuments(projectSlug, "lexical_products", [{ id: "s1", data: { title: "adidas sneakers" } }]);
+    await matcher.index(projectSlug, "lexical_products");
+  }, 30_000);
+
+  afterAll(async () => {
+    if (schemaName) {
+      const { db, close } = createDbFromUrl(databaseUrl!);
+      await db.execute(sql.raw(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`));
+      await close();
+    }
+    if (matcher) await matcher.close();
+  });
+
+  test("corrected lexical surface reaches FTS for typo query", async () => {
+    const result = await matcher.search(projectSlug, "lexical_products", {
+      q: `adidas snekers ${projectSlug}`,
+      limit: 5,
+      weights: { fts: 1, cosine: 0 },
+    });
+    expect(result.parsed?.lexical_query).toBe("adidas sneakers");
+    expect(result.hits.map((hit) => hit.id)).toEqual(["s1"]);
+  }, 30_000);
+});

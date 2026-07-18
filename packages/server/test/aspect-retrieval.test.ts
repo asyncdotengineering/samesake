@@ -164,13 +164,13 @@ describe("test:routing", () => {
     expect(embedCalls.map((call) => call.text)).toEqual(["floral wedding dress", "silhouette"]);
   });
 
-  test("short and degraded parses route only the first declared aspect", async () => {
-    const weights = parseSearchWeights(aspectCollection, undefined, "intent", false);
+  test("successful short parses route normally while degraded parses use the first aspect", async () => {
+    const weights = parseSearchWeights(aspectCollection, { aspects: { visual: 1 } }, "intent", false);
     embedCalls.length = 0;
     const plans = await resolveAspectPlans(
       aspectCollection,
       weights,
-      nlq(undefined),
+      nlq({ visual: { subQuery: "silhouette", weight: 0.5 } }),
       "nike",
       "nike",
       "intent",
@@ -178,8 +178,8 @@ describe("test:routing", () => {
       {},
       embedService
     );
-    expect(plans.map((plan) => plan.name)).toEqual(["doc"]);
-    expect(embedCalls).toHaveLength(1);
+    expect(plans.map((plan) => plan.name)).toEqual(["doc", "visual"]);
+    expect(embedCalls).toHaveLength(2);
 
     const degraded = await resolveAspectPlans(
       aspectCollection,

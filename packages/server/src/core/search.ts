@@ -170,6 +170,7 @@ interface Retrieval {
   mergedFilters: SearchFilters;
   filterOpts: FilterCompileOpts;
   semanticText: string;
+  lexicalText: string;
   vector: number[] | null;
   aspectPlans: AspectPlan[];
   efSearch: number | null;
@@ -267,7 +268,7 @@ async function runHybridQuery(
   schema: string,
   def: CollectionDef,
   collection: string,
-  q: string,
+  lexicalText: string,
   aspectPlans: AspectPlan[],
   filters: SearchFilters,
   filterOpts: FilterCompileOpts,
@@ -302,7 +303,7 @@ async function runHybridQuery(
   const fieldCols = Object.keys(def.fields).map((k) => `d.${sanitiseIdent(k)}`).join(", ");
   const dedupGroupCol = def.dedup ? sanitiseIdent(def.dedup.groupField ?? "product_group") : null;
   const extraCols = dedupGroupCol ? `, d.${dedupGroupCol}` : "";
-  const qRef = hasFts ? addParam(q) : null;
+  const qRef = hasFts ? addParam(lexicalText) : null;
   const vectorRefs = new Map<string, string>();
   for (const plan of activePlans) vectorRefs.set(plan.name, addParam(toVectorLiteral(plan.queryVector!)));
 
@@ -670,6 +671,10 @@ export function makeSearchService(
     };
 
     const semanticText = nlq.parsed.semantic_query || q || "image query";
+    const lexicalText =
+      !nlq.degraded && typeof nlq.parsed.lexical_query === "string" && nlq.parsed.lexical_query.trim()
+        ? nlq.parsed.lexical_query.trim()
+        : q;
     const imageVectors = await buildQueryAspectImageVectors(def, opts.image, embedService, ctx.groundImage);
     const aspectPlans = await resolveAspectPlans(
       def,
@@ -697,6 +702,7 @@ export function makeSearchService(
       mergedFilters,
       filterOpts,
       semanticText,
+      lexicalText,
       vector,
       aspectPlans,
       efSearch: opts.efSearch ?? null,
@@ -730,7 +736,7 @@ export function makeSearchService(
       r.project.schema_name,
       r.def,
       r.collectionName,
-      r.q,
+      r.lexicalText,
       r.aspectPlans,
       r.mergedFilters,
       r.filterOpts,
@@ -755,7 +761,7 @@ export function makeSearchService(
         r.project.schema_name,
         r.def,
         r.collectionName,
-        r.q,
+        r.lexicalText,
         r.aspectPlans,
         r.mergedFilters,
         { ...r.filterOpts, excludeSoft: true },
