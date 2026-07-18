@@ -50,7 +50,7 @@ async function runConfig(key: string, q: string | undefined, image: string | und
     key,
     label: cfg.label,
     took_ms: Date.now() - t0,
-    relaxed: (res as Record<string, unknown>).relaxed ?? false,
+    relaxed: (explain as { relaxation?: boolean } | null)?.relaxation ?? (res as Record<string, unknown>).relaxed ?? false,
     trace: (res as Record<string, unknown>).constraintTrace ?? null,
     parsed: (res as Record<string, unknown>).parsed ?? null,
     hits: ((res as { hits: Array<Record<string, unknown>> }).hits ?? []).map((h) =>
