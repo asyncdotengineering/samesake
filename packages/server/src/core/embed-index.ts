@@ -442,13 +442,35 @@ export function makeEmbedIndexService(
         }
       };
       // Env-tunable for backfills; default is conservative for unknown embed-API tiers.
-      // (Tier-3 Gemini allows 20K RPM — measured peak here was 175, so high values are safe
-      // when the provider allows; the earlier "429 collapse" reading was a misdiagnosis of
-      // stale-dist code.)
       const INDEX_CONCURRENCY = Math.max(1, Number(process.env.SAMESAKE_INDEX_CONCURRENCY ?? 8));
-      for (let i = 0; i < rows.length; i += INDEX_CONCURRENCY) {
-        await Promise.all(rows.slice(i, i + INDEX_CONCURRENCY).map(processRow));
-      }
+      // Per-doc watchdog: vendor catalogs are arbitrary input, and a single doc that wedges
+      // (hung stream, pathological payload) must become a recorded pipeline failure, not a
+      // stuck indexer. The stuck task is orphaned, not cancelled — acceptable: the pool moves
+      // on and the row is marked for retry/inspection.
+      const ROW_TIMEOUT_MS = Math.max(30_000, Number(process.env.SAMESAKE_INDEX_ROW_TIMEOUT_MS ?? 120_000));
+      const processRowSafe = async (row: (typeof rows)[number]) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<"timeout">((resolveTimeout) => {
+          timer = setTimeout(() => resolveTimeout("timeout"), ROW_TIMEOUT_MS);
+        });
+        const outcome = await Promise.race([processRow(row).then(() => "done" as const), timeout]);
+        clearTimeout(timer);
+        if (outcome === "timeout") {
+          const err = new ImagePipelineError(`indexing timed out after ${ROW_TIMEOUT_MS}ms`);
+          await recordPipelineFailure(ctx, table, row.id, err);
+          onRowFailure(err);
+        }
+      };
+      // Rolling pool (no chunk barrier): one slow doc must not idle the other workers.
+      let cursor = 0;
+      await Promise.all(
+        Array.from({ length: Math.min(INDEX_CONCURRENCY, rows.length) }, async () => {
+          while (cursor < rows.length) {
+            const next = rows[cursor++]!;
+            await processRowSafe(next);
+          }
+        })
+      );
     }
 
     if (indexed > 0) {
