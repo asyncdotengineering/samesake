@@ -25,3 +25,17 @@ runs remain explicitly out of scope.
 
 This file is updated as implementation discovers concrete repository constraints. No compatibility
 layer or silent workaround is permitted.
+
+## Verified implementation notes
+
+- The offline `indexDocuments` fixture helper accepts per-aspect vectors and evidence rows so the
+  grounded example exercises the real schema and retrieval SQL without network calls.
+- Evidence replacement uses the storage adapter transaction API with parameterized Drizzle SQL;
+  core services do not recover a raw postgres client.
+- Image-only collections do not require a text document. First-aspect indexing writes both the
+  legacy `doc` value and `embedding` vector, preserving retry and image-failure state transitions.
+- Collection dimension validation remains at server DDL generation, where halfvec HNSW limits are
+  enforced; SDK construction stays compatible with the existing validation seam.
+- The live fashion gate, aspect latency command, and image-fixture parity run were not executed by
+  design. The fashion full example typecheck still contains unrelated pre-existing eval-file
+  errors; the converted configuration itself has no reported type errors.
