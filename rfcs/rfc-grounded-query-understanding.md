@@ -814,3 +814,19 @@ overall quality improved, no leg regressed beyond measured noise, honest zeros i
   noise-scaled thresholds or a deterministic fixture set per bucket.
 - **OOD junk-shown (8 queries).** Pre-existing relevance-floor calibration item; unchanged by this
   RFC; tracked on the roadmap.
+
+### 13.4 Post-merge addendum — judge context fix (search-esci-v2)
+
+The §13.2 numbers were graded by the v1 judge, which saw only `title | price` per candidate.
+A new gated `multi-intent` bucket (10 compound queries) exposed that the strict ESCI rubric,
+graded blind on attributes, scores attribute-perfect results as Irrelevant (a red wedding saree
+blouse at 4950 graded 0 for "red saree blouse for a wedding under 5000"). Fixed on main:
+`hitText` now feeds the judge the full `candidateSummary` attribute line and the persisted grade
+version is bumped to `search-esci-v2` (thin-context grades never mix with rich-context grades).
+Same-retrieval re-grade: overall 1.748 → 2.244; multi-intent 0.6 → 1.58; negation 1.9 → 2.6;
+style 1.55 → 2.325. **v1-judge artifacts (including §13.2) are internally consistent
+(baseline and candidate were graded by the same judge) but not comparable to v2-judge
+artifacts.** New baseline: `2026-07-19T04-59-23-358Z-search-grounded-main-judge-v2`. Weakest
+honest buckets are now local (1.4) and multi-intent (1.58) — corpus/retrieval follow-ups
+(`sarong for men`, `blue denim jacket`, black hoodie not surfacing for `mi-08`), not harness
+artifacts.

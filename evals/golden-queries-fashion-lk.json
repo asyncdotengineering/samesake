@@ -307,6 +307,56 @@
       "type": "multilingual",
       "query": "saree blouse hattaya",
       "note": "Sinhala transliteration: hattaya = blouse"
+    },
+    {
+      "id": "mi-01",
+      "type": "multi-intent",
+      "query": "modest office dress not black under 8000"
+    },
+    {
+      "id": "mi-02",
+      "type": "multi-intent",
+      "query": "red saree blouse for a wedding under 5000"
+    },
+    {
+      "id": "mi-03",
+      "type": "multi-intent",
+      "query": "comfortable white cotton top for hot weather"
+    },
+    {
+      "id": "mi-04",
+      "type": "multi-intent",
+      "query": "smart casual shirt for men under 4000 not linen"
+    },
+    {
+      "id": "mi-05",
+      "type": "multi-intent",
+      "query": "flowy dress for a beach holiday not floral"
+    },
+    {
+      "id": "mi-06",
+      "type": "multi-intent",
+      "query": "gym leggings for women under 3000"
+    },
+    {
+      "id": "mi-07",
+      "type": "multi-intent",
+      "query": "something elegant for a kandyan wedding guest under 6000"
+    },
+    {
+      "id": "mi-08",
+      "type": "multi-intent",
+      "query": "oversized black hoodie for streetwear not printed"
+    },
+    {
+      "id": "mi-09",
+      "type": "multi-intent",
+      "query": "blue denim jacket for a casual dinner date"
+    },
+    {
+      "id": "mi-10",
+      "type": "multi-intent",
+      "query": "linen pants for office wear in beige under 7000"
     }
   ]
 }
