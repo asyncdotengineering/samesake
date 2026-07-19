@@ -32,7 +32,7 @@ offline eval loop.
    paper: catalog grounding is +8.3pp of a +13pp total accuracy gain; ungrounded LLM
    classification is the documented failure mode (−10.9pp). Instacart: candidate-constrained
    category classification + embedding-similarity guardrails. Every production system constrains
-   LLM output to a controlled vocabulary. → `rfcs/rfc-grounded-query-understanding.md`.
+   LLM output to a controlled vocabulary. → `rfcs/rfc-grounded-query-understanding.md` (shipped 2026-07-19; RFC removed post-ship, see git history).
 3. **Typed LLM query rewrites recover nulls.** Instacart: substitute/broader/synonym rewrite
    prompts took rewrite coverage 50%→95%+ at 90%+ precision; tail-query complaints −50%.
    Slots into samesake's existing relaxation ladder as a final pre-empty step.
