@@ -109,7 +109,7 @@ describeIf("enrich pipeline", () => {
         },
       },
     ]);
-  });
+  }, 30_000);
 
   afterAll(async () => {
     if (schemaName) {
@@ -118,7 +118,7 @@ describeIf("enrich pipeline", () => {
       await close();
     }
     if (matcher) await matcher.close();
-  });
+  }, 30_000);
 
   test("runs two stages with condition gate and stores _stages", async () => {
     generateCalls = 0;
@@ -306,7 +306,7 @@ describeIf("test:index-gate enrich pipeline surfaces", () => {
     await matcher.pushDocuments(projectSlug, "products", [
       { id: "idx1", data: { title: "Silk Midi", content_hash: "idx1" } },
     ]);
-  });
+  }, 30_000);
 
   afterAll(async () => {
     if (schemaName) {
@@ -315,7 +315,7 @@ describeIf("test:index-gate enrich pipeline surfaces", () => {
       await close();
     }
     if (matcher) await matcher.close();
-  });
+  }, 30_000);
 
   test("test:index-gate persists surfaces and pipeline_status ready", async () => {
     const r = await matcher.enrich(projectSlug, "products");

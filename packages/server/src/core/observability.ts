@@ -15,6 +15,8 @@ export interface MetricsSnapshot {
   search_cutoff_dropped_total: number;
   nlq_cache_hits: number;
   nlq_degraded_total: number;
+  nlq_lexical_guard_drops: number;
+  nlq_uncorroborated_enum_drops: number;
   enrich_docs_total: number;
   enrich_failures_total: number;
   embed_calls_total: number;
@@ -75,6 +77,8 @@ export function createObservability(config?: { logger?: LoggerFn }): Observabili
     search_cutoff_dropped_total: 0,
     nlq_cache_hits: 0,
     nlq_degraded_total: 0,
+    nlq_lexical_guard_drops: 0,
+    nlq_uncorroborated_enum_drops: 0,
     enrich_docs_total: 0,
     enrich_failures_total: 0,
     embed_calls_total: 0,

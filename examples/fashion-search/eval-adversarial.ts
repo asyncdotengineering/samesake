@@ -26,6 +26,10 @@ const PROJECT = "fashionparity";
 const COLLECTION = "products";
 const K = 5;
 
+const args = process.argv.slice(2);
+const flag = (key: string, fallback: string) => args.find((arg) => arg.startsWith(`--${key}=`))?.split("=")[1] ?? fallback;
+const PHASE = flag("phase", "baseline");
+
 interface AQ {
   id: string;
   bucket: string;
@@ -150,6 +154,7 @@ async function main(): Promise<void> {
 
   const artifact = {
     suite: "adversarial-red-team",
+    phase: PHASE,
     project: PROJECT,
     k: K,
     models: { embed: EMB_MODEL, judge: STAGE2_MODEL },
@@ -164,7 +169,7 @@ async function main(): Promise<void> {
   await writeFile(`${base}.json`, JSON.stringify(artifact, null, 2) + "\n");
 
   const md = [
-    `# Red-team (adversarial) search eval — ${PROJECT}`,
+    `# Red-team (adversarial) search eval — ${PROJECT} (${PHASE})`,
     ``,
     `Judge \`${STAGE2_MODEL}\` · embed \`${EMB_MODEL}\` · ${rows.length} queries · k=${K}`,
     ``,

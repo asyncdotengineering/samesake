@@ -228,6 +228,109 @@ function ftsPhonColumnDdl(sys: string): string {
   );
 }
 
+function openVocabFieldNames(def: CollectionDef): string[] {
+  return Object.entries(def.fields)
+    .filter(([, field]) => field.type === "text" && field.filterable)
+    .map(([name]) => name);
+}
+
+function vocabDDL(schema: string, collectionName: string, def: CollectionDef): string[] {
+  const fields = openVocabFieldNames(def);
+  if (fields.length === 0) return [];
+
+  const coll = sanitiseIdent(collectionName);
+  const table = `${schema}.c_${coll}`;
+  const vocab = `${schema}.c_${coll}_vocab`;
+  const scopeColumns = collectionScopes(def).map(scopeColumn);
+  const keyColumns = [...scopeColumns, "field", "value"];
+  const scopeSelect = scopeColumns.map((column) => `t.${column}`).join(", ");
+  const scopeGroup = scopeColumns.map((column) => `t.${column}`).join(", ");
+  const scopePredicate = (alias: "OLD" | "NEW") =>
+    scopeColumns.map((column) => `${column} = ${alias}.${column}`).join(" AND ");
+  const visible = (alias: "OLD" | "NEW") =>
+    `(TG_OP <> '${alias === "OLD" ? "INSERT" : "DELETE"}' AND (${alias}.pipeline_status = 'ready' OR ${alias}.pipeline_status IS NULL))`;
+  const valueRows = fields
+    .map((field) => `('${field.replace(/'/g, "''")}', t.${sanitiseIdent(field)})`)
+    .join(", ");
+  const groupedColumns = [...scopeColumns.map((column) => `t.${column}`), "v.field", "v.value"].join(", ");
+
+  const statements: string[] = [
+    `CREATE TABLE IF NOT EXISTS ${vocab} (
+      ${scopeColumns.map((column) => `${column} text NOT NULL,\n      `).join("")}field text NOT NULL,
+      value text NOT NULL,
+      count int NOT NULL CHECK (count > 0),
+      PRIMARY KEY (${keyColumns.join(", ")})
+    );`,
+    `CREATE INDEX IF NOT EXISTS c_${coll}_vocab_value_trgm_idx ON ${vocab} USING gin (value gin_trgm_ops);`,
+    `DELETE FROM ${vocab};`,
+    `INSERT INTO ${vocab} (${keyColumns.join(", ")}, count)
+     SELECT ${scopeSelect ? `${scopeSelect}, ` : ""}v.field, v.value, count(*)::int
+     FROM ${table} t
+     CROSS JOIN LATERAL (VALUES ${valueRows}) AS v(field, value)
+     WHERE (t.pipeline_status = 'ready' OR t.pipeline_status IS NULL)
+       AND v.value IS NOT NULL AND v.value <> ''
+     GROUP BY ${groupedColumns};`,
+  ];
+
+  const triggerFunction = `${schema}.c_${coll}_vocab_maintain`;
+  const oldBlocks = fields.map((field) => {
+    const column = sanitiseIdent(field);
+    const scope = scopePredicate("OLD");
+    const where = [
+      `field = '${field.replace(/'/g, "''")}'`,
+      `value = OLD.${column}`,
+      scope,
+    ].filter(Boolean).join(" AND ");
+    return `    IF OLD.${column} IS NOT NULL AND OLD.${column} <> '' THEN
+      DELETE FROM ${vocab} WHERE ${where} AND count <= 1;
+      UPDATE ${vocab} SET count = count - 1 WHERE ${where} AND count > 1;
+    END IF;`;
+  });
+  const newBlocks = fields.map((field) => {
+    const column = sanitiseIdent(field);
+    const scope = scopePredicate("NEW");
+    const columns = [...scopeColumns, "field", "value", "count"];
+    const values = [
+      ...scopeColumns.map((scopeColumnName) => `NEW.${scopeColumnName}`),
+      `'${field.replace(/'/g, "''")}'`,
+      `NEW.${column}`,
+      "1",
+    ];
+    const conflict = keyColumns.join(", ");
+    return `    IF NEW.${column} IS NOT NULL AND NEW.${column} <> '' THEN
+      INSERT INTO ${vocab} (${columns.join(", ")}) VALUES (${values.join(", ")})
+      ON CONFLICT (${conflict}) DO UPDATE SET count = ${vocab}.count + 1;
+    END IF;`;
+  });
+  const oldVisiblePredicate = visible("OLD");
+  const newVisiblePredicate = visible("NEW");
+  const deleteZero = `    DELETE FROM ${vocab} WHERE count <= 0;`;
+  const triggerName = `c_${coll}_vocab_maintain_trg`;
+  const returnSql = `    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;`;
+
+  statements.push(
+    `CREATE OR REPLACE FUNCTION ${triggerFunction}() RETURNS trigger LANGUAGE plpgsql AS $vocab$
+BEGIN
+  IF ${oldVisiblePredicate} THEN
+${oldBlocks.join("\n")}
+${deleteZero}
+  END IF;
+  IF ${newVisiblePredicate} THEN
+${newBlocks.join("\n")}
+  END IF;
+${returnSql}
+END;
+$vocab$;`,
+    `DROP TRIGGER IF EXISTS ${triggerName} ON ${table};`,
+    `CREATE TRIGGER ${triggerName}
+      AFTER INSERT OR UPDATE OR DELETE ON ${table}
+      FOR EACH ROW EXECUTE FUNCTION ${triggerFunction}();`
+  );
+
+  return statements;
+}
+
 export function makeCollectionsSchemaGen(config: CollectionsSchemaGenConfig) {
   const PREFIX = config.projectPrefix;
   const SYS = sanitiseIdent(config.systemSchema);
@@ -398,6 +501,10 @@ ${scopeCols}          doc_id text NOT NULL REFERENCES ${table}(id) ON DELETE CAS
     // (all IF NOT EXISTS), so adding `dedup` to an existing collection is additive.
     if (def?.dedup) {
       stmts.push(...dedupDDL(schema, collectionName, def));
+    }
+
+    if (def) {
+      stmts.push(...vocabDDL(schema, collectionName, def));
     }
 
     return stmts;

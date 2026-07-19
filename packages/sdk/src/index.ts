@@ -258,6 +258,8 @@ type CollectionInput<
     rankingPolicy?: RankingPolicy;
     /** Filter keys shopSearch's no-results recovery may drop, in order. Nothing relaxes unless declared. */
     relaxableFilters?: readonly string[];
+    /** Progressive-relaxation priority: listed soft fields drop FIRST (contextual before identity-bearing); unlisted fields fall back to least-selective-first. */
+    relaxOrder?: readonly NoInfer<keyof TFields & string>[];
     /** Absolute cosine floor (0–1) a semantic-only hit must clear; FTS keyword matches are exempt. Suppresses no-match padding. */
     relevanceFloor?: number;
     nlq?: {

@@ -332,6 +332,15 @@ export interface CollectionSearchDef {
    */
   relaxableFilters?: string[];
   /**
+   * Priority order for progressive soft-filter relaxation: listed fields are dropped
+   * FIRST, in this order, before any unlisted soft field. Declare contextual constraints
+   * (occasions, styles) here so identity-bearing ones (colors, material) survive longest —
+   * selectivity counts alone invert on real corpora ("red dress for a wedding" must relax
+   * to red dresses, never to black ones). Unlisted fields fall back to
+   * least-selective-first (highest standalone match count).
+   */
+  relaxOrder?: string[];
+  /**
    * Minimum query–document cosine similarity (0–1) a semantic-only hit must clear
    * to survive; hits that also match via FTS keywords are exempt. Suppresses
    * no-match padding — a query with no real match returns few/no results instead
@@ -543,7 +552,27 @@ export type SearchWeightsInput<S extends string = string> = {
  */
 export type SearchMode = "intent" | "similar";
 
-export type ConstraintTraceSource = "nlq" | "explicit" | "budget_hint" | "agent";
+export type ConstraintTraceSource = "nlq" | "deterministic" | "explicit" | "budget_hint" | "agent";
+
+export interface RelaxationStep {
+  field: string;
+  standaloneMatchCount: number;
+  resultCount: number;
+}
+
+export interface GroundedValueDecision {
+  parsed: string;
+  mapped?: string;
+  action: "kept" | "mapped" | "dropped";
+}
+
+export type RewriteType = "spellfix" | "synonym" | "broader" | "substitute";
+
+export interface RewriteRecord {
+  type: RewriteType;
+  from: string;
+  to: string;
+}
 
 export type ConstraintFieldType = "text" | "number" | "boolean" | "enum" | "array";
 
@@ -606,6 +635,10 @@ export interface ConstraintTrace {
   relaxedFields: string[];
   excludedTerms: string[];
   budgetHints: Record<string, "cheap" | "premium">;
+  deterministicFilters: Record<string, unknown>;
+  groundedValues: Record<string, GroundedValueDecision[]>;
+  relaxationSteps: RelaxationStep[];
+  rewritten?: RewriteRecord;
 }
 
 export interface ShopSearchImageInput {

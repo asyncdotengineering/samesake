@@ -146,7 +146,8 @@ describeIf("hybrid search", () => {
       filters: { colors: ["red"], tag: "nonexistent-tag" },
       limit: 10,
     });
-    expect(result.relaxed).toBe(true);
+    // REQ-9: explicit soft filters are immutable and never qualify for relaxation.
+    expect(result.relaxed).toBe(false);
     expect(result.hits.length).toBeGreaterThanOrEqual(0);
   });
 
@@ -300,4 +301,125 @@ describeIf("test:search-excludes-quarantined", () => {
     expect(cosine.hits.some((h) => h.id === targetId)).toBe(false);
 
   });
+});
+
+describeIf("test:lex-corrected", () => {
+  const projectSlug = `t_${Math.random().toString(36).slice(2, 10)}`;
+  let schemaName = "";
+  let matcher: ReturnType<typeof createMatcher>;
+  const correctedCollection = collection("lexical_products", {
+    fields: { title: f.text({ searchable: true }) },
+    embeddings: { doc: { source: "$title", model: "test-embed", dim: 8 } },
+    search: {
+      channels: [Channels.fts({ fields: ["title"], weight: 1 })],
+      nlq: { enable: true },
+    },
+  });
+
+  beforeAll(async () => {
+    matcher = createMatcher({
+      databaseUrl: databaseUrl!,
+      apiKey: "test-api-key-12345",
+      migrate: "eager",
+      embed: async ({ text, dim }) => stubEmbed(text, dim),
+      generate: async () => ({
+        semantic_query: "adidas sneakers",
+        lexical_query: "adidas sneakers",
+      }),
+    });
+    await matcher.migrate();
+    schemaName = (await matcher.apply(projectSlug, { entities: [], collections: [correctedCollection] })).schema;
+    await matcher.pushDocuments(projectSlug, "lexical_products", [{ id: "s1", data: { title: "adidas sneakers" } }]);
+    await matcher.index(projectSlug, "lexical_products");
+  }, 30_000);
+
+  afterAll(async () => {
+    if (schemaName) {
+      const { db, close } = createDbFromUrl(databaseUrl!);
+      await db.execute(sql.raw(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`));
+      await close();
+    }
+    if (matcher) await matcher.close();
+  });
+
+  test("corrected lexical surface reaches FTS for typo query", async () => {
+    const result = await matcher.search(projectSlug, "lexical_products", {
+      q: `adidas snekers ${projectSlug}`,
+      limit: 5,
+      weights: { fts: 1, cosine: 0 },
+    });
+    expect(result.parsed?.lexical_query).toBe("adidas sneakers");
+    expect(result.hits.map((hit) => hit.id)).toEqual(["s1"]);
+  }, 30_000);
+});
+
+describeIf("test:progressive-relax", () => {
+  const projectSlug = `t_${Math.random().toString(36).slice(2, 10)}`;
+  let schemaName = "";
+  let matcher: ReturnType<typeof createMatcher>;
+  const relaxationCollection = collection("relaxation_products", {
+    fields: {
+      title: f.text({ searchable: true }),
+      color: f.text({ filterable: true, soft: true }),
+      occasion: f.text({ filterable: true, soft: true }),
+    },
+    search: {
+      channels: [Channels.fts({ fields: ["title"], weight: 1 })],
+      nlq: { enable: true },
+      // Contextual before identity-bearing, regardless of selectivity counts.
+      relaxOrder: ["occasion"],
+    },
+  });
+
+  beforeAll(async () => {
+    matcher = createMatcher({
+      databaseUrl: databaseUrl!,
+      apiKey: "test-api-key-12345",
+      migrate: "eager",
+      embed: async () => [],
+      generate: async () => ({
+        semantic_query: "red dress wedding",
+        lexical_query: "red dress wedding",
+        color: "red",
+        occasion: "wedding",
+      }),
+    });
+    await matcher.migrate();
+    schemaName = (await matcher.apply(projectSlug, { entities: [], collections: [relaxationCollection] })).schema;
+    await matcher.indexDocuments(projectSlug, "relaxation_products", [
+      { id: "a", data: { title: "red dress wedding" }, doc: "red dress wedding", fields: { title: "red dress wedding", color: "red", occasion: "wedding" } },
+      { id: "b", data: { title: "red gown wedding" }, doc: "red gown wedding", fields: { title: "red gown wedding", color: "red", occasion: "wedding" } },
+      { id: "c", data: { title: "formal gown" }, doc: "formal gown", fields: { title: "formal gown", color: "red", occasion: "wedding" } },
+      { id: "d", data: { title: "red dress party" }, doc: "red dress party", fields: { title: "red dress party", color: "red", occasion: "party" } },
+      { id: "e", data: { title: "blue suit wedding" }, doc: "blue suit wedding", fields: { title: "blue suit wedding", color: "blue", occasion: "wedding" } },
+      { id: "f", data: { title: "green dress wedding" }, doc: "green dress wedding", fields: { title: "green dress wedding", color: "green", occasion: "wedding" } },
+      // g/h invert the selectivity counts to mirror the live corpus (red=6 > wedding=5):
+      // pure least-selective-first would drop `color` and admit e/f — only the declared
+      // relaxOrder keeps the every-red invariant below (live finding 2026-07-19). Their
+      // titles carry no gate tokens, so they never enter results.
+      { id: "g", data: { title: "crimson blazer evening" }, doc: "crimson blazer evening", fields: { title: "crimson blazer evening", color: "red", occasion: "party" } },
+      { id: "h", data: { title: "scarlet scarf evening" }, doc: "scarlet scarf evening", fields: { title: "scarlet scarf evening", color: "red", occasion: "party" } },
+    ]);
+  }, 30_000);
+
+  afterAll(async () => {
+    if (schemaName) {
+      const { db, close } = createDbFromUrl(databaseUrl!);
+      await db.execute(sql.raw(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`));
+      await close();
+    }
+    if (matcher) await matcher.close();
+  });
+
+  test("drops declared relaxOrder fields before identity-bearing ones despite selectivity counts", async () => {
+    const result = await matcher.search(projectSlug, "relaxation_products", {
+      q: "red dress for a wedding",
+      limit: 10,
+    });
+    expect(result.relaxed).toBe(true);
+    expect(result.constraintTrace.relaxationSteps[0]?.field).toBe("occasion");
+    expect(result.hits.length).toBe(3);
+    expect(result.hits.every((hit) => hit.color === "red")).toBe(true);
+    expect(result.hits.map((hit) => hit.id).sort()).toEqual(["a", "b", "d"]);
+  }, 30_000);
 });

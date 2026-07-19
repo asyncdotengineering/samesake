@@ -1,0 +1,1097 @@
+{
+  "phase": "grounded-candidate3",
+  "project": "fashionparity",
+  "collection": "products",
+  "k": 5,
+  "models": {
+    "embed": "gemini-embedding-2",
+    "generate": "gemini-3.1-flash-lite",
+    "judge": "gpt-4.1-mini"
+  },
+  "overall": {
+    "meanGrade": 1.916,
+    "ndcg": 0.885,
+    "noResultRate": 0,
+    "queries": 67,
+    "judged": 335
+  },
+  "buckets": [
+    {
+      "type": "attribute",
+      "n": 8,
+      "meanGrade": 1.55,
+      "ndcg": 0.853,
+      "noResultRate": 0
+    },
+    {
+      "type": "broad",
+      "n": 2,
+      "meanGrade": 2.9,
+      "ndcg": 0.986,
+      "noResultRate": 0
+    },
+    {
+      "type": "keyword",
+      "n": 8,
+      "meanGrade": 2.225,
+      "ndcg": 0.915,
+      "noResultRate": 0
+    },
+    {
+      "type": "local",
+      "n": 5,
+      "meanGrade": 0.92,
+      "ndcg": 0.667,
+      "noResultRate": 0
+    },
+    {
+      "type": "multilingual",
+      "n": 5,
+      "meanGrade": 2.36,
+      "ndcg": 0.923,
+      "noResultRate": 0
+    },
+    {
+      "type": "negation",
+      "n": 4,
+      "meanGrade": 1.85,
+      "ndcg": 0.961,
+      "noResultRate": 0
+    },
+    {
+      "type": "price",
+      "n": 5,
+      "meanGrade": 2,
+      "ndcg": 0.849,
+      "noResultRate": 0
+    },
+    {
+      "type": "style",
+      "n": 8,
+      "meanGrade": 1.55,
+      "ndcg": 0.807,
+      "noResultRate": 0
+    },
+    {
+      "type": "typo",
+      "n": 12,
+      "meanGrade": 2.083,
+      "ndcg": 0.898,
+      "noResultRate": 0
+    },
+    {
+      "type": "use-case",
+      "n": 10,
+      "meanGrade": 2.12,
+      "ndcg": 0.992,
+      "noResultRate": 0
+    }
+  ],
+  "perQuery": [
+    {
+      "id": "kw-01",
+      "type": "keyword",
+      "q": "red dress",
+      "gradeAt": 2.2,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "hellywild.lk:9327580152029",
+        "slay.lk:7469523206253",
+        "thecultoriginal.lk:8864948093125",
+        "lavivente.lk:270363",
+        "springandsummer.lk:8045818151092"
+      ]
+    },
+    {
+      "id": "kw-02",
+      "type": "keyword",
+      "q": "denim jacket",
+      "gradeAt": 1.6,
+      "ndcg": 0.9777813616305049,
+      "hits": 5,
+      "topIds": [
+        "mora.lk:10246205964571",
+        "mora.lk:10231935435035",
+        "mora.lk:10165134197019",
+        "hellywild.lk:9346798092509",
+        "hellywild.lk:9333462565085"
+      ]
+    },
+    {
+      "id": "kw-03",
+      "type": "keyword",
+      "q": "linen shirt men",
+      "gradeAt": 1.6,
+      "ndcg": 0.7908917518524383,
+      "hits": 5,
+      "topIds": [
+        "sarathas.lk:15962",
+        "sarathas.lk:15779",
+        "coolplanet.lk:9132706595040",
+        "mimosaforever.com:9101883572481",
+        "sarathas.lk:17163"
+      ]
+    },
+    {
+      "id": "kw-04",
+      "type": "keyword",
+      "q": "white blouse",
+      "gradeAt": 1,
+      "ndcg": 0.5683945997718942,
+      "hits": 5,
+      "topIds": [
+        "amarestyle.com:8941",
+        "springandsummer.lk:7963830223028",
+        "springandsummer.lk:8028380889268",
+        "www.arienti.lk:8423000113197",
+        "springandsummer.lk:8070265831604"
+      ]
+    },
+    {
+      "id": "kw-05",
+      "type": "keyword",
+      "q": "silk saree",
+      "gradeAt": 3,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "amarestyle.com:8878",
+        "amarestyle.com:9366",
+        "amarestyle.com:9361",
+        "amarestyle.com:8883",
+        "amarestyle.com:9154"
+      ]
+    },
+    {
+      "id": "kw-06",
+      "type": "keyword",
+      "q": "crop top",
+      "gradeAt": 2.8,
+      "ndcg": 0.9948189840222265,
+      "hits": 5,
+      "topIds": [
+        "slay.lk:7807005032557",
+        "mimosaforever.com:8918410166529",
+        "hellywild.lk:9331755155677",
+        "www.arienti.lk:15109212504109",
+        "slay.lk:7907971563629"
+      ]
+    },
+    {
+      "id": "kw-07",
+      "type": "keyword",
+      "q": "palazzo pants",
+      "gradeAt": 2.8,
+      "ndcg": 0.9948189840222265,
+      "hits": 5,
+      "topIds": [
+        "springandsummer.lk:8043681218740",
+        "springandsummer.lk:8070561530036",
+        "springandsummer.lk:8022648717492",
+        "www.arienti.lk:8407917985837",
+        "aviratefashion.com:7905567801443"
+      ]
+    },
+    {
+      "id": "kw-08",
+      "type": "keyword",
+      "q": "maxi skirt",
+      "gradeAt": 2.8,
+      "ndcg": 0.9948189840222265,
+      "hits": 5,
+      "topIds": [
+        "mimosaforever.com:9086722998529",
+        "mimosaforever.com:8762483867905",
+        "mimosaforever.com:9115932098817",
+        "www.arienti.lk:8426956816429",
+        "mimosaforever.com:9152866320641"
+      ]
+    },
+    {
+      "id": "attr-01",
+      "type": "attribute",
+      "q": "high waisted wide leg jeans",
+      "gradeAt": 2,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "hellywild.lk:9332493517021",
+        "hellywild.lk:9332503740637",
+        "hellywild.lk:9450496753885",
+        "hellywild.lk:9347541958877",
+        "hellywild.lk:9346565210333"
+      ]
+    },
+    {
+      "id": "attr-02",
+      "type": "attribute",
+      "q": "off shoulder maxi dress",
+      "gradeAt": 1.4,
+      "ndcg": 0.8808784659346812,
+      "hits": 5,
+      "topIds": [
+        "mimosaforever.com:8761197330689",
+        "www.arienti.lk:8228283285549",
+        "www.arienti.lk:8251570389037",
+        "mimosaforever.com:8762483704065",
+        "aviratefashion.com:7832893882467"
+      ]
+    },
+    {
+      "id": "attr-03",
+      "type": "attribute",
+      "q": "long sleeve cotton top",
+      "gradeAt": 1.6,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "mimosaforever.com:9085242179841",
+        "mimosaforever.com:9176942084353",
+        "mimosaforever.com:9165310918913",
+        "mimosaforever.com:8629934162177",
+        "www.arienti.lk:8278539272237"
+      ]
+    },
+    {
+      "id": "attr-04",
+      "type": "attribute",
+      "q": "v neck floral midi dress",
+      "gradeAt": 0.4,
+      "ndcg": 0.6309297535714575,
+      "hits": 5,
+      "topIds": [
+        "thecultoriginal.lk:8764592849093",
+        "springandsummer.lk:8036126654644",
+        "www.arienti.lk:8490043342893",
+        "mimosaforever.com:8834055700737",
+        "www.arienti.lk:8320723845165"
+      ]
+    },
+    {
+      "id": "attr-05",
+      "type": "attribute",
+      "q": "puff sleeve blouse",
+      "gradeAt": 1.8,
+      "ndcg": 0.8854598815714875,
+      "hits": 5,
+      "topIds": [
+        "lavivente.lk:273688",
+        "www.arienti.lk:8447559204909",
+        "mimosaforever.com:9111351591169",
+        "www.arienti.lk:8361045688365",
+        "lavivente.lk:278329"
+      ]
+    },
+    {
+      "id": "attr-06",
+      "type": "attribute",
+      "q": "pleated midi skirt",
+      "gradeAt": 2.4,
+      "ndcg": 0.9243710230888972,
+      "hits": 5,
+      "topIds": [
+        "www.arienti.lk:8335615066157",
+        "springandsummer.lk:7980686868660",
+        "thecultoriginal.lk:8554678255813",
+        "thecultoriginal.lk:8383824789701",
+        "www.arienti.lk:8278236332077"
+      ]
+    },
+    {
+      "id": "attr-07",
+      "type": "attribute",
+      "q": "sleeveless linen jumpsuit",
+      "gradeAt": 0.8,
+      "ndcg": 0.5012658353418871,
+      "hits": 5,
+      "topIds": [
+        "aviratefashion.com:7879426408547",
+        "www.arienti.lk:8275867205677",
+        "www.arienti.lk:8282803666989",
+        "slay.lk:7542088532077",
+        "www.arienti.lk:8262129451053"
+      ]
+    },
+    {
+      "id": "attr-08",
+      "type": "attribute",
+      "q": "oversized graphic tshirt",
+      "gradeAt": 2,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "fashionbug.lk:15027954614637",
+        "fashionbug.lk:15028593131885",
+        "fashionbug.lk:15027955237229",
+        "thecultoriginal.lk:8282003046597",
+        "fashionbug.lk:15027952746861"
+      ]
+    },
+    {
+      "id": "use-01",
+      "type": "use-case",
+      "q": "office wear for women",
+      "gradeAt": 2,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "www.arienti.lk:8229180276781",
+        "mimosaforever.com:8827287470337",
+        "mimosaforever.com:9143123116289",
+        "mimosaforever.com:8913602806017",
+        "mimosaforever.com:8913603002625"
+      ]
+    },
+    {
+      "id": "use-02",
+      "type": "use-case",
+      "q": "what to wear to a beach wedding as a guest",
+      "gradeAt": 1.6,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "springandsummer.lk:8042795368628",
+        "slay.lk:7847757185133",
+        "springandsummer.lk:8043681218740",
+        "liviowear.com:29482",
+        "www.arienti.lk:8242351210541"
+      ]
+    },
+    {
+      "id": "use-03",
+      "type": "use-case",
+      "q": "smart casual outfit for men",
+      "gradeAt": 2,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "fashionbug.lk:14720346095981",
+        "mora.lk:10079729451291",
+        "sarathas.lk:15785",
+        "sarathas.lk:15773",
+        "mora.lk:10079729418523"
+      ]
+    },
+    {
+      "id": "use-04",
+      "type": "use-case",
+      "q": "gym wear for women",
+      "gradeAt": 2,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "fashionbug.lk:15037602365805",
+        "fashionbug.lk:15037600825709",
+        "liviowear.com:29488",
+        "mimosaforever.com:8130338816257",
+        "www.arienti.lk:8189994827821"
+      ]
+    },
+    {
+      "id": "use-05",
+      "type": "use-case",
+      "q": "dinner date outfit",
+      "gradeAt": 2.2,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "slay.lk:7946792763501",
+        "mimosaforever.com:8827287470337",
+        "thecultoriginal.lk:8880754917573",
+        "slay.lk:7956823343213",
+        "thecultoriginal.lk:8238190526661"
+      ]
+    },
+    {
+      "id": "use-06",
+      "type": "use-case",
+      "q": "modest dress for work",
+      "gradeAt": 2.4,
+      "ndcg": 0.9185494721105402,
+      "hits": 5,
+      "topIds": [
+        "springandsummer.lk:8019838599348",
+        "aviratefashion.com:7881797697635",
+        "slay.lk:7469543456877",
+        "aviratefashion.com:7822456291427",
+        "springandsummer.lk:8046495203508"
+      ]
+    },
+    {
+      "id": "use-07",
+      "type": "use-case",
+      "q": "saree for a wedding",
+      "gradeAt": 3,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "amarestyle.com:9366",
+        "amarestyle.com:8477",
+        "amarestyle.com:9118",
+        "amarestyle.com:9137",
+        "amarestyle.com:8878"
+      ]
+    },
+    {
+      "id": "use-08",
+      "type": "use-case",
+      "q": "comfortable lounge wear set",
+      "gradeAt": 2,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "thecultoriginal.lk:8238191345861",
+        "coolplanet.lk:8976416538848",
+        "aviratefashion.com:7962311229539",
+        "thecultoriginal.lk:8282003046597",
+        "liviowear.com:29488"
+      ]
+    },
+    {
+      "id": "use-09",
+      "type": "use-case",
+      "q": "something light for hot weather",
+      "gradeAt": 2,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "sarathas.lk:15777",
+        "www.arienti.lk:8402287525933",
+        "mimosaforever.com:9085242343681",
+        "mimosaforever.com:9085242245377",
+        "mimosaforever.com:9096897036545"
+      ]
+    },
+    {
+      "id": "use-10",
+      "type": "use-case",
+      "q": "resort wear for a holiday",
+      "gradeAt": 2,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "www.arienti.lk:8382877335597",
+        "www.arienti.lk:8305682874413",
+        "www.arienti.lk:8402287525933",
+        "www.arienti.lk:8268979306541",
+        "www.arienti.lk:8426963107885"
+      ]
+    },
+    {
+      "id": "price-01",
+      "type": "price",
+      "q": "dress under 5000",
+      "gradeAt": 3,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "slay.lk:7989210841197",
+        "slay.lk:7956823343213",
+        "slay.lk:7946792763501",
+        "www.arienti.lk:8324468670509",
+        "thecultoriginal.lk:8238191968453"
+      ]
+    },
+    {
+      "id": "price-02",
+      "type": "price",
+      "q": "office shirt under 3000 rupees",
+      "gradeAt": 1,
+      "ndcg": 0.4744200353065766,
+      "hits": 5,
+      "topIds": [
+        "www.arienti.lk:8257846738989",
+        "www.arienti.lk:8271933276205",
+        "www.arienti.lk:8221569679405",
+        "slay.lk:7816210776173",
+        "slay.lk:7493997690989"
+      ]
+    },
+    {
+      "id": "price-03",
+      "type": "price",
+      "q": "cheap casual tshirts",
+      "gradeAt": 0.8,
+      "ndcg": 0.8772153153380493,
+      "hits": 5,
+      "topIds": [
+        "thecultoriginal.lk:8282003046597",
+        "sarathas.lk:16104",
+        "coolplanet.lk:8975622832352",
+        "coolplanet.lk:9711553249504",
+        "sarathas.lk:16086"
+      ]
+    },
+    {
+      "id": "price-04",
+      "type": "price",
+      "q": "party dress under 10000",
+      "gradeAt": 2.8,
+      "ndcg": 0.9275113302344571,
+      "hits": 5,
+      "topIds": [
+        "thecultoriginal.lk:8238191968453",
+        "slay.lk:7956823343213",
+        "www.arienti.lk:8278072918061",
+        "slay.lk:7946792763501",
+        "slay.lk:7967365300333"
+      ]
+    },
+    {
+      "id": "price-05",
+      "type": "price",
+      "q": "linen pants under 6000",
+      "gradeAt": 2.4,
+      "ndcg": 0.9675767966332455,
+      "hits": 5,
+      "topIds": [
+        "coolplanet.lk:9213238051040",
+        "www.arienti.lk:8262095208493",
+        "springandsummer.lk:8042795368628",
+        "slay.lk:8109289668717",
+        "springandsummer.lk:8043677450420"
+      ]
+    },
+    {
+      "id": "neg-01",
+      "type": "negation",
+      "q": "long dress but not bodycon",
+      "gradeAt": 2.2,
+      "ndcg": 0.917452487864839,
+      "hits": 5,
+      "topIds": [
+        "thecultoriginal.lk:8238191968453",
+        "mimosaforever.com:8761197330689",
+        "www.arienti.lk:8349034348589",
+        "lavivente.lk:262291",
+        "aviratefashion.com:7709161029731"
+      ]
+    },
+    {
+      "id": "neg-02",
+      "type": "negation",
+      "q": "black top without prints",
+      "gradeAt": 1,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "thecultoriginal.lk:8579513745605",
+        "thecultoriginal.lk:8841034301637",
+        "www.arienti.lk:8189994827821",
+        "thecultoriginal.lk:8579516989637",
+        "www.arienti.lk:8312496160813"
+      ]
+    },
+    {
+      "id": "neg-03",
+      "type": "negation",
+      "q": "summer dress not floral",
+      "gradeAt": 1.6,
+      "ndcg": 0.9558295932317544,
+      "hits": 5,
+      "topIds": [
+        "mimosaforever.com:9114909475073",
+        "www.arienti.lk:8433033019437",
+        "www.arienti.lk:8286544494637",
+        "springandsummer.lk:8068659478708",
+        "www.arienti.lk:8324468670509"
+      ]
+    },
+    {
+      "id": "neg-04",
+      "type": "negation",
+      "q": "jeans but not skinny fit",
+      "gradeAt": 2.6,
+      "ndcg": 0.9695962172427146,
+      "hits": 5,
+      "topIds": [
+        "mora.lk:10079729418523",
+        "mora.lk:10165134197019",
+        "hellywild.lk:9332493517021",
+        "sarathas.lk:15773",
+        "hellywild.lk:9436813099229"
+      ]
+    },
+    {
+      "id": "style-01",
+      "type": "style",
+      "q": "bohemian summer look",
+      "gradeAt": 2.2,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "lavivente.lk:272865",
+        "www.arienti.lk:8286544494637",
+        "www.arienti.lk:8426963107885",
+        "slay.lk:7952268263533",
+        "slay.lk:7847757185133"
+      ]
+    },
+    {
+      "id": "style-02",
+      "type": "style",
+      "q": "old money aesthetic outfit",
+      "gradeAt": 2,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "thecultoriginal.lk:8880754983109",
+        "www.arienti.lk:8278539272237",
+        "www.arienti.lk:8402287525933",
+        "thecultoriginal.lk:8880754917573",
+        "www.arienti.lk:8209385259053"
+      ]
+    },
+    {
+      "id": "style-03",
+      "type": "style",
+      "q": "y2k style top",
+      "gradeAt": 1.8,
+      "ndcg": 0.8887223390544889,
+      "hits": 5,
+      "topIds": [
+        "clotho.lk:14174",
+        "mimosaforever.com:9046232924417",
+        "liviowear.com:29591",
+        "mimosaforever.com:9155426713857",
+        "mimosaforever.com:9103433105665"
+      ]
+    },
+    {
+      "id": "style-04",
+      "type": "style",
+      "q": "minimalist wardrobe basics",
+      "gradeAt": 2,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "www.arienti.lk:8382877335597",
+        "www.arienti.lk:15109111119917",
+        "mimosaforever.com:9096897036545",
+        "www.arienti.lk:8490019389485",
+        "www.arienti.lk:8402287525933"
+      ]
+    },
+    {
+      "id": "style-05",
+      "type": "style",
+      "q": "streetwear hoodie",
+      "gradeAt": 0,
+      "ndcg": 0,
+      "hits": 5,
+      "topIds": [
+        "fashionbug.lk:15027954614637",
+        "mora.lk:10232986239259",
+        "mora.lk:10228900036891",
+        "mora.lk:10096335159579",
+        "coolplanet.lk:9072697508064"
+      ]
+    },
+    {
+      "id": "style-06",
+      "type": "style",
+      "q": "romantic flowy dress for a date",
+      "gradeAt": 2,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "slay.lk:7989210841197",
+        "slay.lk:7847757185133",
+        "slay.lk:7816203698285",
+        "slay.lk:7703037902957",
+        "slay.lk:7557269651565"
+      ]
+    },
+    {
+      "id": "style-07",
+      "type": "style",
+      "q": "edgy all black outfit",
+      "gradeAt": 1.2,
+      "ndcg": 0.7122630665145961,
+      "hits": 5,
+      "topIds": [
+        "thecultoriginal.lk:8841034301637",
+        "slay.lk:7583287607405",
+        "hellywild.lk:9469623107805",
+        "slay.lk:7469518553197",
+        "thecultoriginal.lk:8579516989637"
+      ]
+    },
+    {
+      "id": "style-08",
+      "type": "style",
+      "q": "coastal vacation aesthetic",
+      "gradeAt": 1.2,
+      "ndcg": 0.8529278650606567,
+      "hits": 5,
+      "topIds": [
+        "www.arienti.lk:8242351210541",
+        "www.arienti.lk:8382877335597",
+        "www.arienti.lk:8426963107885",
+        "www.arienti.lk:8268979306541",
+        "www.arienti.lk:8290494677037"
+      ]
+    },
+    {
+      "id": "lk-01",
+      "type": "local",
+      "q": "kandyan saree for wedding",
+      "gradeAt": 2,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "amarestyle.com:9118",
+        "amarestyle.com:8799",
+        "amarestyle.com:8838",
+        "amarestyle.com:8834",
+        "amarestyle.com:9137"
+      ]
+    },
+    {
+      "id": "lk-02",
+      "type": "local",
+      "q": "batik shirt",
+      "gradeAt": 0.4,
+      "ndcg": 0.43067655807339306,
+      "hits": 5,
+      "topIds": [
+        "www.arienti.lk:8257236434989",
+        "lavivente.lk:276998",
+        "springandsummer.lk:8040105279668",
+        "springandsummer.lk:8043316150452",
+        "thecultoriginal.lk:8779895177413"
+      ]
+    },
+    {
+      "id": "lk-03",
+      "type": "local",
+      "q": "sarong for men",
+      "gradeAt": 0,
+      "ndcg": 0,
+      "hits": 5,
+      "topIds": [
+        "sarathas.lk:16020",
+        "sarathas.lk:16022",
+        "sarathas.lk:15879",
+        "sarathas.lk:17183",
+        "mimosaforever.com:9101883703553"
+      ]
+    },
+    {
+      "id": "lk-04",
+      "type": "local",
+      "q": "kurta top for women",
+      "gradeAt": 1.6,
+      "ndcg": 0.9047172294870751,
+      "hits": 5,
+      "topIds": [
+        "springandsummer.lk:7963830223028",
+        "thecultoriginal.lk:8282003046597",
+        "coolplanet.lk:9079979049184",
+        "bedesi.lk:39643",
+        "springandsummer.lk:7963797782708"
+      ]
+    },
+    {
+      "id": "lk-05",
+      "type": "local",
+      "q": "white dress for poya day",
+      "gradeAt": 0.6,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "springandsummer.lk:8057311789236",
+        "bedesi.lk:32954",
+        "springandsummer.lk:8045005144244",
+        "www.celestemendis.com:10180971954515",
+        "slay.lk:7469538607213"
+      ]
+    },
+    {
+      "id": "broad-01",
+      "type": "broad",
+      "q": "dresses",
+      "gradeAt": 3,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "slay.lk:7946792763501",
+        "slay.lk:7989210841197",
+        "thecultoriginal.lk:8238191968453",
+        "www.arienti.lk:8324468670509",
+        "slay.lk:7956823343213"
+      ]
+    },
+    {
+      "id": "broad-02",
+      "type": "broad",
+      "q": "men's shirts",
+      "gradeAt": 2.8,
+      "ndcg": 0.9711442645923251,
+      "hits": 5,
+      "topIds": [
+        "sarathas.lk:16040",
+        "sarathas.lk:16042",
+        "sarathas.lk:16044",
+        "mimosaforever.com:9085242179841",
+        "mimosaforever.com:9085242245377"
+      ]
+    },
+    {
+      "id": "ml-01",
+      "type": "multilingual",
+      "q": "රතු ගවුම",
+      "gradeAt": 1.8,
+      "ndcg": 0.6797310500037657,
+      "hits": 5,
+      "topIds": [
+        "thecultoriginal.lk:8282003046597",
+        "hellywild.lk:9327580152029",
+        "springandsummer.lk:8045818151092",
+        "slay.lk:7469523206253",
+        "thecultoriginal.lk:8864948093125"
+      ]
+    },
+    {
+      "id": "ml-02",
+      "type": "multilingual",
+      "q": "සාරි",
+      "gradeAt": 3,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "amarestyle.com:8941",
+        "amarestyle.com:9366",
+        "amarestyle.com:8878",
+        "amarestyle.com:8535",
+        "amarestyle.com:9361"
+      ]
+    },
+    {
+      "id": "ml-03",
+      "type": "multilingual",
+      "q": "சேலை",
+      "gradeAt": 3,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "amarestyle.com:8941",
+        "amarestyle.com:9366",
+        "amarestyle.com:8878",
+        "amarestyle.com:8535",
+        "amarestyle.com:9361"
+      ]
+    },
+    {
+      "id": "ml-04",
+      "type": "multilingual",
+      "q": "denim ජැකට්",
+      "gradeAt": 1.6,
+      "ndcg": 0.9777813616305049,
+      "hits": 5,
+      "topIds": [
+        "mora.lk:10246205964571",
+        "mora.lk:10231935435035",
+        "mora.lk:10165134197019",
+        "hellywild.lk:9346798092509",
+        "hellywild.lk:9333462565085"
+      ]
+    },
+    {
+      "id": "ml-05",
+      "type": "multilingual",
+      "q": "saree blouse hattaya",
+      "gradeAt": 2.4,
+      "ndcg": 0.9558295932317544,
+      "hits": 5,
+      "topIds": [
+        "amarestyle.com:8040",
+        "amarestyle.com:8048",
+        "amarestyle.com:8941",
+        "amarestyle.com:8030",
+        "amarestyle.com:8050"
+      ]
+    },
+    {
+      "id": "typo-01",
+      "type": "typo",
+      "q": "blak dress",
+      "gradeAt": 1.6,
+      "ndcg": 0.8596498304226058,
+      "hits": 5,
+      "topIds": [
+        "thecultoriginal.lk:8383822004421",
+        "slay.lk:7946792763501",
+        "www.arienti.lk:8463541862445",
+        "thecultoriginal.lk:8829870997701",
+        "thecultoriginal.lk:8779895013573"
+      ]
+    },
+    {
+      "id": "typo-02",
+      "type": "typo",
+      "q": "denim jaket",
+      "gradeAt": 1.6,
+      "ndcg": 0.9777813616305049,
+      "hits": 5,
+      "topIds": [
+        "mora.lk:10246205964571",
+        "mora.lk:10231935435035",
+        "mora.lk:10165134197019",
+        "hellywild.lk:9346798092509",
+        "hellywild.lk:9333462565085"
+      ]
+    },
+    {
+      "id": "typo-03",
+      "type": "typo",
+      "q": "linnen shirt",
+      "gradeAt": 2.4,
+      "ndcg": 0.9047172294870752,
+      "hits": 5,
+      "topIds": [
+        "sarathas.lk:15962",
+        "sarathas.lk:15779",
+        "sarathas.lk:17163",
+        "hang.lk:2442",
+        "mora.lk:10228325056795"
+      ]
+    },
+    {
+      "id": "typo-04",
+      "type": "typo",
+      "q": "wite blouse",
+      "gradeAt": 0.6,
+      "ndcg": 0.38685280723454163,
+      "hits": 5,
+      "topIds": [
+        "amarestyle.com:8941",
+        "springandsummer.lk:7963830223028",
+        "springandsummer.lk:8028380889268",
+        "www.arienti.lk:8423000113197",
+        "springandsummer.lk:8070265831604"
+      ]
+    },
+    {
+      "id": "typo-05",
+      "type": "typo",
+      "q": "palazo pants",
+      "gradeAt": 2.8,
+      "ndcg": 0.9948189840222265,
+      "hits": 5,
+      "topIds": [
+        "springandsummer.lk:8043681218740",
+        "springandsummer.lk:8070561530036",
+        "springandsummer.lk:8022648717492",
+        "www.arienti.lk:8407917985837",
+        "aviratefashion.com:7905567801443"
+      ]
+    },
+    {
+      "id": "typo-06",
+      "type": "typo",
+      "q": "maxi skrt",
+      "gradeAt": 2.8,
+      "ndcg": 0.9948189840222265,
+      "hits": 5,
+      "topIds": [
+        "mimosaforever.com:9086722998529",
+        "mimosaforever.com:8762483867905",
+        "mimosaforever.com:9115932098817",
+        "www.arienti.lk:8426956816429",
+        "mimosaforever.com:9152866320641"
+      ]
+    },
+    {
+      "id": "typo-07",
+      "type": "typo",
+      "q": "croptop",
+      "gradeAt": 2.8,
+      "ndcg": 0.9866232943931771,
+      "hits": 5,
+      "topIds": [
+        "slay.lk:7907971563629",
+        "hellywild.lk:9331755155677",
+        "www.arienti.lk:15109212504109",
+        "slay.lk:7807005032557",
+        "hellywild.lk:9331754696925"
+      ]
+    },
+    {
+      "id": "typo-08",
+      "type": "typo",
+      "q": "floral dres",
+      "gradeAt": 2.2,
+      "ndcg": 0.9110983816788429,
+      "hits": 5,
+      "topIds": [
+        "www.arienti.lk:8490043342893",
+        "slay.lk:7989210841197",
+        "slay.lk:7847757185133",
+        "slay.lk:7683832152173",
+        "coolplanet.lk:9090960359648"
+      ]
+    },
+    {
+      "id": "typo-09",
+      "type": "typo",
+      "q": "hoddie",
+      "gradeAt": 0.6,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "sarathas.lk:16030",
+        "mora.lk:10096335159579",
+        "hellywild.lk:9346798092509",
+        "mora.lk:10096695804187",
+        "aviratefashion.com:7887596912739"
+      ]
+    },
+    {
+      "id": "typo-10",
+      "type": "typo",
+      "q": "oversized tshit",
+      "gradeAt": 3,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "thecultoriginal.lk:8282003046597",
+        "fashionbug.lk:15027954614637",
+        "thecultoriginal.lk:8579510599877",
+        "fashionbug.lk:15027955237229",
+        "thecultoriginal.lk:8579511386309"
+      ]
+    },
+    {
+      "id": "typo-11",
+      "type": "typo",
+      "q": "saree blous",
+      "gradeAt": 3,
+      "ndcg": 1,
+      "hits": 5,
+      "topIds": [
+        "amarestyle.com:8040",
+        "amarestyle.com:8030",
+        "amarestyle.com:8048",
+        "amarestyle.com:8046",
+        "amarestyle.com:8050"
+      ]
+    },
+    {
+      "id": "typo-12",
+      "type": "typo",
+      "q": "kurtaa top",
+      "gradeAt": 1.6,
+      "ndcg": 0.7606395682357036,
+      "hits": 5,
+      "topIds": [
+        "www.arienti.lk:8244016250925",
+        "www.arienti.lk:8479634292781",
+        "springandsummer.lk:7963830223028",
+        "bedesi.lk:39643",
+        "sarathas.lk:17167"
+      ]
+    }
+  ]
+}

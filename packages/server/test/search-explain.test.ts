@@ -99,4 +99,18 @@ describeIf("search explain", () => {
     expect(top.rrf_score).toBeGreaterThan(0);
     expect(typeof explain.weights.fts).toBe("number");
   });
+
+  test("test:trace-grounding keeps deterministic and effective-filter shapes aligned", async () => {
+    const opts = { q: "red running shoes", limit: 5 };
+    const result = await matcher.search(projectSlug, "products", opts);
+    const explain = await matcher.searchExplain(projectSlug, "products", opts);
+    expect(result.constraintTrace.deterministicFilters).toEqual({ colors: ["red"] });
+    expect(result.constraintTrace.groundedValues).toEqual({});
+    expect(result.constraintTrace.relaxationSteps).toEqual(explain.constraintTrace.relaxationSteps);
+    expect(result.relaxedFields).toEqual(result.constraintTrace.relaxedFields);
+    expect(explain.constraintTrace.deterministicFilters).toEqual(result.constraintTrace.deterministicFilters);
+    expect(explain.constraintTrace.appliedFilters).toEqual(result.constraintTrace.appliedFilters);
+    expect(explain.relaxedFields).toEqual(result.relaxedFields);
+    expect(JSON.parse(JSON.stringify(explain.constraintTrace))).toEqual(explain.constraintTrace);
+  });
 });

@@ -2,7 +2,7 @@ import type { CollectionDef, CollectionEmbeddingDef, SearchMode, SearchWeightsIn
 import type { GroundImageFn } from "../types.ts";
 import type { EmbedService } from "./embed.ts";
 import { fetchRemoteImageSafe } from "./fetch-image.ts";
-import type { NlqParseResult } from "./nlq.ts";
+import { shouldSkipNlq, type NlqParseResult } from "./nlq.ts";
 import type { SearchFilters } from "./search-filter.ts";
 import { embeddingEntries } from "./aspects.ts";
 
@@ -191,7 +191,7 @@ export async function resolveAspectPlans(
   if (!entries.length) return [];
   const routes = routeMap(nlq);
   const routed = Object.keys(routes).length > 0;
-  const skipToFirst = mode === "intent" && (nlq.degraded || shouldSkipNlqForRouting(def, q));
+  const skipToFirst = mode === "intent" && (nlq.degraded || shouldSkipNlq(def, q));
   const plans: AspectPlan[] = [];
 
   for (const [index, [name, embedding]] of entries.entries()) {
@@ -232,9 +232,4 @@ export async function resolveAspectPlans(
     }
   }
   return plans;
-}
-
-function shouldSkipNlqForRouting(def: CollectionDef, q: string): boolean {
-  if (!def.search?.nlq || def.search.nlq.enable === false) return true;
-  return q.trim().split(/\s+/).filter(Boolean).length <= 2 && !/\d/.test(q);
 }

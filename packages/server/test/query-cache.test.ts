@@ -107,10 +107,10 @@ describeIf("query caches (Q2)", () => {
 
   test("NLQ parse is cached in Postgres across calls (generate fires once)", async () => {
     const q = `some nice widget thing please ${runToken}`;
-    const r1 = await matcher.search(projectSlug, "things", { q, cache: false });
+    const r1 = await matcher.search(projectSlug, "things", { q, cache: false, limit: 2 });
     expect(generateCalls).toBe(1);
     // bypass result cache to force the NLQ path again
-    const r2 = await matcher.search(projectSlug, "things", { q: q.toUpperCase(), cache: false });
+    const r2 = await matcher.search(projectSlug, "things", { q: q.toUpperCase(), cache: false, limit: 2 });
     expect(generateCalls).toBe(1); // normalized-q cache hit
     expect(r2.hits.map((h) => h.id).sort()).toEqual(r1.hits.map((h) => h.id).sort());
   });

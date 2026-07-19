@@ -4,8 +4,9 @@ import { mergeBlendedRerank, rerankCandidateText } from "./rerank.ts";
 import { applyRankingPolicy } from "./ranking.ts";
 import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
-import { buildConstraintTrace, relaxedSoftFields } from "./constraint-trace.ts";
+import { buildConstraintTrace } from "./constraint-trace.ts";
 import { mergeFilters, parseNlq, shouldSkipNlq } from "./nlq.ts";
+import { vocabCandidates } from "./field-vocab.ts";
 import type { ProjectsService, ProjectRow } from "./projects.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
 import { ftsLanguage } from "./collections-schema-gen.ts";
@@ -13,6 +14,7 @@ import { collectionTableName } from "./db-utils.ts";
 import { searchResultCache, type SearchCacheKey } from "./search-cache.ts";
 import { buildFilterSql, type FilterCompileOpts, type SearchFilters } from "./search-filter.ts";
 import { applyCutoff, type CutoffEvidence } from "./cutoff.ts";
+import { proposeRewrites, type RewriteRecord } from "./query-rewrite.ts";
 import { appendScopeSql, resolveScope } from "./scope.ts";
 import {
   buildQueryAspectImageVectors,
@@ -69,6 +71,7 @@ export interface SearchResult {
   constraintTrace: ConstraintTrace;
   nlq_degraded?: boolean;
   relaxed: boolean;
+  relaxedFields: string[];
   took_ms: number;
   facets?: Record<string, import("../db/postgres/facets.ts").FacetResult>;
   total_candidates?: number;
@@ -76,6 +79,7 @@ export interface SearchResult {
   cutoff_dropped?: number;
   /** true when served from the in-process result cache */
   cached?: boolean;
+  rewritten?: RewriteRecord;
 }
 
 export interface ExplainDocBreakdown {
@@ -94,10 +98,12 @@ export interface SearchExplainResult {
   nlq_degraded?: boolean;
   filters: { sql: string; params: Array<{ index: number; type: string }> };
   relaxation: boolean;
+  relaxedFields: string[];
   cache_hit: boolean;
   weights: ChannelWeights;
   docs: ExplainDocBreakdown[];
   took_ms: number;
+  rewritten?: RewriteRecord;
 }
 
 export interface SearchOpts {
@@ -169,9 +175,35 @@ interface Retrieval {
   mergedFilters: SearchFilters;
   filterOpts: FilterCompileOpts;
   semanticText: string;
+  lexicalText: string;
   vector: number[] | null;
   aspectPlans: AspectPlan[];
   efSearch: number | null;
+}
+
+interface RetrieveRetryContext {
+  original: Retrieval;
+  query: string;
+}
+
+interface RankedRun {
+  rows: Array<Record<string, unknown>>;
+  totalCandidates: number;
+  filterSql: string;
+  filterParams: unknown[];
+  relaxed: boolean;
+  relaxedFields: string[];
+  effectiveFilters: SearchFilters;
+  relaxationSteps: Array<{ field: string; standaloneMatchCount: number; resultCount: number }>;
+  gateEvidence: "retrieval" | "relevance_floor" | "none";
+}
+
+interface ResolvedExecution {
+  retrieval: Retrieval;
+  ranked: RankedRun;
+  rows: Array<Record<string, unknown>>;
+  cutoffDropped: number;
+  rewritten?: RewriteRecord;
 }
 
 const MAX_OFFSET = 200;
@@ -266,7 +298,7 @@ async function runHybridQuery(
   schema: string,
   def: CollectionDef,
   collection: string,
-  q: string,
+  lexicalText: string,
   aspectPlans: AspectPlan[],
   filters: SearchFilters,
   filterOpts: FilterCompileOpts,
@@ -281,6 +313,9 @@ async function runHybridQuery(
   rows: Array<Record<string, unknown>>;
   softFieldsUsed: string[];
   totalCandidates: number;
+  preFloorCandidates: number;
+  postFloorCandidates: number;
+  gateEvidence: "retrieval" | "relevance_floor" | "none";
   filterSql: string;
   filterParams: unknown[];
 }> {
@@ -301,7 +336,7 @@ async function runHybridQuery(
   const fieldCols = Object.keys(def.fields).map((k) => `d.${sanitiseIdent(k)}`).join(", ");
   const dedupGroupCol = def.dedup ? sanitiseIdent(def.dedup.groupField ?? "product_group") : null;
   const extraCols = dedupGroupCol ? `, d.${dedupGroupCol}` : "";
-  const qRef = hasFts ? addParam(q) : null;
+  const qRef = hasFts ? addParam(lexicalText) : null;
   const vectorRefs = new Map<string, string>();
   for (const plan of activePlans) vectorRefs.set(plan.name, addParam(toVectorLiteral(plan.queryVector!)));
 
@@ -486,18 +521,30 @@ async function runHybridQuery(
                  (${scoreExprs.join(" + ")}) AS score${evidenceCols}
           ${fusedFrom}
         ),
-        ranked AS (
-          SELECT id, score, fts_present, cos_sim, count(*) OVER ()::int AS total_candidates
+        eligible AS (
+          SELECT id, score, fts_present, cos_sim
           FROM fused
           WHERE id IS NOT NULL${floorWhere}
+        ),
+        metadata AS (
+          SELECT
+            (SELECT count(*)::int FROM fused WHERE id IS NOT NULL) AS pre_floor_candidates,
+            (SELECT count(*)::int FROM eligible) AS post_floor_candidates
+        ),
+        ranked AS (
+          SELECT id, score, fts_present, cos_sim
+          FROM eligible
           ORDER BY score DESC
           LIMIT ${limitRef} OFFSET ${offsetRef}
         )
         SELECT d.id, d.data, d.rerank_doc, ${fieldCols}${extraCols}, r.score::float AS score,
-               r.fts_present, r.cos_sim, r.total_candidates
-        FROM ranked r
-        JOIN ${table} d ON d.id = r.id
-        ORDER BY r.score DESC
+               r.fts_present, r.cos_sim,
+               m.pre_floor_candidates, m.post_floor_candidates,
+               m.post_floor_candidates AS total_candidates
+        FROM metadata m
+        LEFT JOIN ranked r ON TRUE
+        LEFT JOIN ${table} d ON d.id = r.id
+        ORDER BY r.score DESC NULLS LAST
       `;
     }
   }
@@ -510,11 +557,27 @@ async function runHybridQuery(
       if (efSearch != null) settings.push(`SET LOCAL hnsw.ef_search = ${Math.max(10, Math.min(1000, Math.floor(efSearch)))}`);
     }
   }
-  const rows = await ctx.storage.unsafeWithSettings("parameterized search query", settings, query, params);
+  const rawRows = await ctx.storage.unsafeWithSettings("parameterized search query", settings, query, params);
+  const preFloorCandidates = mode === "search"
+    ? Number(rawRows[0]?.pre_floor_candidates ?? rawRows[0]?.total_candidates ?? rawRows.length)
+    : rawRows.length;
+  const postFloorCandidates = mode === "search"
+    ? Number(rawRows[0]?.post_floor_candidates ?? rawRows[0]?.total_candidates ?? rawRows.length)
+    : rawRows.length;
+  const rows = mode === "search" ? rawRows.filter((row) => row.id != null) : rawRows;
+  const gateTarget = Math.min(3, Math.max(1, limit));
   return {
     rows,
     softFieldsUsed: compiled.softFieldsUsed,
-    totalCandidates: mode === "explain" ? rows.length : rows.length > 0 ? Number(rows[0]!.total_candidates ?? rows.length) : 0,
+    totalCandidates: postFloorCandidates,
+    preFloorCandidates,
+    postFloorCandidates,
+    gateEvidence:
+      preFloorCandidates < gateTarget
+        ? "retrieval"
+        : postFloorCandidates < gateTarget
+          ? "relevance_floor"
+          : "none",
     filterSql: where,
     filterParams: compiled.params,
   };
@@ -620,14 +683,15 @@ export function makeSearchService(
   async function retrieve(
     projectSlug: string,
     collectionName: string,
-    opts: SearchOpts
+    opts: SearchOpts,
+    retryContext?: RetrieveRetryContext
   ): Promise<Retrieval> {
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);
     const def = await getCollectionDef(projectSlug, collectionName);
     if (!def) throw new Error(`collection "${collectionName}" not found in project "${projectSlug}"`);
 
-    const q = opts.q?.trim() ?? "";
+    const q = (retryContext?.query ?? opts.q)?.trim() ?? "";
     if (!q && !opts.image) throw new Error("search requires a non-empty q or image");
 
     const scopeCols = resolveScope(def, collectionName, opts.scope, "search");
@@ -651,16 +715,35 @@ export function makeSearchService(
       }
     }
 
-    const nlq = await parseNlq(ctx, def, q);
-    const explicitFilters = opts.filters ?? {};
-    const mergedFilters = mergeFilters(nlq.filters, explicitFilters);
-    await resolveBudgetHints(ctx, project.schema_name, collectionName, def, nlq.budgetHints, mergedFilters);
+    const nlq = retryContext?.original.nlq ?? await (async () => {
+      const candidates = shouldSkipNlq(def, q)
+        ? { available: true, candidates: {} }
+        : await vocabCandidates(ctx, project.schema_name, collectionName, def, q, scopeCols);
+      return parseNlq(ctx, def, q, {
+        candidates,
+        schema: project.schema_name,
+        collection: collectionName,
+        scopeCols,
+      });
+    })();
+    const explicitFilters = retryContext?.original.explicitFilters ?? opts.filters ?? {};
+    const mergedFilters = retryContext
+      ? { ...retryContext.original.mergedFilters }
+      : mergeFilters(nlq.filters, explicitFilters);
+    if (!retryContext) {
+      await resolveBudgetHints(ctx, project.schema_name, collectionName, def, nlq.budgetHints, mergedFilters);
+    }
     const filterOpts: FilterCompileOpts = {
       soft: true,
       excludeTerms: nlq.excludeTerms,
     };
 
-    const semanticText = nlq.parsed.semantic_query || q || "image query";
+    const semanticText = retryContext ? q || "image query" : nlq.parsed.semantic_query || q || "image query";
+    const lexicalText = retryContext
+      ? q
+      : !nlq.degraded && typeof nlq.parsed.lexical_query === "string" && nlq.parsed.lexical_query.trim()
+        ? nlq.parsed.lexical_query.trim()
+        : q;
     const imageVectors = await buildQueryAspectImageVectors(def, opts.image, embedService, ctx.groundImage);
     const aspectPlans = await resolveAspectPlans(
       def,
@@ -688,6 +771,7 @@ export function makeSearchService(
       mergedFilters,
       filterOpts,
       semanticText,
+      lexicalText,
       vector,
       aspectPlans,
       efSearch: opts.efSearch ?? null,
@@ -696,18 +780,45 @@ export function makeSearchService(
 
   // Run the hybrid query for one mode, retrying once with soft filters dropped
   // when too few rows come back. Shared by the search and explain finishers.
+  async function probeRelaxableFields(
+    r: Retrieval,
+    relaxableFields: string[]
+  ): Promise<Map<string, number>> {
+    const baseFilters: SearchFilters = Object.fromEntries(
+      Object.entries(r.mergedFilters).filter(([field]) => !relaxableFields.includes(field))
+    );
+    const params: unknown[] = [];
+    const selects: string[] = [];
+    const table = collectionTableName(r.project.schema_name, r.collectionName);
+    for (const field of relaxableFields) {
+      const compiled = buildFilterSql(
+        { ...baseFilters, [field]: r.mergedFilters[field] },
+        r.def,
+        r.filterOpts,
+        params.length + 1
+      );
+      params.push(...compiled.params);
+      const scope = Object.entries(r.scopeCols)
+        .map(([column, value]) => {
+          params.push(value);
+          return `${column} = $${params.length}`;
+        })
+        .join(" AND ");
+      const visibility = `(pipeline_status = 'ready' OR pipeline_status IS NULL)${scope ? ` AND ${scope}` : ""}`;
+      const where = compiled.where === "true" ? visibility : `${compiled.where} AND ${visibility}`;
+      selects.push(`SELECT '${field.replace(/'/g, "''")}'::text AS field, count(*)::int AS count FROM ${table} WHERE ${where}`);
+    }
+    if (!selects.length) return new Map();
+    const rows = await ctx.storage.client("soft-filter probes").unsafe(selects.join(" UNION ALL "), params);
+    return new Map(rows.map((row) => [String(row.field), Number(row.count ?? 0)]));
+  }
+
   async function runRanked(
     r: Retrieval,
     limit: number,
-    mode: "search" | "explain"
-  ): Promise<{
-    rows: Array<Record<string, unknown>>;
-    totalCandidates: number;
-    filterSql: string;
-    filterParams: unknown[];
-    relaxed: boolean;
-    relaxedFields: string[];
-  }> {
+    mode: "search" | "explain",
+    allowRelaxation = true
+  ): Promise<RankedRun> {
     // Structured-intent bypass: when NLQ derived hard filters, those filters define
     // relevance — skip the semantic floor so filter-dominated queries are not emptied.
     const effectiveFloor =
@@ -716,12 +827,12 @@ export function makeSearchService(
         : typeof r.def.search?.relevanceFloor === "number"
           ? r.def.search.relevanceFloor
           : null;
-    let { rows, softFieldsUsed, totalCandidates, filterSql, filterParams } = await runHybridQuery(
+    let { rows, totalCandidates, filterSql, filterParams, gateEvidence } = await runHybridQuery(
       ctx,
       r.project.schema_name,
       r.def,
       r.collectionName,
-      r.q,
+      r.lexicalText,
       r.aspectPlans,
       r.mergedFilters,
       r.filterOpts,
@@ -736,45 +847,198 @@ export function makeSearchService(
 
     let relaxed = false;
     let relaxedFields: string[] = [];
-    const hasSoftFilters =
-      softFieldsUsed.length > 0 ||
-      Object.keys(r.mergedFilters).some((k) => r.def.fields[k]?.soft);
+    let effectiveFilters = { ...r.mergedFilters };
+    const relaxationSteps: Array<{ field: string; standaloneMatchCount: number; resultCount: number }> = [];
+    const target = Math.min(3, Math.max(1, limit));
+    const derivedSoftFields = new Set([
+      ...Object.keys(r.nlq.filters),
+      ...Object.keys(r.nlq.deterministicFilters),
+    ]);
+    const relaxableFields = Object.keys(r.mergedFilters)
+      .filter((field) =>
+        r.def.fields[field]?.soft === true &&
+        derivedSoftFields.has(field) &&
+        !Object.hasOwn(r.explicitFilters, field)
+      )
+      .sort();
 
-    if (rows.length < 3 && hasSoftFilters) {
-      const retry = await runHybridQuery(
-        ctx,
-        r.project.schema_name,
-        r.def,
-        r.collectionName,
-        r.q,
-        r.aspectPlans,
-        r.mergedFilters,
-        { ...r.filterOpts, excludeSoft: true },
-        r.weights,
-        effectiveFloor,
-        limit,
-        r.offset,
-        r.efSearch,
-        r.scopeCols,
-        mode
+    if (allowRelaxation && totalCandidates < target && gateEvidence === "retrieval" && relaxableFields.length > 0) {
+      const probeCounts = await probeRelaxableFields(r, relaxableFields);
+      // Declared relaxOrder wins over selectivity: contextual constraints (occasions) drop
+      // before identity-bearing ones (colors) regardless of match counts — pure
+      // least-selective-first inverts on real corpora (red=70 vs wedding=37 would have
+      // dropped `colors` for "red dress for a wedding"; live finding 2026-07-19).
+      const declaredOrder = r.def.search?.relaxOrder ?? [];
+      const declaredPos = (field: string) => {
+        const i = declaredOrder.indexOf(field);
+        return i === -1 ? Number.POSITIVE_INFINITY : i;
+      };
+      const ordered = [...relaxableFields].sort(
+        (a, b) =>
+          declaredPos(a) - declaredPos(b) ||
+          (probeCounts.get(b) ?? 0) - (probeCounts.get(a) ?? 0) ||
+          a.localeCompare(b)
       );
-      rows = retry.rows;
-      totalCandidates = retry.totalCandidates;
-      filterSql = retry.filterSql;
-      filterParams = retry.filterParams;
-      relaxed = true;
-      relaxedFields = relaxedSoftFields(r.def, r.mergedFilters, softFieldsUsed);
+      for (const field of ordered) {
+        const nextFilters = { ...effectiveFilters };
+        delete nextFilters[field];
+        const retry = await runHybridQuery(
+          ctx,
+          r.project.schema_name,
+          r.def,
+          r.collectionName,
+          r.lexicalText,
+          r.aspectPlans,
+          nextFilters,
+          r.filterOpts,
+          r.weights,
+          effectiveFloor,
+          limit,
+          r.offset,
+          r.efSearch,
+          r.scopeCols,
+          mode
+        );
+        effectiveFilters = nextFilters;
+        rows = retry.rows;
+        totalCandidates = retry.totalCandidates;
+        filterSql = retry.filterSql;
+        filterParams = retry.filterParams;
+        gateEvidence = retry.gateEvidence;
+        relaxed = true;
+        relaxedFields.push(field);
+        relaxationSteps.push({
+          field,
+          standaloneMatchCount: probeCounts.get(field) ?? 0,
+          resultCount: retry.totalCandidates,
+        });
+        if (retry.totalCandidates >= target) break;
+      }
     }
 
-    return { rows, totalCandidates, filterSql, filterParams, relaxed, relaxedFields };
+    return { rows, totalCandidates, filterSql, filterParams, relaxed, relaxedFields, effectiveFilters, relaxationSteps, gateEvidence };
   }
 
-  async function finishSearch(r: Retrieval, opts: SearchOpts, t0: number): Promise<SearchResult> {
-    const { rows, totalCandidates, relaxed, relaxedFields } = await runRanked(r, opts.limit ?? 20, "search");
+  function rowsToHits(r: Retrieval, rows: Array<Record<string, unknown>>): SearchHit[] {
+    const fieldKeys = Object.keys(r.def.fields);
+    return rows.map((row) => {
+      const hit: SearchHit = {
+        id: String(row.id),
+        score: Number(row.score),
+        data: (typeof row.data === "string" ? JSON.parse(row.data as string) : row.data) as Record<string, unknown>,
+      };
+      for (const k of fieldKeys) hit[k] = row[sanitiseIdent(k)] ?? row[k];
+      if (r.def.dedup) {
+        const groupColumn = sanitiseIdent(r.def.dedup.groupField ?? "product_group");
+        if (row[groupColumn] != null) hit[groupColumn] = row[groupColumn];
+      }
+      if (row.rerank_doc != null) hit.rerank_doc = row.rerank_doc;
+      return hit;
+    });
+  }
+
+  function applySearchCutoff(
+    r: Retrieval,
+    ranked: RankedRun
+  ): { rows: Array<Record<string, unknown>>; dropped: number } {
+    const hits = rowsToHits(r, ranked.rows);
+    const hasFilters = Object.keys(ranked.effectiveFilters).length > 0;
+    const cutoffDef = r.def.search?.cutoff;
+    const hasEvidence = ranked.rows.length > 0 && ("fts_present" in ranked.rows[0]! || "cos_sim" in ranked.rows[0]!);
+    if (hasFilters || !hasEvidence || cutoffDef?.strategy === "none") return { rows: ranked.rows, dropped: 0 };
+    const evidence: CutoffEvidence[] = ranked.rows.map((row, i) => ({
+      ftsPresent: row.fts_present === true,
+      cos: row.cos_sim == null ? null : Number(row.cos_sim),
+      value: cutoffDef?.field ? hits[i]![cutoffDef.field] : undefined,
+    }));
+    const cut = applyCutoff(hits, evidence, cutoffDef);
+    if (cut.dropped === 0) return { rows: ranked.rows, dropped: 0 };
+    const kept = new Set(cut.hits.map((hit) => hit.id));
+    return { rows: ranked.rows.filter((row) => kept.has(String(row.id))), dropped: cut.dropped };
+  }
+
+  function cosineSimilarity(left: number[], right: number[]): number {
+    if (left.length !== right.length || left.length === 0) return -1;
+    let dot = 0;
+    let leftNorm = 0;
+    let rightNorm = 0;
+    for (let i = 0; i < left.length; i++) {
+      dot += left[i]! * right[i]!;
+      leftNorm += left[i]! * left[i]!;
+      rightNorm += right[i]! * right[i]!;
+    }
+    return leftNorm === 0 || rightNorm === 0 ? -1 : dot / Math.sqrt(leftNorm * rightNorm);
+  }
+
+  async function primaryTextEmbedding(def: CollectionDef, query: string): Promise<number[] | null> {
+    const primary = embeddingEntries(def)[0]?.[1];
+    if (!primary || primary.kind === "image") return null;
+    return embedService.embedQuery({
+      text: query,
+      model: primary.model,
+      dim: primary.dim,
+      taskType: primary.taskType ?? "RETRIEVAL_QUERY",
+      inputType: "query",
+    });
+  }
+
+  async function resolveExecution(r: Retrieval, opts: SearchOpts, limit: number): Promise<ResolvedExecution> {
+    const ranked = await runRanked(r, limit, "search");
+    const cut = applySearchCutoff(r, ranked);
+    if (cut.dropped > 0) ctx.observability.inc("search_cutoff_dropped_total", cut.dropped);
+
+    const target = Math.min(3, Math.max(1, limit));
+    const zeroCause = cut.dropped > 0 ? "cutoff" : ranked.gateEvidence;
+    const eligible =
+      cut.rows.length < target &&
+      zeroCause === "retrieval" &&
+      r.q.trim().length > 0 &&
+      !shouldSkipNlq(r.def, r.q) &&
+      !r.nlq.degraded &&
+      Object.keys(r.explicitFilters).length === 0;
+    if (!eligible) return { retrieval: r, ranked, rows: cut.rows, cutoffDropped: cut.dropped };
+
+    const originalVector = await primaryTextEmbedding(r.def, r.q);
+    if (!originalVector) return { retrieval: r, ranked, rows: cut.rows, cutoffDropped: cut.dropped };
+
+    const proposals = await proposeRewrites(ctx, r.def, r.q, cut.rows.length === 0 ? "empty" : "thin");
+    for (const proposal of proposals) {
+      const replacementVector = await primaryTextEmbedding(r.def, proposal.query);
+      if (!replacementVector || cosineSimilarity(originalVector, replacementVector) < 0.6) continue;
+      const retry = await retrieve(r.project.slug, r.collectionName, { ...opts, q: proposal.query }, {
+        original: r,
+        query: proposal.query,
+      });
+      const retryRanked = await runRanked(retry, limit, "search");
+      const retryCut = applySearchCutoff(retry, retryRanked);
+      if (retryCut.rows.length <= cut.rows.length) {
+        return { retrieval: r, ranked, rows: cut.rows, cutoffDropped: cut.dropped };
+      }
+      return {
+        retrieval: retry,
+        ranked: retryRanked,
+        rows: retryCut.rows,
+        cutoffDropped: retryCut.dropped,
+        rewritten: { type: proposal.type, from: r.q, to: proposal.query },
+      };
+    }
+    return { retrieval: r, ranked, rows: cut.rows, cutoffDropped: cut.dropped };
+  }
+
+  async function finishSearch(
+    input: Retrieval,
+    opts: SearchOpts,
+    t0: number,
+    resolved?: ResolvedExecution
+  ): Promise<SearchResult> {
+    const execution = resolved ?? await resolveExecution(input, opts, opts.limit ?? 20);
+    const r = execution.retrieval;
+    const { totalCandidates, relaxed, relaxedFields, effectiveFilters, relaxationSteps } = execution.ranked;
+    const rows = execution.rows;
 
     let facets: SearchResult["facets"];
     if (opts.facets?.length) {
-      const compiled = buildFilterSql(r.mergedFilters, r.def, r.filterOpts, 1);
+      const compiled = buildFilterSql(effectiveFilters, r.def, r.filterOpts, 1);
       const scoped = appendScopeSql(compiled.where, compiled.params, r.scopeCols);
       facets = await ctx.storage.facets({
         table: collectionTableName(r.project.schema_name, r.collectionName),
@@ -785,47 +1049,7 @@ export function makeSearchService(
       });
     }
 
-    const fieldKeys = Object.keys(r.def.fields);
-    const hits: SearchHit[] = rows.map((row) => {
-      const hit: SearchHit = {
-        id: String(row.id),
-        score: Number(row.score),
-        data: (typeof row.data === "string" ? JSON.parse(row.data as string) : row.data) as Record<
-          string,
-          unknown
-        >,
-      };
-      for (const k of fieldKeys) {
-        hit[k] = row[sanitiseIdent(k)] ?? row[k];
-      }
-      if (r.def.dedup) {
-        const gc = sanitiseIdent(r.def.dedup.groupField ?? "product_group");
-        if (row[gc] != null) hit[gc] = row[gc];
-      }
-      if (row.rerank_doc != null) hit.rerank_doc = row.rerank_doc;
-      return hit;
-    });
-
-    // Result cutoff: end the list where the evidence honestly ends. Bypassed
-    // whenever hard filters (explicit or NLQ-derived) shape the query —
-    // structured intent defines relevance there and filtered recall must stay
-    // total ("hard filters stay hard").
-    let finalHits = hits;
-    let cutoffDropped = 0;
-    const hasFilters = Object.keys(r.mergedFilters).length > 0;
-    const cutoffDef = r.def.search?.cutoff;
-    const hasEvidence = rows.length > 0 && ("fts_present" in rows[0]! || "cos_sim" in rows[0]!);
-    if (!hasFilters && hasEvidence && cutoffDef?.strategy !== "none") {
-      const evidence: CutoffEvidence[] = rows.map((row, i) => ({
-        ftsPresent: row.fts_present === true,
-        cos: row.cos_sim == null ? null : Number(row.cos_sim),
-        value: cutoffDef?.field ? hits[i]![cutoffDef.field] : undefined,
-      }));
-      const cut = applyCutoff(hits, evidence, cutoffDef);
-      finalHits = cut.hits;
-      cutoffDropped = cut.dropped;
-      if (cutoffDropped > 0) ctx.observability.inc("search_cutoff_dropped_total", cutoffDropped);
-    }
+    const finalHits = rowsToHits(r, rows);
 
     const result: SearchResult = {
       hits: finalHits,
@@ -833,16 +1057,22 @@ export function makeSearchService(
         semanticQuery: r.semanticText,
         derivedFilters: r.nlq.filters,
         explicitFilters: r.explicitFilters,
-        appliedFilters: r.mergedFilters,
+        appliedFilters: effectiveFilters,
         relaxedFields,
+        relaxationSteps,
+        deterministicFilters: r.nlq.deterministicFilters,
+        groundedValues: r.nlq.groundedValues,
+        rewritten: execution.rewritten,
         excludedTerms: r.nlq.excludeTerms,
         budgetHints: r.nlq.budgetHints,
       }),
       relaxed,
+      relaxedFields,
       took_ms: Date.now() - t0,
       total_candidates: totalCandidates,
     };
-    if (cutoffDropped > 0) result.cutoff_dropped = cutoffDropped;
+    if (execution.cutoffDropped > 0) result.cutoff_dropped = execution.cutoffDropped;
+    if (execution.rewritten) result.rewritten = execution.rewritten;
 
     if (r.def.search?.nlq && !shouldSkipNlq(r.def, r.q)) {
       result.parsed = r.nlq.parsed;
@@ -858,12 +1088,22 @@ export function makeSearchService(
     return result;
   }
 
-  async function finishExplain(r: Retrieval, opts: SearchOpts, t0: number): Promise<SearchExplainResult> {
-    const { rows, filterSql, filterParams, relaxed, relaxedFields } = await runRanked(
-      r,
+  async function finishExplain(
+    input: Retrieval,
+    opts: SearchOpts,
+    t0: number,
+    resolved?: ResolvedExecution
+  ): Promise<SearchExplainResult> {
+    const execution = resolved ?? await resolveExecution(input, opts, Math.min(opts.limit ?? 20, 20));
+    const r = execution.retrieval;
+    const explainRetrieval = { ...r, mergedFilters: execution.ranked.effectiveFilters };
+    const { rows, filterSql, filterParams } = await runRanked(
+      explainRetrieval,
       Math.min(opts.limit ?? 20, 20),
-      "explain"
+      "explain",
+      false
     );
+    const { relaxed, relaxedFields, effectiveFilters, relaxationSteps } = execution.ranked;
 
     const docs: ExplainDocBreakdown[] = rows.map((row) => {
       const id = String(row.id);
@@ -896,18 +1136,24 @@ export function makeSearchService(
         semanticQuery: r.semanticText,
         derivedFilters: r.nlq.filters,
         explicitFilters: r.explicitFilters,
-        appliedFilters: r.mergedFilters,
+        appliedFilters: effectiveFilters,
         relaxedFields,
+        relaxationSteps,
+        deterministicFilters: r.nlq.deterministicFilters,
+        groundedValues: r.nlq.groundedValues,
+        rewritten: execution.rewritten,
         excludedTerms: r.nlq.excludeTerms,
         budgetHints: r.nlq.budgetHints,
       }),
       relaxation: relaxed,
+      relaxedFields,
       cache_hit: false,
       weights: r.weights,
       filters: { sql: filterSql, params: redactFilterParams(filterParams) },
       docs,
       took_ms: Date.now() - t0,
     };
+    if (execution.rewritten) explain.rewritten = execution.rewritten;
 
     if (r.def.search?.nlq && !shouldSkipNlq(r.def, r.q)) {
       explain.parsed = r.nlq.parsed;
@@ -1038,13 +1284,15 @@ export function makeSearchService(
     // Pull a deeper pool when a second stage will reorder/collapse it, so the final
     // top-`limit` is chosen from real candidates rather than a pre-truncated set.
     const poolLimit = wantDiversify || wantRerank ? Math.max(limit, RERANK_POOL) : limit;
-    const result = await finishSearch(retrieval, { ...opts, limit: poolLimit }, t0);
+    const execution = await resolveExecution(retrieval, { ...opts, limit: poolLimit }, poolLimit);
+    const chosenRetrieval = execution.retrieval;
+    const result = await finishSearch(chosenRetrieval, { ...opts, limit: poolLimit }, t0, execution);
 
     if (wantDiversify && collapseField) result.hits = diversifyHits(result.hits, collapseField);
     if (wantRerank && result.hits.length > 1) {
-      result.hits = await rerankHits(retrieval.q, opts.image, result.hits, limit);
+      result.hits = await rerankHits(chosenRetrieval.q, opts.image, result.hits, limit);
     }
-    const rankingPolicy = retrieval.def.search?.rankingPolicy;
+    const rankingPolicy = chosenRetrieval.def.search?.rankingPolicy;
     if (rankingPolicy && result.hits.length > 0) {
       result.hits = applyRankingPolicy(result.hits, rankingPolicy).hits;
     }
@@ -1052,12 +1300,12 @@ export function makeSearchService(
 
     // Offers ride the final page: one batched query per page, only when the collection
     // declares dedup and the page carries clustered hits (REQ-6, REQ-8).
-    if (retrieval.def.dedup && opts.offers !== false) {
-      await attachOffers(retrieval, result.hits);
+    if (chosenRetrieval.def.dedup && opts.offers !== false) {
+      await attachOffers(chosenRetrieval, result.hits);
     }
     result.took_ms = Date.now() - t0;
 
-    if (cacheKey && !retrieval.nlq.degraded) {
+    if (cacheKey && !chosenRetrieval.nlq.degraded) {
       searchResultCache.set(cacheKey, result);
     }
     return result;
@@ -1071,7 +1319,8 @@ export function makeSearchService(
     const t0 = Date.now();
     ctx.observability.inc("searches_total");
     const retrieval = await retrieve(projectSlug, collectionName, opts);
-    return finishExplain(retrieval, opts, t0);
+    const execution = await resolveExecution(retrieval, opts, Math.min(opts.limit ?? 20, 20));
+    return finishExplain(execution.retrieval, opts, t0, execution);
   }
 
   // Single-pass hits + explain: the expensive embed/image-fetch/NLQ work in retrieve()
@@ -1084,9 +1333,10 @@ export function makeSearchService(
     const t0 = Date.now();
     ctx.observability.inc("searches_total");
     const retrieval = await retrieve(projectSlug, collectionName, opts);
+    const execution = await resolveExecution(retrieval, opts, Math.min(opts.limit ?? 20, 20));
     const [result, explain] = await Promise.all([
-      finishSearch(retrieval, opts, t0),
-      finishExplain(retrieval, opts, t0),
+      finishSearch(execution.retrieval, opts, t0, execution),
+      finishExplain(execution.retrieval, opts, t0, execution),
     ]);
     return { result, explain };
   }

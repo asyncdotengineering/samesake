@@ -84,6 +84,14 @@ describe("test:aspect-ddl", () => {
     );
   });
 
+  test("no-open-vocab collections keep the legacy system-column DDL snapshot", () => {
+    expect(
+      createHash("sha256")
+        .update(JSON.stringify(gen.ensureCollectionSystemColumns("project_demo", "products", aspectCollection)))
+        .digest("hex")
+    ).toBe("b91e0a8053498afd693ced9e43bb8519a52cbf3ae723e372e07fab2d87abc53c");
+  });
+
   test("multi-aspect DDL emits named columns and evidence storage", () => {
     const ddl = gen.collectionTableDDL("project_demo", aspectCollection).join("\n");
     expect(ddl).toContain("emb_visual halfvec(8)");
@@ -123,6 +131,8 @@ describe("test:routing", () => {
     parsed: { semantic_query: "floral dress", ...(aspects ? { aspects } : {}) },
     degraded,
     filters: {},
+    deterministicFilters: {},
+    groundedValues: {},
     excludeTerms: [],
     budgetHints: {},
   });
@@ -154,13 +164,13 @@ describe("test:routing", () => {
     expect(embedCalls.map((call) => call.text)).toEqual(["floral wedding dress", "silhouette"]);
   });
 
-  test("short and degraded parses route only the first declared aspect", async () => {
-    const weights = parseSearchWeights(aspectCollection, undefined, "intent", false);
+  test("successful short parses route normally while degraded parses use the first aspect", async () => {
+    const weights = parseSearchWeights(aspectCollection, { aspects: { visual: 1 } }, "intent", false);
     embedCalls.length = 0;
     const plans = await resolveAspectPlans(
       aspectCollection,
       weights,
-      nlq(undefined),
+      nlq({ visual: { subQuery: "silhouette", weight: 0.5 } }),
       "nike",
       "nike",
       "intent",
@@ -168,8 +178,8 @@ describe("test:routing", () => {
       {},
       embedService
     );
-    expect(plans.map((plan) => plan.name)).toEqual(["doc"]);
-    expect(embedCalls).toHaveLength(1);
+    expect(plans.map((plan) => plan.name)).toEqual(["doc", "visual"]);
+    expect(embedCalls).toHaveLength(2);
 
     const degraded = await resolveAspectPlans(
       aspectCollection,
