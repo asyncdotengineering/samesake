@@ -1,6 +1,6 @@
 {
   "name": "@samesake/providers",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/asyncdotengineering/samesake"
@@ -43,7 +43,7 @@
     "cohere"
   ],
   "peerDependencies": {
-    "@samesake/server": "^4.0.0",
+    "@samesake/server": "^5.0.0",
     "ai": "^6.0.0"
   },
   "peerDependenciesMeta": {

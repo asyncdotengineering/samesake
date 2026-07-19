@@ -21,10 +21,10 @@
     "release:publish": "bun run build && for dir in packages/*; do [ -f \"$dir/package.json\" ] && (cd \"$dir\" && bun publish || true); done && changeset tag"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.31.0",
+    "@changesets/cli": "^2.31.1",
     "@types/bun": "latest",
     "drizzle-kit": "^0.31.10",
-    "oxlint": "^1.72.0",
+    "oxlint": "^1.74.0",
     "tsup": "^8.5.1"
   },
   "//overrides": "Porulle 0.1.0 adapters publish '@porulle/core: workspace:*' (alpha publish bug); pin it so consumers can resolve it. Fixed upstream in 0.8.0 (adapters now publish real semver) — drop this override when apps/playground upgrades off @porulle/*@0.1.0.",

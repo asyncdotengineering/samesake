@@ -1,3 +1,35 @@
+## 5.0.0
+
+### Major Changes
+
+- 717cbee: Grounded query understanding (rfc-grounded-query-understanding v2). Scoped per-collection
+  vocabulary tables with trigger-maintained deltas ground open-vocab NLQ filters (map-or-drop:
+  every accepted value matches a live visible row); the parse exposes a corrected
+  `lexical_query` used by all FTS branches, protected by a deterministic edit-distance guard
+  (no added/translated/expanded terms); LLM-derived hard enum filters apply only when
+  corroborated by the user's own tokens (query-side taxonomy guesses cannot silently delete
+  the relevant pool); NLQ now runs on every text query (BREAKING: the short-query token skip
+  is removed); zero-LLM deterministic enum-token filters; progressive soft-filter relaxation
+  with declared `relaxOrder` priority (SDK: new `search.relaxOrder`); typed honest-zero
+  rewrites; truthful `constraintTrace`/`searchExplain`. Gate record in RFC §13: typo mean
+  2.05→2.083, overall 1.871→1.916, OOD honest zeros unchanged.
+- c5d2c85: Multi-aspect retrieval major. Collections declare named aspect embeddings (`doc`, `visual`,
+  `facets`, ...) — each gets its own column, HNSW index, and RRF leg; evidence aspects store
+  row-per-claim with a MaxSim leg; NLQ routes query intent to aspects. BREAKING: the `spaces`
+  subsystem is removed (`SpacesChannel`, `s.*` builders, `space_vec` — destructive migration on
+  apply); image/`similar` queries now run through the `visual` aspect (verified parity: exact
+  product at rank 1). Eval-gated defaults: non-primary aspect legs are OFF for text intent
+  queries (C9 gate + two calibrations, artifacts in `evals/runs/`; see BENCHMARKS "Aspects
+  gate") and fully ON for image/`similar` mode. Per-query `weights.aspects` re-enables intent
+  aspects for experiments. Also: indexing gains bounded concurrency (`SAMESAKE_INDEX_CONCURRENCY`),
+  a per-doc watchdog, and rolling-pool processing.
+
+### Patch Changes
+
+- Updated dependencies [717cbee]
+- Updated dependencies [c5d2c85]
+  - @samesake/core@4.0.0
+
 ## 4.1.0
 
 ### Minor Changes

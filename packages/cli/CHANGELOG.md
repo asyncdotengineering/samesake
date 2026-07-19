@@ -1,5 +1,14 @@
 # @samesake/cli
 
+## 3.1.1
+
+### Patch Changes
+
+- Updated dependencies [717cbee]
+- Updated dependencies [c5d2c85]
+  - @samesake/server@5.0.0
+  - @samesake/core@4.0.0
+
 ## 3.1.0
 
 ### Minor Changes

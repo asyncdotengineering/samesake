@@ -1,5 +1,13 @@
 # @samesake/providers
 
+## 5.0.0
+
+### Patch Changes
+
+- Updated dependencies [717cbee]
+- Updated dependencies [c5d2c85]
+  - @samesake/server@5.0.0
+
 ## 4.0.0
 
 ### Minor Changes
