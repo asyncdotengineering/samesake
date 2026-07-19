@@ -1,5 +1,12 @@
 # @samesake/core
 
+## 5.0.0
+
+### Major Changes
+
+- Lockstep version alignment: all samesake packages now share one version line (5.0.0). No functional changes in this bump beyond the alignment.
+
+
 ## 4.0.0
 
 ### Major Changes
