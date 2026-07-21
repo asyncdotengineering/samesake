@@ -160,4 +160,41 @@ describe("enrich — pure transform", () => {
     const expectHash = crypto.createHash("sha1").update(material).digest("hex");
     expect(key).toBe(`stage:color:gemini-1.5:${expectHash}`);
   });
+
+  test("(a-conc) 50 rows with a delayed stub preserve INPUT order despite completion order", async () => {
+    const cfg: EnrichConfig = {
+      pipeline: { stages: [{ name: "n", prompt: () => "p", schema: () => ({ type: "object" }) }] },
+      indexing: { surfaces: { doc: denseSurface((c) => String(c.enriched.n ?? "")) }, gate: () => ({ index: true }) },
+    };
+    // Later rows resolve FIRST (delay shrinks with index), so completion order is the
+    // reverse of input order — the pool must still return results indexed by input position.
+    const deps: EnrichDeps = {
+      concurrency: 8,
+      generate: async (req) => {
+        const i = Number((req.prompt.match(/\d+$/) ?? ["0"])[0]);
+        await new Promise((r) => setTimeout(r, (50 - i) % 13));
+        return { n: i };
+      },
+    };
+    const rows: RawRow[] = Array.from({ length: 50 }, (_, k) => ({ id: `r${k}`, data: {} }));
+    const cfgIdx: EnrichConfig = {
+      pipeline: { stages: [{ name: "n", prompt: (c) => `row ${(c.data as { i: number }).i}`, schema: () => ({ type: "object" }) }] },
+      indexing: cfg.indexing,
+    };
+    const rowsIdx: RawRow[] = rows.map((r, k) => ({ id: r.id, data: { i: k } }));
+    const res = await enrich(rowsIdx, cfgIdx, deps);
+    expect(res.map((r) => r.id)).toEqual(rowsIdx.map((r) => r.id));
+    expect(res.every((r, k) => (r.enriched.n as number) === k)).toBe(true);
+  });
+
+  test("the pure core runs with NO database in scope (SAMESAKE_DATABASE_URL unset)", async () => {
+    // The whole point of the extraction: the moat is exercised with no DB, no network.
+    expect(process.env.SAMESAKE_DATABASE_URL ?? "").toBe("");
+    const cfg: EnrichConfig = {
+      pipeline: { stages: [{ name: "n", prompt: () => "p", schema: () => ({ type: "object" }) }] },
+      indexing: { surfaces: { doc: denseSurface(() => "doc") }, gate: () => ({ index: true }) },
+    };
+    const out = await enrichRow({ id: "x", data: {} }, cfg, { generate: async () => ({ n: 1 }) });
+    expect(out.ok).toBe(true);
+  });
 });
