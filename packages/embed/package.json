@@ -1,0 +1,46 @@
+{
+  "name": "@samesake/embed",
+  "version": "5.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/asyncdotengineering/samesake"
+  },
+  "description": "Dual-form, multimodal, provider-neutral embedder for samesake. One object callable as a single-request EmbedFn AND exposing .many() (batch) and .caps. Plain fetch, zero runtime dependencies, edge/Workers-safe.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "keywords": [
+    "samesake",
+    "embeddings",
+    "multimodal",
+    "gemini",
+    "voyage",
+    "batch",
+    "edge"
+  ],
+  "dependencies": {
+    "@samesake/core": "workspace:^"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1"
+  }
+}
