@@ -34,3 +34,8 @@ export function assertNoIdentCollisions(names: readonly string[], kind: string):
     seen.set(key, name);
   }
 }
+
+/** Coerce a string into a safe lowercase identifier: non-`[a-zA-Z0-9_]` runes → `_`, then lowercased. Pure (no SQL). */
+export function sanitiseIdent(s: string): string {
+  return s.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
+}
