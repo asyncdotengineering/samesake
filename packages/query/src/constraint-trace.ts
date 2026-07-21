@@ -10,7 +10,7 @@ import type {
   RelaxationStep,
   RewriteRecord,
 } from "@samesake/core";
-import { normalizeFiltersToConstraintPredicates, type SearchFilters } from "./search-filter.ts";
+import { normalizeFiltersToConstraintPredicates, type SearchFilters } from "./filters.ts";
 
 function cloneFilters(filters: SearchFilters | undefined): SearchFilters {
   return filters ? JSON.parse(JSON.stringify(filters)) as SearchFilters : {};

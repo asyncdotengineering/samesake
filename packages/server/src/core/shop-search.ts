@@ -15,7 +15,7 @@ import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import type { SearchHit, SearchService, SearchOpts, SearchFilters } from "./search.ts";
 import { collectionTableName, getByPath } from "./db-utils.ts";
-import { applyRankingPolicy } from "./ranking.ts";
+import { applyRankingPolicy } from "@samesake/query";
 
 type FactorValue = number | boolean | string | null;
 

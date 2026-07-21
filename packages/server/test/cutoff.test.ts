@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import { collection, f, Channels } from "@samesake/core";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
-import { applyCutoff, type CutoffEvidence } from "../src/core/cutoff.ts";
+import { applyCutoff, type CutoffEvidence } from "@samesake/query";
 
 // ── Pure strategy unit tests (no DB) ────────────────────────────────────
 describe("applyCutoff strategies", () => {

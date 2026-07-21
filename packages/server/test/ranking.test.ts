@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { applyRankingPolicy } from "../src/core/ranking.ts";
+import { applyRankingPolicy } from "@samesake/query";
 import type { SearchHit } from "../src/core/search.ts";
 
 function hit(id: string, score: number, extra: Partial<SearchHit> = {}): SearchHit {

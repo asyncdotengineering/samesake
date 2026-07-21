@@ -3,8 +3,8 @@ import type {
   RankingPolicy,
   RankingSoftAxis,
 } from "@samesake/core";
-import type { SearchHit } from "./search.ts";
-import { getByPath } from "./db-utils.ts";
+import { getByPath } from "@samesake/core";
+import type { SearchHit } from "./types.ts";
 
 export type RankingFactorValue = number | boolean | string | null;
 

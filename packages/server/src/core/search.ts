@@ -1,10 +1,10 @@
 import type { CollectionDef, ConstraintTrace, SearchMode, SearchWeightsInput } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import { mergeBlendedRerank, rerankCandidateText } from "./rerank.ts";
-import { applyRankingPolicy } from "./ranking.ts";
+import { applyRankingPolicy, type SearchHit } from "@samesake/query";
 import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
-import { buildConstraintTrace } from "./constraint-trace.ts";
+import { buildConstraintTrace } from "@samesake/query";
 import { mergeFilters, parseNlq, shouldSkipNlq } from "./nlq.ts";
 import { vocabCandidates } from "./field-vocab.ts";
 import type { ProjectsService, ProjectRow } from "./projects.ts";
@@ -13,7 +13,7 @@ import { ftsLanguage } from "./collections-schema-gen.ts";
 import { collectionTableName } from "./db-utils.ts";
 import { searchResultCache, type SearchCacheKey } from "./search-cache.ts";
 import { buildFilterSql, type FilterCompileOpts, type SearchFilters } from "./search-filter.ts";
-import { applyCutoff, type CutoffEvidence } from "./cutoff.ts";
+import { applyCutoff, type CutoffEvidence } from "@samesake/query";
 import { proposeRewrites, type RewriteRecord } from "./query-rewrite.ts";
 import { appendScopeSql, resolveScope } from "./scope.ts";
 import {
@@ -51,19 +51,7 @@ export interface IndexDocumentRow {
   fields?: Record<string, unknown>;
 }
 
-export interface SearchHit {
-  id: string;
-  score: number;
-  data: Record<string, unknown>;
-  /**
-   * Cross-vendor offers for this hit's cluster (dedup-enabled collections only): one
-   * entry per ready cluster member, restricted to the collection's declared
-   * `dedup.offerFields` + `id` (+ scope keys on scoped collections). Absent when the
-   * collection declares no `dedup` or the hit carries no cluster id.
-   */
-  offers?: Array<Record<string, unknown>>;
-  [field: string]: unknown;
-}
+export type { SearchHit } from "@samesake/query";
 
 export interface SearchResult {
   hits: SearchHit[];
