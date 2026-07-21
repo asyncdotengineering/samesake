@@ -6,7 +6,7 @@
 // Scope isolation and the cosine dedup channel are production-store concerns:
 // the memory store has no scope column (RawRow/EnrichedRow carry none) and no
 // embedding plane, so `candidates` returns every OTHER enriched row and reports
-// `cos: null`. A Postgres/D1 production store narrows both; this one exists to
+// `cos: null`. A production store narrows both; this one exists to
 // exercise the trgm/exactKey/clustering logic and the failure state machine.
 import { contentHash } from "./dirty.ts";
 import type {

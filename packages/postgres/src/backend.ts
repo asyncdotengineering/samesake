@@ -4,6 +4,7 @@ import type { EnrichStore } from "@samesake/enrich";
 import type { Retriever } from "@samesake/query";
 import { createEnricher, type Enricher } from "@samesake/enrich";
 import { createSearch, type SearchFn } from "@samesake/query";
+import { embeddingEntries } from "@samesake/query";
 import { PostgresAdapter, createPostgresAdapter } from "./adapter.ts";
 import { pgCandidates } from "./candidates.ts";
 import { PostgresEnrichStore } from "./enrich-store.ts";
@@ -50,6 +51,67 @@ function backendOptions(
   };
 }
 
+function fieldSqlType(field: CollectionDef["fields"][string]): string {
+  if (field.type === "number") return "numeric";
+  if (field.type === "boolean") return "boolean";
+  if (field.type === "array") return "text[]";
+  return "text";
+}
+
+function migrationStatements(schema: string, table: string, collection: CollectionDef): string[] {
+  const scopeColumns = (collection.scopes ?? []).map((name) => `scope_${ident(name)}`);
+  const fieldColumns = Object.entries(collection.fields).map(([name, field]) => `${ident(name)} ${fieldSqlType(field)}`);
+  const embeddingColumns = embeddingEntries(collection)
+    .map(([name, embedding], index) => embedding.evidence ? null : `${index === 0 ? "embedding" : `emb_${ident(name)}`} halfvec(${embedding.dim})`)
+    .filter((value): value is string => value !== null);
+  const dedupColumns = collection.dedup ? ["product_group text", "dedup_score numeric", "dedup_checked_at timestamptz"] : [];
+  const columns = [
+    "id text PRIMARY KEY",
+    "data jsonb NOT NULL",
+    "enriched jsonb",
+    "content_hash text NOT NULL",
+    ...scopeColumns.map((name) => `${name} text NOT NULL`),
+    ...fieldColumns,
+    "doc text",
+    "rerank_doc text",
+    "fts_src text",
+    "fts_src_a text",
+    `fts tsvector GENERATED ALWAYS AS (to_tsvector('${ident(collection.language ?? "english", "language")}', coalesce(fts_src_a, '') || ' ' || coalesce(fts_src, ''))) STORED`,
+    ...embeddingColumns,
+    ...dedupColumns,
+    "gate_reason text",
+    "ingested_at timestamptz NOT NULL DEFAULT now()",
+    "enriched_at timestamptz",
+    "indexed_at timestamptz",
+    "updated_at timestamptz NOT NULL DEFAULT now()",
+    "pipeline_status text NOT NULL DEFAULT 'pending'",
+    "attempt_count int NOT NULL DEFAULT 0",
+    "last_error text",
+    "next_attempt_at timestamptz",
+    "image_etag text",
+    "image_checked_at timestamptz",
+  ];
+  const statements = [
+    `CREATE SCHEMA IF NOT EXISTS ${ident(schema, "schema")}`,
+    `CREATE TABLE IF NOT EXISTS ${table} (${columns.join(", ")})`,
+    `CREATE INDEX IF NOT EXISTS ${ident(table.split(".").pop()!)}_fts_idx ON ${table} USING gin (fts)`,
+  ];
+  const vocabFields = Object.entries(collection.fields).filter(([, field]) => field.type === "text" && field.filterable);
+  if (vocabFields.length) {
+    const vocab = `${table}_vocab`;
+    statements.push(
+      `CREATE TABLE IF NOT EXISTS ${vocab} (${scopeColumns.map((name) => `${name} text NOT NULL,`).join(" ")} field text NOT NULL, value text NOT NULL, count int NOT NULL CHECK (count > 0), PRIMARY KEY (${[...scopeColumns, "field", "value"].join(", ")}) )`,
+      `CREATE INDEX IF NOT EXISTS ${ident(table.split(".").pop()!)}_vocab_value_idx ON ${vocab} (value)`,
+    );
+    const values = vocabFields.map(([name, field]) => `('${name.replace(/'/g, "''")}', ${ident(name)})`).join(", ");
+    const group = [...scopeColumns, "v.field", "v.value"].join(", ");
+    statements.push(
+      `INSERT INTO ${vocab} (${[...scopeColumns, "field", "value", "count"].join(", ")}) SELECT ${scopeColumns.length ? `${scopeColumns.join(", ")}, ` : ""}v.field, v.value, count(*)::int FROM ${table} t CROSS JOIN LATERAL (VALUES ${values}) AS v(field, value) WHERE v.value IS NOT NULL AND v.value <> '' GROUP BY ${group} ON CONFLICT DO NOTHING`,
+    );
+  }
+  return statements;
+}
+
 export function createPostgresBackend(config: {
   url: string;
   collection: CollectionDef;
@@ -58,7 +120,8 @@ export function createPostgresBackend(config: {
   scope?: Record<string, string>;
 }): PostgresBackend {
   const adapter = createPostgresAdapter({ url: config.url });
-  const options = backendOptions(config.schema ?? "public", config.collection, config.table, config.scope);
+  const schema = config.schema ?? "public";
+  const options = backendOptions(schema, config.collection, config.table, config.scope);
   const candidates = pgCandidates(adapter, options);
   const enrichStore = new PostgresEnrichStore(adapter, options, candidates);
   const facets = createFacets(adapter, options);
@@ -69,7 +132,10 @@ export function createPostgresBackend(config: {
     candidates,
     vocab: pgVocab(adapter, options),
     facets,
-    migrate: () => adapter.migrate(),
+    migrate: async () => {
+      await adapter.migrate();
+      for (const statement of migrationStatements(schema, options.table, options.collection)) await adapter.query(statement);
+    },
     close: () => adapter.close(),
   };
 }

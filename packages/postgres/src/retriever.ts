@@ -19,7 +19,7 @@ function visibility(predicates: ConstraintPredicate[], scope: Scope | undefined,
   const params = [...compiled.params];
   for (const [field, value] of Object.entries(scope ?? {})) {
     params.push(value);
-    clauses.push(`d.scope_${ident(field)} = $${params.length}`);
+    clauses.push(`d.scope_${ident(field.replace(/^scope_/, ""))} = $${params.length}`);
   }
   return { where: clauses.length ? clauses.join(" AND ") : "true", params };
 }

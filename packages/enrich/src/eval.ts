@@ -9,7 +9,7 @@
 //
 // The scoring core (scoreEnrichment) is pure — no DB, no LLM — so it is unit-testable and the
 // same numbers reproduce offline from a fixture. The service wrapper (makeEvaluateEnrichService,
-// which only reads `enriched` rows from Postgres and hands them to this scorer) lives in
+// which only reads persisted `enriched` rows and hands them to this scorer) lives in
 // @samesake/server's evaluate-enrich.ts.
 import { getByPath } from "@samesake/core";
 

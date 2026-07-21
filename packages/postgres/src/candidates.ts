@@ -13,7 +13,7 @@ export function pgCandidates(adapter: PostgresAdapter, options: CollectionBacken
       return `$${params.length}`;
     };
     const scope = Object.entries(row.scope ?? options.scope ?? {});
-    const scopeSql = (alias: string) => scope.map(([field, value]) => ` AND ${alias}.${ident(`scope_${field}`)} = ${ref(value)}`).join("");
+    const scopeSql = (alias: string) => scope.map(([field, value]) => ` AND ${alias}.${ident(`scope_${field.replace(/^scope_/, "")}`)} = ${ref(value)}`).join("");
     const probes: string[] = [];
     const exactFields = new Set<string>();
     const trigramFields = new Set<string>();

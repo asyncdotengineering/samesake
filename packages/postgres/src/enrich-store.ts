@@ -1,5 +1,4 @@
-import type { RawRow, EnrichedRow, EnrichStore, DedupCandidateProvider, DedupFeedback } from "@samesake/enrich";
-import type { CollectionDef, Scope } from "@samesake/core";
+import { contentHash, type RawRow, type EnrichedRow, type EnrichStore, type DedupCandidateProvider, type DedupFeedback } from "@samesake/enrich";
 import type { PostgresAdapter } from "./adapter.ts";
 import type { CollectionBackendOptions } from "./types.ts";
 
@@ -42,8 +41,8 @@ export class PostgresEnrichStore implements EnrichStore {
   async upsert(rows: RawRow[]): Promise<void> {
     for (const row of rows) {
       await this.adapter.query(
-        `INSERT INTO ${this.options.table} (id, data, enriched_at, pipeline_status) VALUES ($1, $2::jsonb, NULL, NULL) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, enriched_at = NULL, pipeline_status = NULL, updated_at = now()`,
-        [row.id, json(row.data)]
+        `INSERT INTO ${this.options.table} (id, data, content_hash, enriched_at, pipeline_status) VALUES ($1, $2::jsonb, $3, NULL, 'pending') ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, content_hash = EXCLUDED.content_hash, enriched_at = NULL, pipeline_status = 'pending', updated_at = now()`,
+        [row.id, json(row.data), contentHash(row.data)]
       );
     }
   }

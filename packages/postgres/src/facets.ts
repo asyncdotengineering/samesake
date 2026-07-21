@@ -27,7 +27,7 @@ export function createFacets(adapter: PostgresAdapter, options: CollectionBacken
     const params = [...compiled.params];
     for (const [field, value] of Object.entries(scope ?? {})) {
       params.push(value);
-      whereParts.push(`scope_${ident(field)} = $${params.length}`);
+      whereParts.push(`scope_${ident(field.replace(/^scope_/, ""))} = $${params.length}`);
     }
     const where = whereParts.length ? whereParts.join(" AND ") : "true";
     const result: Record<string, FacetResult> = {};

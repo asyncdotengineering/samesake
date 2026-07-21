@@ -107,8 +107,8 @@ export interface SearchOpts {
    */
   diversify?: boolean;
   /**
-   * HNSW recall/latency dial (pgvector `hnsw.ef_search`, clamped to 10–1000).
-   * Higher = better ANN recall, slower query. Omit for the pgvector default (40).
+   * ANN recall/latency dial, clamped by the selected backend.
+   * Higher values generally improve recall at the cost of latency.
    */
   efSearch?: number;
   /**

@@ -1,6 +1,6 @@
 // The search-side ports — store-agnostic seams; interfaces only, @samesake/query
-// supplies no implementation. A backend (@samesake/postgres, a D1 + LanceDB
-// store) provides a concrete `Retriever`, and `createSearch` accepts it by
+// supplies no implementation. A backend provides a concrete `Retriever`, and
+// `createSearch` accepts it by
 // interface. These live with the search domain that gives them meaning; every
 // implementer already depends on @samesake/query to compose createSearch, so
 // ownership here adds no coupling.
