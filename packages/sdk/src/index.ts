@@ -76,9 +76,10 @@ export type {
 // Retrieval plan / fused-result types consumed by Retriever.
 export type { RetrievalPlan, RankedRow } from "./plan.ts";
 export { IdentError, assertIdent, assertNoIdentCollisions, sanitiseIdent } from "./ident.ts";
-// Pure schema / image-token helpers shared by @samesake/enrich and @samesake/server.
+// Pure schema / image-token / path helpers shared by @samesake/enrich and @samesake/server.
 export { normalizeSchema } from "./schema-input.ts";
 export { imageVersionToken } from "./image-token.ts";
+export { getByPath } from "./paths.ts";
 
 const DEF_KIND = Symbol.for("@samesake/core.defKind");
 type DefKind = "entity" | "collection";

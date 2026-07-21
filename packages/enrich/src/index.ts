@@ -1,5 +1,15 @@
 export * from "./types.ts";
 export {
+  scoreEnrichment,
+  type AttrKind,
+  type AttrSpec,
+  type GoldRow,
+  type PredictedRow,
+  type AttrMetrics,
+  type ProductDiff,
+  type EnrichEvalResult,
+} from "./eval.ts";
+export {
   deriveSurfaces,
   stageCacheKey,
   imageValidatorsForUrls,
