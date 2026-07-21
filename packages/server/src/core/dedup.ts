@@ -179,7 +179,7 @@ export function makeDedupService(ctx: MatcherCtx, projectsService: ProjectsServi
       FROM ${table} d JOIN probe USING (id)
       WHERE d.pipeline_status = 'ready'`;
 
-    const rows = await client("dedup candidates").unsafe(sql, params);
+    const rows = await ctx.storage.dedupCandidateProbe(sql, params);
     return rows.map((cr) => {
       const fields: Record<string, unknown> = {};
       for (const col of channelFields) fields[col] = cr[col];
@@ -199,11 +199,7 @@ export function makeDedupService(ctx: MatcherCtx, projectsService: ProjectsServi
   }
 
   async function suggestionStatus(sugg: string, rowId: string, group: string): Promise<string | null> {
-    const rows = await client("dedup suggestion status").unsafe(
-      `SELECT status FROM ${sugg} WHERE row_id = $1 AND candidate_group = $2 LIMIT 1`,
-      [rowId, group]
-    );
-    return rows.length ? String(rows[0]!.status) : null;
+    return ctx.storage.dedupSuggestionStatus(sugg, rowId, group);
   }
 
   // A split is a SYMMETRIC decision — the two rows must never re-cluster, regardless of
@@ -211,12 +207,7 @@ export function makeDedupService(ctx: MatcherCtx, projectsService: ProjectsServi
   // record is one directional (row_id, candidate_group), so check BOTH orderings; otherwise
   // a rebuild that re-founds the cluster the other way silently re-merges the split pair.
   async function isDeclined(sugg: string, a: string, b: string): Promise<boolean> {
-    const rows = await client("dedup declined check").unsafe(
-      `SELECT 1 FROM ${sugg} WHERE status = 'declined'
-       AND ((row_id = $1 AND candidate_group = $2) OR (row_id = $2 AND candidate_group = $1)) LIMIT 1`,
-      [a, b]
-    );
-    return rows.length > 0;
+    return ctx.storage.dedupIsDeclined(sugg, a, b);
   }
 
   async function dedup(

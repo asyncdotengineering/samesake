@@ -245,36 +245,14 @@ export function makeEnrichPipelineService(
         const derivedCtx: DerivedDocContext = { data, enriched };
         const surfaces = persistIndexingSurfaces(def.indexing, derivedCtx);
 
-        await ctx.storage.client("enrich").unsafe(
-          `UPDATE ${table}
-           SET enriched = $1::jsonb,
-               enriched_at = now(),
-               doc = $2,
-               rerank_doc = $3,
-               fts_src = $4,
-               fts_src_a = $5,
-               pipeline_status = $6,
-               gate_reason = $7,
-               updated_at = now()
-           WHERE id = $8`,
-          [
-            JSON.stringify(enriched),
-            surfaces.doc,
-            surfaces.rerank_doc,
-            surfaces.fts_src,
-            surfaces.fts_src_a,
-            surfaces.pipeline_status,
-            surfaces.gate_reason,
-            row.id,
-          ]
+        await ctx.storage.persistEnrichment(
+          table,
+          row.id,
+          JSON.stringify(enriched),
+          surfaces
         );
       } else {
-        await ctx.storage.client("enrich").unsafe(
-          `UPDATE ${table}
-           SET enriched = $1::jsonb, enriched_at = now(), updated_at = now()
-           WHERE id = $2`,
-          [JSON.stringify(enriched), row.id]
-        );
+        await ctx.storage.persistEnrichmentMinimal(table, row.id, JSON.stringify(enriched));
       }
     } catch (e) {
       await recordFailure(table, row.id, e);
@@ -355,13 +333,7 @@ export function makeEnrichPipelineService(
       // corrections table may not exist on older deployments; few-shot is best-effort
     }
 
-    const pending = await ctx.storage.client("enrich").unsafe(
-      `SELECT id, data, image_etag FROM ${table}
-       WHERE enriched_at IS NULL
-       ORDER BY id
-       LIMIT $1`,
-      [limit]
-    );
+    const pending = await ctx.storage.pendingForEnrich(table, limit);
 
     let enriched = 0;
     let skipped = 0;
