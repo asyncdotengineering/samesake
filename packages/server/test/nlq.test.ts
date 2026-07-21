@@ -16,7 +16,8 @@ import {
   nlqParsedToFilters,
   parseNlq,
   shouldSkipNlq,
-} from "../src/core/nlq.ts";
+  type ParseNlqDeps,
+} from "@samesake/query";
 import { buildFilterSql } from "../src/core/search.ts";
 import type { MatcherCtx } from "../src/types.ts";
 import { groundVocabValues, vocabCandidates } from "../src/core/field-vocab.ts";
@@ -130,20 +131,20 @@ describe("shouldSkipNlq", () => {
 });
 
 describe("parseNlq", () => {
-  const baseCtx = {
+  const baseDeps = {
     generateConfigured: true,
     generate: async () => ({}),
-  } as unknown as MatcherCtx;
+  } as unknown as ParseNlqDeps;
 
   test("degrades when generate throws", async () => {
-    const ctx = {
-      ...baseCtx,
+    const deps = {
+      ...baseDeps,
       generate: async () => {
         throw new Error("boom");
       },
-    } as unknown as MatcherCtx;
+    } as unknown as ParseNlqDeps;
 
-    const result = await parseNlq(ctx, testProductsCollection, "red nike shoes under 100");
+    const result = await parseNlq(testProductsCollection, "red nike shoes under 100", deps);
     expect(result.degraded).toBe(true);
     expect(result.parsed.semantic_query).toBe("red nike shoes under 100");
     expect(result.filters).toEqual({ colors: ["red"] });
@@ -153,16 +154,16 @@ describe("parseNlq", () => {
   test(
     "degrades on slow generate (>5s)",
     async () => {
-      const ctx = {
-        ...baseCtx,
+      const deps = {
+        ...baseDeps,
         generate: async () => {
           await new Promise((r) => setTimeout(r, 6000));
           return { semantic_query: "slow" };
         },
-      } as unknown as MatcherCtx;
+      } as unknown as ParseNlqDeps;
 
       const t0 = Date.now();
-      const result = await parseNlq(ctx, testProductsCollection, "red nike shoes under 100");
+      const result = await parseNlq(testProductsCollection, "red nike shoes under 100", deps);
       expect(Date.now() - t0).toBeLessThan(5500);
       expect(result.degraded).toBe(true);
     },
@@ -171,32 +172,32 @@ describe("parseNlq", () => {
 
   test("short queries invoke generate", async () => {
     let calls = 0;
-    const ctx = {
+    const deps = {
       generateConfigured: true,
       generate: async () => {
         calls++;
         return { semantic_query: "x" };
       },
-    } as unknown as MatcherCtx;
+    } as unknown as ParseNlqDeps;
 
-    await parseNlq(ctx, testProductsCollection, "red shoes");
+    await parseNlq(testProductsCollection, "red shoes", deps);
     expect(calls).toBe(1);
   });
 
   test("applies stub generate filters", async () => {
-    const ctx = {
+    const deps = {
       generateConfigured: true,
       generate: async () => ({
         semantic_query: "running shoes",
         max_price: 120,
         brand: "nike",
       }),
-    } as unknown as MatcherCtx;
+    } as unknown as ParseNlqDeps;
 
     const result = await parseNlq(
-      ctx,
       testProductsCollection,
-      "nike running shoes under 120"
+      "nike running shoes under 120",
+      deps
     );
     expect(result.degraded).toBe(false);
     expect(result.filters.price).toEqual({ $lte: 120 });
@@ -205,13 +206,13 @@ describe("parseNlq", () => {
 
   test("converts a zod nlq.schema to JSON Schema before generate", async () => {
     let received: Record<string, unknown> | undefined;
-    const ctx = {
+    const deps = {
       generateConfigured: true,
       generate: async ({ schema }: { schema: Record<string, unknown> }) => {
         received = schema;
         return { semantic_query: "party wear" };
       },
-    } as unknown as MatcherCtx;
+    } as unknown as ParseNlqDeps;
 
     const coll = collection("products", {
       fields: {
@@ -228,7 +229,7 @@ describe("parseNlq", () => {
       },
     });
 
-    await parseNlq(ctx, coll, "party wear under 3000");
+    await parseNlq(coll, "party wear under 3000", deps);
     expect(received).toBeDefined();
     expect(received!.type).toBe("object");
     expect((received!.properties as Record<string, unknown>).semantic_query).toEqual({ type: "string" });
@@ -349,29 +350,29 @@ describe("guardLexicalQuery", () => {
 
 describe("parseNlq lexical guard", () => {
   test("test:lexical-guard-drop strips an expanded lexical_query from the parse", async () => {
-    const ctx = {
+    const deps = {
       generateConfigured: true,
       generate: async () => ({
         semantic_query: "oversized streetwear hoodie",
         lexical_query: "streetwear hoodie",
       }),
-    } as unknown as MatcherCtx;
+    } as unknown as ParseNlqDeps;
 
-    const result = await parseNlq(ctx, testProductsCollection, "hoddie");
+    const result = await parseNlq(testProductsCollection, "hoddie", deps);
     expect(result.degraded).toBe(false);
     expect(result.parsed.lexical_query).toBeUndefined();
   });
 
   test("test:lexical-guard-keep preserves a faithful correction", async () => {
-    const ctx = {
+    const deps = {
       generateConfigured: true,
       generate: async () => ({
         semantic_query: "denim jacket",
         lexical_query: "denim jacket",
       }),
-    } as unknown as MatcherCtx;
+    } as unknown as ParseNlqDeps;
 
-    const result = await parseNlq(ctx, testProductsCollection, "denim jaket");
+    const result = await parseNlq(testProductsCollection, "denim jaket", deps);
     expect(result.parsed.lexical_query).toBe("denim jacket");
   });
 });
@@ -380,15 +381,15 @@ describe("deterministic soft-enum guard", () => {
   test("test:enum-token-short-query derives red with zero generation calls", async () => {
     let calls = 0;
     const result = await parseNlq(
+      testProductsCollection,
+      "red dress",
       {
         generateConfigured: false,
         generate: async () => {
           calls++;
           return {};
         },
-      } as unknown as MatcherCtx,
-      testProductsCollection,
-      "red dress"
+      } as unknown as ParseNlqDeps
     );
     expect(result.filters).toEqual({ colors: ["red"] });
     expect(calls).toBe(0);
@@ -509,15 +510,15 @@ describe("catalog-grounded vocabulary", () => {
 
   test("candidate values enter derived schema and custom schema without changing required fields", async () => {
     let received: Record<string, unknown> | undefined;
-    const ctx = {
+    const deps = {
       generateConfigured: true,
       generate: async ({ schema, prompt }: { schema: Record<string, unknown>; prompt: string }) => {
         received = schema;
         expect(prompt).toContain("Catalog-grounded filter candidates");
         return { semantic_query: "shoes", brand: "Nike" };
       },
-    } as unknown as MatcherCtx;
-    await parseNlq(ctx, openVocab, "nike shoes", {
+    } as unknown as ParseNlqDeps;
+    await parseNlq(openVocab, "nike shoes", deps, {
       candidates: { available: true, candidates: { brand: [{ value: "Nike", count: 4 }] } },
       grounding: { available: true, decisions: { brand: [{ parsed: "Nike", action: "kept" }] } },
     });
@@ -542,7 +543,7 @@ describe("catalog-grounded vocabulary", () => {
       },
     };
     received = undefined;
-    await parseNlq(ctx, custom as unknown as CollectionDef, "nike shoes", {
+    await parseNlq(custom as unknown as CollectionDef, "nike shoes", deps, {
       candidates: { available: true, candidates: { brand: [{ value: "Nike", count: 4 }] } },
       grounding: { available: true, decisions: { brand: [{ parsed: "Nike", action: "kept" }] } },
     });

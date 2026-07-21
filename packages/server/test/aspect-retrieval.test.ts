@@ -8,9 +8,13 @@ import { collection, f, Channels } from "../../sdk/src/index.ts";
 import type { MatcherCtx } from "../src/types.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { makeCollectionsSchemaGen } from "../src/core/collections-schema-gen.ts";
-import { deriveNlqSchema, parseNlq } from "../src/core/nlq.ts";
-import { parseSearchWeights, resolveAspectPlans } from "../src/core/search-query.ts";
-import type { NlqParseResult } from "../src/core/nlq.ts";
+import {
+  deriveNlqSchema,
+  parseNlq,
+  parseSearchWeights,
+  resolveAspectPlans,
+  type NlqParseResult,
+} from "@samesake/query";
 import { createDbFromUrl } from "../src/db/client.ts";
 import { stubEmbed } from "./fixtures.ts";
 
@@ -118,7 +122,10 @@ describe("test:nlq-aspects", () => {
         },
       }),
     } as unknown as MatcherCtx;
-    const parsed = await parseNlq(ctx, aspectCollection, "floral wedding dress");
+    const parsed = await parseNlq(aspectCollection, "floral wedding dress", {
+      generate: ctx.generate,
+      generateConfigured: true,
+    });
     expect(parsed.parsed.aspects).toEqual({
       visual: { subQuery: "floral silhouette", weight: 1 },
       facets: { weight: 0 },

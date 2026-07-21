@@ -1,22 +1,16 @@
 import type { CollectionDef } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
+import {
+  openVocabFieldNames,
+  type VocabCandidates,
+  type VocabLookup,
+  type GroundedValueDecision,
+} from "@samesake/query";
 
-export type VocabCandidates = Record<string, Array<{ value: string; count: number }>>;
-
-export type VocabLookup = { available: boolean; candidates: VocabCandidates };
-
-export interface GroundedValueDecision {
-  parsed: string;
-  mapped?: string;
-  action: "kept" | "mapped" | "dropped";
-}
-
-export function openVocabFieldNames(def: CollectionDef): string[] {
-  return Object.entries(def.fields)
-    .filter(([, field]) => field.type === "text" && field.filterable)
-    .map(([name]) => name);
-}
+// The value-vocabulary types + the pure open-vocab field finder now live in
+// @samesake/query; re-exported here so the existing module surface resolves unchanged.
+export type { VocabCandidates, VocabLookup, GroundedValueDecision } from "@samesake/query";
 
 function missingVocabTable(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;

@@ -1,21 +1,42 @@
 import { createHash } from "node:crypto";
-import type { CollectionDef, CollectionFieldDef } from "@samesake/core";
-import type { MatcherCtx } from "../types.ts";
-import { makeStageCacheService } from "../db/stage-cache.ts";
-import { normalizeSchema } from "./schema-input.ts";
-import type { SearchFilters } from "./search.ts";
+import { normalizeSchema } from "@samesake/core";
+import type { CollectionDef, CollectionFieldDef, GenerateRequest } from "@samesake/core";
+import type { SearchFilters } from "./filters.ts";
 import { embeddingEntries } from "./aspects.ts";
+import type { ParseNlqDeps } from "./deps.ts";
 import {
-  groundVocabValues,
   openVocabFieldNames,
   type GroundedValueDecision,
   type VocabCandidates,
   type VocabLookup,
-} from "./field-vocab.ts";
+} from "./vocab.ts";
 
 const NLQ_CACHE_STAGE = "__nlq";
 const NLQ_CACHE_TTL_DAYS = 7;
 const NLQ_SCHEMA_VERSION = "grounded-v2";
+
+// Query owns its own NLQ timeout so it never imports the host policy module.
+// Mirrors the host's callWithTimeout exactly.
+const DEFAULT_NLQ_TIMEOUT_MS = 5000;
+
+function callWithTimeout<T>(
+  fn: () => Promise<T>,
+  timeoutMs: number,
+  label: string
+): Promise<T> {
+  if (!timeoutMs || timeoutMs <= 0) return fn();
+  return Promise.race([
+    fn(),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timeout`)), timeoutMs)
+    ),
+  ]);
+}
+
+// Vocab grounding types (VocabCandidates / VocabLookup / GroundedValueDecision) and the
+// pure openVocabFieldNames helper live in ./vocab.ts. The DB-bound candidate lookup /
+// value grounding stay server-side; the grounding call itself is injected via
+// ParseNlqDeps.groundVocab.
 
 function normalizeQuery(q: string): string {
   return q.trim().toLowerCase().replace(/\s+/g, " ");
@@ -45,8 +66,6 @@ export function nlqCacheKey(def: CollectionDef, q: string, candidates: VocabCand
     .update(`${NLQ_SCHEMA_VERSION}|nlq|${model}|${createHash("sha1").update(instr).digest("hex").slice(0, 12)}|${createHash("sha1").update(aspects).digest("hex").slice(0, 12)}|${candidateHash(candidates)}|${def.name}|${normalizeQuery(q)}`)
     .digest("hex");
 }
-
-import { callWithTimeout, DEFAULT_NLQ_TIMEOUT_MS } from "./policy.ts";
 
 export interface NlqParsed {
   semantic_query: string;
@@ -181,8 +200,8 @@ export function deriveNlqSchema(def: CollectionDef, candidates: VocabCandidates 
   };
 }
 
-// Shared with parseNlq: custom nlq schemas (predating aspects, or filter-only) must still be
-// able to emit routing — without this property in the structured-output schema, constrained
+// Shared with parseNlq: custom nlq schemas (predating aspects, or filter-only) must still
+// be able to emit routing — without this property in the structured-output schema, constrained
 // decoding silently disables routing and every query runs all aspect legs at default weights
 // (the V02g flat-weights failure).
 export function aspectsSchemaFragment(def: CollectionDef): Record<string, unknown> | null {
@@ -731,17 +750,17 @@ function appendDroppedSemantic(semantic: string, dropped: string[]): string {
 }
 
 async function generateWithTimeout(
-  ctx: MatcherCtx,
-  req: Parameters<MatcherCtx["generate"]>[0]
+  deps: ParseNlqDeps,
+  req: GenerateRequest
 ): Promise<unknown> {
-  const timeoutMs = ctx.policy?.llm?.timeoutMs ?? DEFAULT_NLQ_TIMEOUT_MS;
-  return callWithTimeout(() => ctx.generate(req), timeoutMs, "NLQ");
+  const timeoutMs = deps.timeoutMs ?? DEFAULT_NLQ_TIMEOUT_MS;
+  return callWithTimeout(() => deps.generate(req), timeoutMs, "NLQ");
 }
 
 export async function parseNlq(
-  ctx: MatcherCtx,
   def: CollectionDef,
   q: string,
+  deps: ParseNlqDeps,
   options: ParseNlqOptions = {}
 ): Promise<NlqParseResult> {
   const enabled = !shouldSkipNlq(def, q);
@@ -770,15 +789,15 @@ export async function parseNlq(
     };
   }
 
-  if (!ctx.generateConfigured) {
+  if (!(deps.generateConfigured ?? true)) {
     return fallback;
   }
 
   const schemaCandidates = options.schemaCandidates ?? options.candidates?.candidates ?? {};
   const schema = augmentNlqSchema(def, schemaCandidates);
   const instructions = def.search?.nlq?.instructions;
-  // Caching is best-effort: minimal test/embedded contexts may lack system tables.
-  const cache = ctx.systemTables?.samesakeStageCache ? makeStageCacheService(ctx) : null;
+  // Caching is best-effort: minimal test/embedded contexts may inject no stage cache.
+  const cache = deps.stageCache ?? null;
   const cacheKey = nlqCacheKey(def, q, schemaCandidates);
 
   const finishParsed = async (parsed: NlqParsed, degraded: boolean): Promise<NlqParseResult> => {
@@ -787,7 +806,7 @@ export async function parseNlq(
       parsed = { ...parsed };
       if (guardedLexical === undefined) {
         delete parsed.lexical_query;
-        ctx.observability?.inc("nlq_lexical_guard_drops");
+        deps.onMetric?.("nlq_lexical_guard_drops");
       } else {
         parsed.lexical_query = guardedLexical;
       }
@@ -800,7 +819,7 @@ export async function parseNlq(
       parsed.lexical_query
     );
     if (Object.keys(corroboration.dropped).length) {
-      ctx.observability?.inc("nlq_uncorroborated_enum_drops");
+      deps.onMetric?.("nlq_uncorroborated_enum_drops");
     }
     const parsedFilters = corroboration.filters;
     const vocabValues = openVocabFilterValues(parsedFilters, def);
@@ -810,14 +829,8 @@ export async function parseNlq(
         groundedValues = options.grounding.decisions;
       } else if (options.candidates) {
         if (!options.candidates.available) groundedValues = unavailableGrounding(vocabValues);
-        else if (options.schema && options.collection && options.scopeCols) {
-          const grounded = await groundVocabValues(
-            ctx,
-            options.schema,
-            options.collection,
-            vocabValues,
-            options.scopeCols
-          );
+        else if (deps.groundVocab && options.schema && options.collection && options.scopeCols) {
+          const grounded = await deps.groundVocab(options.schema, options.collection, vocabValues, options.scopeCols);
           groundedValues = grounded.available ? grounded.decisions : unavailableGrounding(vocabValues);
         } else {
           groundedValues = unavailableGrounding(vocabValues);
@@ -846,7 +859,7 @@ export async function parseNlq(
       // cache read failures never block the query path
     }
     if (hit && typeof hit.semantic_query === "string") {
-      ctx.observability?.inc("nlq_cache_hits");
+      deps.onMetric?.("nlq_cache_hits");
       const parsed = normalizeAspectRoutes(def, { ...hit, semantic_query: hit.semantic_query });
       return finishParsed(parsed, false);
     }
@@ -854,7 +867,7 @@ export async function parseNlq(
 
   let raw: Record<string, unknown>;
   try {
-    raw = (await generateWithTimeout(ctx, {
+    raw = (await generateWithTimeout(deps, {
       model: def.search?.nlq?.model,
       prompt: buildNlqPrompt(q, def, instructions, schemaCandidates),
       system: instructions,

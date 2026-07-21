@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { collection, f, Channels } from "@samesake/core";
 import { denseAndFtsIndexingByTitle, ftsIndexingByTitle } from "./fixtures.ts";
-import { parseSearchWeights } from "../src/core/search-query.ts";
+import { parseSearchWeights } from "@samesake/query";
 
 const def = collection("products", {
   fields: {

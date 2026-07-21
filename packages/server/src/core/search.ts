@@ -5,8 +5,11 @@ import { applyRankingPolicy, type SearchHit } from "@samesake/query";
 import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
 import { buildConstraintTrace } from "@samesake/query";
-import { mergeFilters, parseNlq, shouldSkipNlq } from "./nlq.ts";
-import { vocabCandidates } from "./field-vocab.ts";
+import { mergeFilters, parseNlq, shouldSkipNlq } from "@samesake/query";
+import { vocabCandidates, groundVocabValues } from "./field-vocab.ts";
+import { makeStageCacheService } from "../db/stage-cache.ts";
+import { fetchRemoteImageSafe } from "./fetch-image.ts";
+import type { MetricName } from "./observability.ts";
 import type { ProjectsService, ProjectRow } from "./projects.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
 import { ftsLanguage } from "./collections-schema-gen.ts";
@@ -22,7 +25,7 @@ import {
   resolveAspectPlans,
   type AspectPlan,
   type ChannelWeights,
-} from "./search-query.ts";
+} from "@samesake/query";
 import { embeddingColumn, embeddingEntries, evidenceEntries, evidenceTable, EVIDENCE_OVERFETCH_FACTOR } from "./aspects.ts";
 
 export {
@@ -707,7 +710,15 @@ export function makeSearchService(
       const candidates = shouldSkipNlq(def, q)
         ? { available: true, candidates: {} }
         : await vocabCandidates(ctx, project.schema_name, collectionName, def, q, scopeCols);
-      return parseNlq(ctx, def, q, {
+      return parseNlq(def, q, {
+        generate: ctx.generate,
+        generateConfigured: ctx.generateConfigured,
+        stageCache: ctx.systemTables?.samesakeStageCache ? makeStageCacheService(ctx) : undefined,
+        timeoutMs: ctx.policy?.llm?.timeoutMs,
+        onMetric: (n) => ctx.observability?.inc(n as MetricName),
+        groundVocab: (schema, collection, values, scope) =>
+          groundVocabValues(ctx, schema, collection, values, scope),
+      }, {
         candidates,
         schema: project.schema_name,
         collection: collectionName,
@@ -732,7 +743,7 @@ export function makeSearchService(
       : !nlq.degraded && typeof nlq.parsed.lexical_query === "string" && nlq.parsed.lexical_query.trim()
         ? nlq.parsed.lexical_query.trim()
         : q;
-    const imageVectors = await buildQueryAspectImageVectors(def, opts.image, embedService, ctx.groundImage);
+    const imageVectors = await buildQueryAspectImageVectors(def, opts.image, embedService, fetchRemoteImageSafe, ctx.groundImage);
     const aspectPlans = await resolveAspectPlans(
       def,
       weights,

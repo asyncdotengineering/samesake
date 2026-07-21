@@ -1,9 +1,12 @@
-import type { CollectionDef, CollectionEmbeddingDef, SearchMode, SearchWeightsInput } from "@samesake/core";
-import type { GroundImageFn } from "../types.ts";
-import type { EmbedService } from "./embed.ts";
-import { fetchRemoteImageSafe } from "./fetch-image.ts";
+import type {
+  CollectionDef,
+  CollectionEmbeddingDef,
+  GroundImageFn,
+  SearchMode,
+  SearchWeightsInput,
+} from "@samesake/core";
+import type { EmbedService, QueryFetchImage } from "./deps.ts";
 import { shouldSkipNlq, type NlqParseResult } from "./nlq.ts";
-import type { SearchFilters } from "./search-filter.ts";
 import { embeddingEntries } from "./aspects.ts";
 
 export interface ChannelWeights {
@@ -104,6 +107,7 @@ export async function buildQueryAspectImageVectors(
   def: CollectionDef,
   image: QueryImageInput | undefined,
   embedService: EmbedService,
+  fetchImage: QueryFetchImage,
   groundImage?: GroundImageFn
 ): Promise<Record<string, number[]>> {
   if (!image) return {};
@@ -112,7 +116,7 @@ export async function buildQueryAspectImageVectors(
   let url = image.url;
 
   if (image.url) {
-    const fetched = await fetchRemoteImageSafe(image.url);
+    const fetched = await fetchImage(image.url);
     if (!fetched.ok) throw new Error(`image query fetch failed: ${fetched.reason}`);
     bytes = fetched.bytes;
     mimeType = fetched.contentType;
