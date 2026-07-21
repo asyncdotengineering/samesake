@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { imageVersionToken } from "@samesake/core";
+
+export { imageVersionToken };
 
 export function stripHtml(s: unknown): string {
   return String(s ?? "")
@@ -21,19 +24,6 @@ export interface NormalizedProduct {
   raw_tags: string[];
   available: boolean;
   content_hash: string;
-}
-
-export function imageVersionToken(fields: {
-  image_etag?: unknown;
-  image_updated_at?: unknown;
-  image_version?: unknown;
-}): string | null {
-  if (fields.image_etag != null && String(fields.image_etag)) return String(fields.image_etag);
-  if (fields.image_updated_at != null && String(fields.image_updated_at))
-    return String(fields.image_updated_at);
-  if (fields.image_version != null && String(fields.image_version))
-    return String(fields.image_version);
-  return null;
 }
 
 function contentHash(

@@ -51,7 +51,8 @@
     "zod": "^4.0.0"
   },
   "dependencies": {
-    "@samesake/core": "workspace:^"
+    "@samesake/core": "workspace:^",
+    "@samesake/enrich": "workspace:^"
   },
   "devDependencies": {
     "@hono/zod-validator": "^0.8.0",
