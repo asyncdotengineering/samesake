@@ -12,7 +12,8 @@ export interface NormalizedProduct {
   title: string;
   description: string | null;
   price: number | null;
-  currency: string;
+  /** Caller-supplied store currency; unset when the caller supplies none. */
+  currency: string | undefined;
   image_url: string | null;
   url: string;
   vendor: string | null;
@@ -54,7 +55,7 @@ function contentHash(
 
 export function normalizeShopify(
   item: Record<string, unknown>,
-  store: { domain: string; currency: string }
+  store: { domain: string; currency?: string }
 ): NormalizedProduct | null {
   if (!item.title || !item.handle) return null;
   const variants = (item.variants as Record<string, unknown>[] | undefined) ?? [];
@@ -88,7 +89,7 @@ export function normalizeShopify(
 
 export function normalizeWoo(
   item: Record<string, unknown>,
-  store: { domain: string; currency: string }
+  store: { domain: string; currency?: string }
 ): NormalizedProduct | null {
   if (!item.name || !item.permalink) return null;
   const prices = (item.prices as Record<string, unknown> | undefined) ?? {};

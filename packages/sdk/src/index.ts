@@ -47,6 +47,34 @@ import type {
 import { assertIdent, assertNoIdentCollisions } from "./ident.ts";
 
 export * from "./types.ts";
+// BYO model closure contracts (moved from @samesake/server; core owns them).
+export type {
+  EmbedImageInput,
+  EmbedRequest,
+  EmbedFn,
+  GenerateRequest,
+  GenerateFn,
+  RerankCandidate,
+  RerankRequest,
+  RerankFn,
+  GroundImageRequest,
+  GroundImageResult,
+  GroundImageFn,
+} from "./model.ts";
+// The four ports — store-agnostic seams; interfaces only, no implementations.
+export type {
+  Scope,
+  Retriever,
+  StoredRow,
+  EnrichedRow,
+  EnrichFailure,
+  EnrichStore,
+  Candidate,
+  CandidateProvider,
+  VocabProvider,
+} from "./ports.ts";
+// Retrieval plan / fused-result types consumed by Retriever.
+export type { RetrievalPlan, RankedRow } from "./plan.ts";
 // Best-default enrichment templates (fashion commerce).
 export {
   fashion,
@@ -356,7 +384,7 @@ export const sources = {
       kind: "shopify",
       options: {
         domain: opts.domain,
-        currency: opts.currency ?? "LKR",
+        currency: opts.currency,
         maxPages: opts.maxPages ?? 8,
       },
     };
@@ -372,7 +400,7 @@ export const sources = {
       kind: "woocommerce",
       options: {
         domain: opts.domain,
-        currency: opts.currency ?? "LKR",
+        currency: opts.currency,
         maxPages: opts.maxPages ?? 8,
       },
     };
