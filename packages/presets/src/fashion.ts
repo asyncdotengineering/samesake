@@ -244,7 +244,7 @@ Tags: ${strOf(ctx.data[tagsKey]) || "n/a"}`,
 }
 
 // PLACEHOLDER — tune via the offline eval gate (examples/fashion-search/eval-judge.ts + runEval);
-// see apps/docs/src/content/docs/guides/eval-gate.mdx. Requires GEMINI_API_KEY for empirical sweep.
+// see apps/docs/src/content/docs/guides/eval-gate.mdx. Requires a model API key for empirical sweep.
 export const FASHION_CONFIDENCE_FLOOR = 0.5;
 
 function asArray(v: unknown): string[] {

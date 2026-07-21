@@ -11,8 +11,8 @@
  *   - `model`    — the opaque model identifier from the entity's EmbeddingDef
  *   - `dim`      — the vector dimension the matcher expects back; throw or
  *                  the matcher will detect the mismatch and throw a clear error
- *   - `taskType` — opaque hint from EmbeddingDef.taskType (e.g. Gemini's
- *                  "SEMANTIC_SIMILARITY" / "RETRIEVAL_QUERY"). May be undefined.
+ *   - `taskType` — opaque hint from EmbeddingDef.taskType. The consumer's
+ *                  embedder decides which values it accepts. May be undefined.
  *   - `inputType`— "query" for a match-time query, "document" for an upsert.
  *                  Voyage cares; most providers don't. May be undefined.
  */
