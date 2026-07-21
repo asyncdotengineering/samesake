@@ -187,9 +187,14 @@ describe("enrich — pure transform", () => {
     expect(res.every((r, k) => (r.enriched.n as number) === k)).toBe(true);
   });
 
-  test("the pure core runs with NO database in scope (SAMESAKE_DATABASE_URL unset)", async () => {
+  test("the pure core CANNOT reach a database — no db dependency, runs on stubs alone", async () => {
     // The whole point of the extraction: the moat is exercised with no DB, no network.
-    expect(process.env.SAMESAKE_DATABASE_URL ?? "").toBe("");
+    // Structural proof (env-independent): @samesake/enrich declares no database
+    // dependency, so it physically cannot open a connection.
+    const { default: pkg } = await import("../package.json");
+    const deps = Object.keys(pkg.dependencies ?? {});
+    expect(deps.some((d) => /postgres|drizzle|pg|lancedb|sqlite|mysql|mongo/i.test(d))).toBe(false);
+    // Behavioural proof: the core runs to a result with only stub closures — no store, no handle.
     const cfg: EnrichConfig = {
       pipeline: { stages: [{ name: "n", prompt: () => "p", schema: () => ({ type: "object" }) }] },
       indexing: { surfaces: { doc: denseSurface(() => "doc") }, gate: () => ({ index: true }) },

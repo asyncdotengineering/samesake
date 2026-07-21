@@ -61,18 +61,10 @@ export type {
   GroundImageResult,
   GroundImageFn,
 } from "./model.ts";
-// The four ports — store-agnostic seams; interfaces only, no implementations.
-export type {
-  Scope,
-  Retriever,
-  StoredRow,
-  EnrichedRow,
-  EnrichFailure,
-  EnrichStore,
-  Candidate,
-  CandidateProvider,
-  VocabProvider,
-} from "./ports.ts";
+// Query-side ports — store-agnostic seams; interfaces only, no implementations.
+// The enrich-side ports (EnrichStore, dedup CandidateProvider) live in
+// @samesake/enrich with the state machine they model.
+export type { Scope, Retriever, VocabProvider } from "./ports.ts";
 // Retrieval plan / fused-result types consumed by Retriever.
 export type { RetrievalPlan, RankedRow } from "./plan.ts";
 export { IdentError, assertIdent, assertNoIdentCollisions, sanitiseIdent } from "./ident.ts";

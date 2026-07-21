@@ -16,64 +16,12 @@ export interface Retriever {
   (plan: RetrievalPlan): Promise<RankedRow[]>;
 }
 
-export interface StoredRow {
-  id: string;
-  collection: string;
-  scope?: Scope;
-  data: Record<string, unknown>;
-  enriched?: Record<string, unknown>;
-  attempts?: number;
-}
-
-export interface EnrichedRow {
-  id: string;
-  enriched: Record<string, unknown>;
-}
-
-export interface EnrichFailure {
-  stage?: string;
-  message: string;
-  retryable: boolean;
-  at: number;
-}
-
-/**
- * Persistence seam for the `enrich` primitive's lifecycle: `loadDirty` returns
- * rows needing enrichment, `writeEnriched` persists a batch, `recordFailure`
- * records an attempt (the store increments the attempt count), `loadRetryable`
- * returns rows whose retryable failure's backoff has elapsed relative to `now`,
- * and `markDead` retires a row from the retry loop. The optional `candidates`
- * method lets a store double as a coarse resolve-time candidate source.
- */
-export interface EnrichStore {
-  loadDirty(opts: { collection: string; scope?: Scope; limit: number }): Promise<StoredRow[]>;
-  writeEnriched(rows: EnrichedRow[]): Promise<void>;
-  recordFailure(id: string, failure: EnrichFailure): Promise<void>;
-  loadRetryable(opts: {
-    collection: string;
-    scope?: Scope;
-    limit: number;
-    now: number;
-  }): Promise<StoredRow[]>;
-  markDead(id: string, reason: string): Promise<void>;
-  candidates?(row: StoredRow): Promise<Candidate[]>;
-}
-
-export interface Candidate {
-  id: string;
-  data: Record<string, unknown>;
-  score?: number;
-}
-
-/**
- * Candidate-generation seam for the `resolve` primitive: given a row, return
- * the candidates that might be the same entity / same physical product across
- * vendors. The optional `score` is a coarse pre-score; the authoritative score
- * is computed by `resolve` itself.
- */
-export interface CandidateProvider {
-  (row: StoredRow): Promise<Candidate[]>;
-}
+// EnrichStore (the enrich Tier-2 state machine) and the dedup CandidateProvider
+// are domain ports, not base-layer contracts: they live in @samesake/enrich
+// alongside the state machine they model and use its native RawRow/DedupCandidate
+// types directly, so @samesake/core carries no parallel StoredRow/Candidate
+// hierarchy. Every implementer (@samesake/postgres, a D1 store) already depends
+// on @samesake/enrich via createEnricher, so ownership there adds no coupling.
 
 /**
  * Supplies the known value vocabulary for a declared field, optionally within
