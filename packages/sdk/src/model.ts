@@ -14,7 +14,8 @@
  *   - `taskType` — opaque hint from EmbeddingDef.taskType. The consumer's
  *                  embedder decides which values it accepts. May be undefined.
  *   - `inputType`— "query" for a match-time query, "document" for an upsert.
- *                  Voyage cares; most providers don't. May be undefined.
+ *                  Some providers use it to asymmetrically embed queries vs
+ *                  documents; most ignore it. May be undefined.
  */
 export interface EmbedImageInput {
   url?: string;
