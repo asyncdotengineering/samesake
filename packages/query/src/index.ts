@@ -8,7 +8,13 @@ export type { Retriever, VocabProvider } from "./ports.ts";
 export type { RetrievalPlan, RankedRow } from "./plan.ts";
 export { normalizeFiltersToConstraintPredicates } from "./filters.ts";
 export type { FilterOperator, FilterClause, SearchFilters } from "./filters.ts";
-export type { SearchHit } from "./types.ts";
+export type {
+  SearchHit,
+  SearchResult,
+  SearchOpts,
+  SearchExplainResult,
+  ExplainDocBreakdown,
+} from "./types.ts";
 export { applyCutoff } from "./cutoff.ts";
 export type { CutoffEvidence } from "./cutoff.ts";
 export { applyRankingPolicy } from "./ranking.ts";
@@ -67,3 +73,24 @@ export {
   type QueryImageInput,
   type AspectPlan,
 } from "./search-query.ts";
+
+// ── Query-rewrite brain (Q4a) ─────────────────────────────────────────────
+// When a clean, non-degraded, unfiltered query yields an empty or thin page, the
+// resolver proposes semantically-close rewrites and adopts one only if it strictly
+// improves the page. The impure seams (generate / stage cache / llm timeout) are
+// injected via ParseNlqDeps; @samesake/server builds them from its MatcherCtx.
+export {
+  proposeRewrites,
+  rewriteSchema,
+  type RewriteType,
+  type Rewrite,
+  type RewriteRecord,
+} from "./query-rewrite.ts";
+
+// Store-agnostic facet result shapes (the exact-SQL engine stays server-side).
+export type {
+  FacetResult,
+  FacetCountResult,
+  FacetRangeResult,
+  FacetBucket,
+} from "./facets.ts";

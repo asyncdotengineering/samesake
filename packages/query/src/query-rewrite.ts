@@ -1,30 +1,48 @@
 import { createHash } from "node:crypto";
-import type { CollectionDef } from "@samesake/core";
-import type { MatcherCtx } from "../types.ts";
-import { makeStageCacheService } from "../db/stage-cache.ts";
-import { callWithTimeout, DEFAULT_NLQ_TIMEOUT_MS } from "./policy.ts";
+import type { CollectionDef, RewriteType, RewriteRecord } from "@samesake/core";
+import type { ParseNlqDeps } from "./deps.ts";
 
-export type RewriteType = "spellfix" | "synonym" | "broader" | "substitute";
+// RewriteType / RewriteRecord are canonical @samesake/core types (ConstraintTrace
+// and ./constraint-trace.ts already use them). Re-exported here so @samesake/query is
+// a single import surface; only the proposal-local Rewrite shape is defined here.
+export type { RewriteType, RewriteRecord } from "@samesake/core";
+
 export type Rewrite = { type: RewriteType; query: string };
-export type RewriteRecord = { type: RewriteType; from: string; to: string };
 
 const REWRITE_SCHEMA_VERSION = "grounded-v2";
 const REWRITE_CACHE_STAGE = "__query_rewrite";
 const REWRITE_CACHE_TTL_DAYS = 7;
 const REWRITE_TYPES = new Set<RewriteType>(["spellfix", "synonym", "broader", "substitute"]);
 
+// Query owns its own rewrite timeout so it never imports the host policy module.
+// Mirrors the host's callWithTimeout exactly (Promise.race).
+const DEFAULT_REWRITE_TIMEOUT_MS = 5000;
+
+function callWithTimeout<T>(
+  fn: () => Promise<T>,
+  timeoutMs: number,
+  label: string
+): Promise<T> {
+  if (!timeoutMs || timeoutMs <= 0) return fn();
+  return Promise.race([
+    fn(),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timeout`)), timeoutMs)
+    ),
+  ]);
+}
+
 function normalizeQuery(query: string): string {
   return query.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function rewriteCacheKey(def: CollectionDef, query: string, reason: "empty" | "thin"): string {
+function rewriteCacheKey(def: CollectionDef, query: string): string {
   const instructions = def.search?.nlq?.instructions ?? "";
   const model = def.search?.nlq?.model ?? "default";
   const material = [
     REWRITE_SCHEMA_VERSION,
     def.name ?? "",
     normalizeQuery(query),
-    reason,
     model,
     instructions,
   ].join("|");
@@ -75,34 +93,33 @@ function parseRewrites(raw: unknown, original: string): Rewrite[] {
 }
 
 export async function proposeRewrites(
-  ctx: MatcherCtx,
-  def: CollectionDef,
   q: string,
-  reason: "empty" | "thin"
-): Promise<Rewrite[]> {
-  if (!ctx.generateConfigured || !q.trim()) return [];
+  def: CollectionDef,
+  deps: ParseNlqDeps
+): Promise<RewriteRecord[]> {
+  if (!(deps.generateConfigured ?? true) || !q.trim()) return [];
 
   const model = def.search?.nlq?.model ?? "default";
   const instructions = def.search?.nlq?.instructions;
-  const cacheKey = rewriteCacheKey(def, q, reason);
-  const cache = ctx.systemTables?.samesakeStageCache ? makeStageCacheService(ctx) : null;
+  const cacheKey = rewriteCacheKey(def, q);
+  const cache = deps.stageCache ?? null;
 
   if (cache) {
     try {
       const cached = await cache.getStageCache(cacheKey);
       const rewrites = parseRewrites(cached, q);
-      if (rewrites.length > 0 || cached != null) return rewrites;
+      if (rewrites.length > 0 || cached != null) return rewrites.map((r) => ({ type: r.type, from: q, to: r.query }));
     } catch {
       // Rewrite recovery remains best-effort when the stage cache is unavailable.
     }
   }
 
   const raw = await callWithTimeout(
-    () => ctx.generate({
+    () => deps.generate({
       model,
       system: instructions,
       prompt:
-        `The catalog search query produced an honest ${reason} retrieval gate. ` +
+        "The catalog search query produced too few results (an empty or thin page). " +
         "Suggest up to three ordered query rewrites that improve catalog coverage. " +
         "Return only typed JSON rewrites: spellfix for spelling corrections, synonym for " +
         "equivalent wording, broader for a broader catalog term, or substitute for a close " +
@@ -110,12 +127,12 @@ export async function proposeRewrites(
         `Query: ${q}`,
       schema: rewriteSchema,
     }),
-    ctx.policy?.llm?.timeoutMs ?? DEFAULT_NLQ_TIMEOUT_MS,
+    deps.timeoutMs ?? DEFAULT_REWRITE_TIMEOUT_MS,
     "query rewrite"
   );
   const rewrites = parseRewrites(raw, q);
   cache
     ?.setStageCache(cacheKey, REWRITE_CACHE_STAGE, { rewrites }, model, REWRITE_CACHE_TTL_DAYS)
     .catch(() => {});
-  return rewrites;
+  return rewrites.map((r) => ({ type: r.type, from: q, to: r.query }));
 }
