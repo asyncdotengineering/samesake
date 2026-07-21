@@ -1,0 +1,50 @@
+---
+title: 'PRD: samesake canonical API'
+description: The product contract for three composable primitives over consumer-owned ports.
+---
+
+The PRD is the product-level contract for every package and backend.
+
+## Product definition
+
+samesake exposes three composable primitives: `enrich`, `resolve`, and `search`.
+They run over pluggable stores and bring-your-own model closures. samesake is not a
+hosted service, vector database, or domain application, and it does not require one
+backend.
+
+## Consumer-neutrality invariant
+
+The product is the engine; a consumer is configuration. No consumer's store, vector
+dimension, model, provider, runtime, domain, or embedding-space policy may become an
+engine default, a mandatory preset choice, or canonical framing.
+
+The conformance test is simple: can a consumer satisfy its requirements by configuring
+the collection and implementing the ports, without consumer-specific lines in the
+engine? If not, the missing flexibility belongs in a port or package boundary.
+
+## Architecture
+
+| Tier | Shape | Owner |
+|---|---|---|
+| 0 | Pure function | Injected model closures and caller-owned durability |
+| 1 | Capability factory | `createEnricher`, `createSearch`, and the package contracts |
+| 2 | Batteries bundle | A chosen backend such as `@samesake/postgres` |
+
+The four ports are `Retriever`, `EnrichStore`, `CandidateProvider`, and
+`VocabProvider`. Search and facets are one capability attached to retrieval. Backend
+implementations may be SQL, a native vector index, a hosted index, an in-memory store,
+or another system that satisfies the contracts.
+
+## Model and preset policy
+
+`model` is opaque. `dim` is declared by the collection that owns an embedding space.
+`EmbedFn`, `GenerateFn`, `RerankFn`, and optional grounding closures are consumer
+supplied. Presets carry overridable content and refer to embedding keys; they never
+mandate a provider or dimension.
+
+Gemini, 768, fashion, and Postgres can each appear in a concrete example, but each is
+an example or adapter choice, never a samesake default.
+
+See the [canonical API overview](/reference/canonical-api/) for the package graph and
+the [search without Postgres](/guides/search-without-postgres/) and [enrichment without
+Postgres](/guides/enrichment-without-postgres/) guides for port-oriented compositions.

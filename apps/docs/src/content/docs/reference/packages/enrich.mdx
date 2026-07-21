@@ -1,0 +1,58 @@
+---
+title: '@samesake/enrich'
+description: Pure enrichment and resolution algorithms plus the EnrichStore and CandidateProvider seams.
+---
+
+`@samesake/enrich` owns the enrichment and resolution brain. It is store-free and
+performs model I/O only through closures supplied by the consumer.
+
+## Public surface
+
+- `enrich` and `enrichRow` execute typed stages, derive surfaces, and return explicit
+  ready, quarantined, or failed row outcomes.
+- `scoreCandidate`, `scoreBest`, and `clusterBatch` implement pure resolution scoring,
+  threshold decisions, and offer grouping.
+- `contentHash` and `selectDirty` support incremental work without owning persistence.
+- `scoreEnrichment` and its result types score predictions against gold attributes.
+- `createEnricher` composes those cores with an `EnrichStore`, optional candidate
+  provider, generation closure, embedding closure, and consumer-chosen concurrency.
+- `memoryStore` is a reference in-memory store for tests and local experiments.
+
+## Ports
+
+`EnrichStore` is the durable row-state contract. It covers upsert, dirty loading,
+enriched writes, failures, retries, and optional enriched-row/candidate access for
+resolution. `CandidateProvider` supplies a shortlist; blocking is backend work, while
+scoring remains pure.
+
+The factory returns an `Enricher` with:
+
+```ts
+upsert(rows)
+enrich({ limit, concurrency })
+resolve({ limit })
+retryFailed({ limit })
+evaluate(gold)
+```
+
+`createEnricher` does not schedule jobs, retry network calls, or run a dead-letter
+queue. The application platform and its store own those concerns.
+
+## Example
+
+```ts
+import { createEnricher } from '@samesake/enrich';
+
+const enricher = createEnricher({
+  collection,
+  generate,
+  embed,
+  store,
+});
+
+await enricher.upsert(rows);
+await enricher.enrich({ limit: 100 });
+```
+
+Use the pure functions directly when the surrounding workflow already owns durable
+state. Use the factory when one application-owned store should coordinate the loop.

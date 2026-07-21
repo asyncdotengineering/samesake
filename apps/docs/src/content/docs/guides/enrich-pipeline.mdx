@@ -1,96 +1,100 @@
 ---
 title: Running the enrich pipeline durably
-description: You've got push → enrich → index working. Now where does it actually run at 3am, and what happens when a step fails?
+description: Run samesake enrichment as a portable capability while your platform owns durable orchestration and your store owns row state.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-You've wired search. You've seen `pushDocuments`, `enrich`, and `index` do their thing — maybe from a script, maybe from the [marketplace guide](/guides/marketplace-search/). The catalog stays fresh because the loop is incremental: unchanged rows are no-ops, changed rows get re-read and re-embedded.
+The enrichment pipeline has one job: turn a raw row into typed attributes and
+indexing surfaces, then return an explicit success, quarantine, or failure result.
+Durability belongs around that function. Your workflow platform schedules steps and
+retries them; your `EnrichStore` persists the row state.
 
-That works until it doesn't. Your process restarts during deploy. A model call times out halfway through `index`. A webhook fires at the same moment the cron runs. Someone SSHs in and kills the Node process. Without durability, you're guessing what finished and what didn't.
+## Three primitives, one pipeline
 
-This page is about **where the loop runs** and **what catches it when something breaks**.
+`enrich` handles typed extraction and quality gates. `resolve` uses a
+`CandidateProvider` to score and cluster related rows. `search` consumes a
+`Retriever`; search and facets are the same backend capability, not separate product
+systems.
 
-## The loop, as five steps
+The package graph makes those boundaries visible:
 
-The continuous pipeline is really five matcher calls. Three run often; two run on a slower cadence:
+| Layer | Contract | I/O |
+|---|---|---|
+| Pure transform | `enrich` / `enrichRow` | Only the injected `GenerateFn` and optional image/embed closures |
+| Capability factory | `createEnricher` | `EnrichStore`, `CandidateProvider`, and caller-owned model closures |
+| Backend bundle | `@samesake/postgres` or another adapter | Backend-specific persistence, blocking, retrieval, and facets |
 
-| Step | Matcher call | Cadence | What it does |
-|------|--------------|---------|--------------|
-| 1 | `pushDocuments(project, collection, rows)` | Every few minutes + on webhooks | Upsert raw listings; fingerprint changes reset enrich/index |
-| 2 | `enrich(project, collection)` | After push | Model reads dirty rows; gate quarantines bad ones |
-| 3 | `index(project, collection)` | After enrich | Embeds and writes vectors for stale rows |
-| 4 | `revalidateImages(project, collection)` | Hourly | Catches same-URL image swaps |
-| 5 | `retryFailed(project, collection)` | Hourly | Retries `failed` rows with backoff |
+## Wire a capability factory
 
-Because each step is **idempotent and incremental**, you don't need clever fan-out. samesake batches internally — your job platform's job is **durability, retries, scheduling, and observability**, not splitting 50,000 products into 50,000 queue messages.
+```ts title="enricher.ts"
+import { createEnricher } from "@samesake/enrich";
+import { catalog } from "./catalog.ts";
+import { generate, embed } from "./models.ts";
+import { store } from "./store.ts";
 
-<Aside type="note">
-Every row's honest state — `pending`, `ready`, `quarantined`, `failed`, `dead` — lives in the database. See [Pipeline lifecycle](/guides/pipeline-lifecycle/) for the full state machine.
-</Aside>
-
-## Why not just `setInterval`?
-
-A timer in a long-running Node process is fine for local dev. For production it falls apart quickly:
-
-- **No retries.** If `index` throws, the timer moves on. Those rows sit `failed` until something else notices.
-- **Lost work on restart.** Deploy, crash, scale-to-zero — whatever was in flight is gone.
-- **Overlapping runs.** Two crons fire at once and you double your model bill for no reason.
-- **No observability.** When search looks stale at 3am, you're grep-ing logs.
-
-A queue or workflow platform gives you **durable steps** (a failed `index` retries without re-running `enrich`), **concurrency guards**, and a dashboard that shows what ran and what didn't.
-
-## The pattern every platform guide uses
-
-Each target guide below shows the same spine:
-
-1. **Scheduled full-loop** — every few minutes: push → enrich → index. Hourly: revalidateImages → retryFailed. This is your safety net even when webhooks work.
-2. **Webhook fast-path** (optional) — one product changed → `pushDocuments` with just that row. The next scheduled enrich/index picks it up, or you run them inline in the same workflow.
-
-Keep the three main stages as **separate durable steps**. That's how you get per-stage retries, per-stage timing in your observability tool, and the guarantee that a flaky embed call doesn't force you to re-fetch your whole catalog.
-
-```ts title="matcher.ts — shared setup"
-import { createMatcher, llmRerank } from "@samesake/server";
-import { products } from "./catalog.ts";
-import { geminiEmbed, geminiGenerate } from "./gemini.ts";
-
-export const matcher = createMatcher({
-  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
-  apiKey: process.env.SAMESAKE_API_KEY!,
-  embed: geminiEmbed,                       // gemini-embedding-2
-  generate: geminiGenerate,                 // gemini-3.1-flash-lite
-  rerank: llmRerank(geminiGenerate),
+const enricher = createEnricher({
+  collection: catalog,
+  generate,
+  embed,
+  store,
+  concurrency: 8,
 });
 
-await matcher.apply("market", { entities: [], collections: [products] });
+await enricher.upsert(rows);
+const enriched = await enricher.enrich({ limit: 500 });
+const groups = await enricher.resolve({ limit: 500 });
 ```
 
-## Pick your platform
+`products` is a neutral starter preset; a custom `definePreset` bundle or a domain
+preset can supply the fields, stages, surfaces, and evaluation targets. The collection
+still supplies the model and dimension declarations for its own embedding spaces.
 
-| Guide | Reach for it when… |
-|-------|-------------------|
-| [In-memory](/guides/pipeline-in-memory/) | Local dev or a single long-running process — zero extra infra |
-| [Inngest](/guides/pipeline-inngest/) | You want durable steps + cron + events with minimal ops; great on Vercel/Node |
-| [Upstash Workflow](/guides/pipeline-upstash/) | You're already on QStash or want HTTP-triggered workflows at the edge |
-| [Cloudflare Workflows](/guides/pipeline-cloudflare-workflows/) | Your app lives on Workers and you want first-party workflow durability |
-| [Vercel Workflows](/guides/pipeline-vercel-workflows/) | You're on Vercel and want `"use workflow"` / `"use step"` with Cron Jobs |
+`createEnricher` exposes `upsert`, `enrich`, `resolve`, `retryFailed`, and `evaluate`.
+`resolve` requires both a dedup configuration and a store with enriched-row loading and
+candidate generation. The scorer is pure; the candidate provider is where a backend's
+blocking strategy lives.
+
+## Keep durability outside the core
+
+The store owns the row state machine. A production store normally supports:
+
+- `upsert` and `loadDirty` for content-hash-based incremental work;
+- `writeEnriched` for ready or quarantined outputs;
+- `recordFailure`, `loadRetryable`, and `markDead` for the retry policy;
+- `loadEnriched` and `candidates` when resolution is enabled.
+
+The workflow platform owns scheduling, retries, concurrency ceilings, and dead-letter
+handling. Keep the stages separate so a transient model failure does not repeat a
+successful upstream transform.
+
+```text
+catalog event or schedule
+          │
+          ▼
+        upsert ──► loadDirty ──► enrich ──► writeEnriched
+                                      │
+                                      ├── quarantine (successful, not indexable)
+                                      └── failure → retry / dead letter
+          │
+          └──────────────► resolve (optional candidate blocking + pure scoring)
+```
+
+## Backend choices are peers
+
+| Backend | Enrichment state | Candidate blocking | Search + facets |
+|---|---|---|---|
+| `@samesake/postgres` | SQL-backed `EnrichStore` | SQL candidate provider | SQL retrieval with exact facets |
+| Cloudflare D1 + a vector index | D1-backed `EnrichStore` | Native index or consumer query | Consumer `Retriever` and declared facet behavior |
+| Turbopuffer or another hosted index | Consumer-owned store adapter | Backend-native shortlist | Consumer `Retriever` and facet behavior |
+
+Postgres is the reference backend, not a requirement of the pure packages. See
+[enrichment without the reference backend](/guides/enrichment-without-postgres/) for a
+complete port-oriented shape and [search without the reference backend](/guides/search-without-postgres/)
+for the retrieval side.
 
 <Aside type="tip">
-Pulling from Shopify, WooCommerce, or Medusa? The [integration guides](/integrations/shopify/) give you the connector that turns a store feed into the `rows` you pass to `pushDocuments`. The durable wrapper is the same no matter where the rows come from.
+Model, provider, dimension, and domain choices belong in the consumer configuration.
+Gemini, 768, and fashion may be useful examples in a conformance scenario, but none is
+the default path of the enrichment engine.
 </Aside>
-
-## Did the enrichment actually work?
-
-Enrichment quality is the make-or-break for search — so measure it, don't assume it. After a run,
-`matcher.evaluateEnrichment(project, collection, { gold, attributes: fashion.evalAttributes() })`
-scores the pipeline's extracted attributes against a human-labeled gold set with **per-attribute
-precision / recall / F1** (and flags where the model hallucinated or missed a value). Gate your
-enrich-prompt, taxonomy, or confidence-floor changes on it. See
-[Measure enrichment accuracy](/guides/eval-enrichment/).
-
-## Where to go next
-
-- **Status machine for every row** — [Pipeline lifecycle](/guides/pipeline-lifecycle/)
-- **Measure enrichment accuracy** — [per-attribute P/R/F1 vs a gold set](/guides/eval-enrichment/)
-- **Marketplace loop in plain language** — [Search for a fashion marketplace](/guides/marketplace-search/)
-- **Single-store version** — [From a store idea to search](/guides/idea-to-search/)

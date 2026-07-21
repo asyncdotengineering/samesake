@@ -1,0 +1,66 @@
+---
+title: Enrichment without the reference backend
+description: Run the pure enrichment and resolution cores over caller-owned durability, stores, and workflow retries.
+---
+
+The enrichment core does not need a database. Call `enrich` directly when your
+workflow already knows which rows are dirty, or use `createEnricher` with an
+`EnrichStore` implemented over the store you already operate.
+
+## Pure transform
+
+```ts title="workflow-step.ts"
+import { enrich } from '@samesake/enrich';
+
+const result = await enrich(
+  dirtyRows,
+  { pipeline: collection.enrich!, indexing: collection.indexing! },
+  { generate: models.generate, embed: models.embed },
+);
+
+for (const row of result) {
+  if (row.ok) await catalog.writeEnriched(row.id, row.enriched, row.surfaces);
+  else await workflow.retry(row.id, row.error);
+}
+```
+
+The caller decides how to load dirty rows, persist outputs, schedule retries, and
+dead-letter repeated failures. The pure result makes quarantine distinct from a
+transform failure, so a low-confidence row can be retained without being indexed.
+
+## Capability factory over a custom store
+
+```ts title="enricher.ts"
+import { createEnricher, type EnrichStore } from '@samesake/enrich';
+
+const store: EnrichStore = createD1EnrichStore(env.DB, {
+  collection: 'catalog',
+});
+
+const enricher = createEnricher({
+  collection,
+  generate: models.generate,
+  embed: models.embed,
+  store,
+});
+
+await enricher.upsert(rows);
+await enricher.enrich({ limit: 250 });
+```
+
+For `resolve`, the store also supplies `loadEnriched` and a `candidates` provider.
+That provider can ask a native vector/lexical index for a shortlist; the package's
+candidate scorer then applies the same thresholds and grouping rules without knowing
+how the shortlist was produced.
+
+## Peer implementations
+
+| Backend | Durable state | Blocking and resolution |
+|---|---|---|
+| `@samesake/postgres` | `PostgresEnrichStore` | SQL candidate provider |
+| D1 + a vector index | Consumer `EnrichStore` | Native or consumer-owned candidate provider |
+| Turbopuffer or another index | Consumer `EnrichStore` | Backend-native shortlist plus pure scorer |
+
+The workflow platform remains responsible for retries and scheduling in every row. A
+Postgres bundle is convenient, but it is not a prerequisite for using the enrichment
+or resolution brains.

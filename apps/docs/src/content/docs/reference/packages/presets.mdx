@@ -1,0 +1,41 @@
+---
+title: '@samesake/presets'
+description: Overridable domain bundles for fields, enrichment, indexing, evaluation, and query understanding.
+---
+
+`@samesake/presets` is the optional content layer. A preset bundles generic core
+configuration for one domain; it does not add a model client, storage adapter, or
+mandatory dimension.
+
+## Public surface
+
+- `definePreset` validates a bespoke `EnrichPreset`.
+- `products` is the domain-neutral commerce starter with title, description, price,
+  brand, category, image, extraction, an indexing gate, and evaluation targets.
+- `fashion` is one domain example. It is isolated here and can be replaced by a
+  consumer-authored preset.
+- Named helpers expose each preset's fields, stages, surfaces, schemas, NLQ defaults,
+  and evaluation targets when composition needs more control.
+
+`EnrichPreset` supplies `fields`, `enrich`, `indexing`, optional `dedup`,
+`evalAttributes`, and optional `nlq`. Every option-taking member must honor consumer
+overrides. A preset refers to embedding keys; the collection supplies the model and
+dimension for its own space.
+
+```ts
+import { collection } from '@samesake/core';
+import { products } from '@samesake/presets';
+
+const catalog = collection('catalog', {
+  fields: products.fields(),
+  enrich: products.enrich({ titleKey: 'name' }),
+  indexing: products.indexing({ titleKey: 'name' }),
+  embeddings: {
+    doc: { model: 'consumer-model', dim: 1024 },
+  },
+  search: { channels: [] },
+});
+```
+
+Presets are examples of configuration, not defaults of the engine. Use `definePreset`
+for a vertical whose attributes and gates are materially different.

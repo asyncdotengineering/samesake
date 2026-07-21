@@ -1,0 +1,55 @@
+---
+title: '@samesake/core'
+description: The store-free configuration vocabulary, type-safe factories, and model contracts used by the samesake packages.
+---
+
+`@samesake/core` (the workspace directory is `packages/sdk`) is the authoring and
+type vocabulary. It owns no database, model client, queue, or retrieval implementation.
+
+## Public surface
+
+- `collection(name, def)` declares fields, indexing surfaces, enrichment, embeddings,
+  search channels, ranking policy, and optional resolution configuration.
+- `entity(name, def)` declares fields, scopes, embeddings, phonetic fields, parsing,
+  and typed resolution channels.
+- `fields` and `f` create entity and collection fields; `Scorers` and `Channels`
+  create type-checked resolution and retrieval channels.
+- `stage` and `pipeline` compose ordered enrichment stages; `sources` describes
+  catalog connectors without implementing their I/O.
+- `normalizeSchema`, `imageVersionToken`, `getByPath`, identity validation, and the
+  `ClientError` surface are shared pure helpers.
+
+The package also exports the shared closure contracts: `EmbedFn`, `GenerateFn`,
+`RerankFn`, `GroundImageFn`, and their request/result types. `model` is an opaque
+identifier passed to the consumer's closure; `dim` is the declared size of that
+consumer-owned embedding space.
+
+## Type-safety boundary
+
+The `collection` and `entity` factories preserve literal keys so a cosine channel
+cannot silently reference an undeclared embedding, a variant group cannot reference
+an absent field, and an evidence embedding cannot omit its extractor. Runtime checks
+cover identifiers and structural invariants; the model and backend remain injected.
+
+```ts
+import { Channels, collection, f } from '@samesake/core';
+
+const catalog = collection('catalog', {
+  fields: {
+    title: f.text({ searchable: true }),
+    category: f.text({ filterable: true, facet: true }),
+  },
+  embeddings: {
+    document: { model: 'consumer-model', dim: 1024 },
+  },
+  search: {
+    channels: [
+      Channels.fts({ fields: ['title'], weight: 1 }),
+      Channels.cosine({ embedding: 'document', weight: 1 }),
+    ],
+  },
+});
+```
+
+The config is data. `@samesake/core` does not decide where it is stored or which
+provider implements the declared model.

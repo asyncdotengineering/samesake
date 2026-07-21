@@ -1,16 +1,16 @@
 ---
 title: samesake
-description: A TypeScript-first search engine compiler for visual commerce. Declare your catalog and retrieval in TypeScript; run a Postgres-backed hybrid search layer inside your app.
+description: A TypeScript-first commerce intelligence engine. Compose enrich, resolve, and search over ports supplied by your application.
 template: splash
 hero:
-  tagline: Search built for shoppers who don't know the product name — screenshots, vague intent, budgets, occasion, and availability. You declare the catalog and retrieval in TypeScript; samesake compiles it into a Postgres-backed search layer you run inside your app.
+  tagline: Enrich messy catalog data, resolve records, and run grounded search over the storage and models your application already owns.
   actions:
     - text: Build a search experience
       link: /start/build-a-search-experience/
       icon: right-arrow
       variant: primary
-    - text: What is samesake
-      link: /start/what-is-samesake/
+    - text: Canonical API
+      link: /reference/canonical-api/
       icon: right-arrow
       variant: minimal
     - text: GitHub
@@ -24,22 +24,21 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 ## What it does
 
 <CardGrid>
-  <Card title="Hybrid retrieval, typed">
-    Keyword full-text, vector similarity, and structured filters combine through
-    reciprocal-rank fusion. You declare the channels in TypeScript; the schema and SQL
-    are generated per project at runtime.
+  <Card title="Three composable primitives">
+    `enrich`, `resolve`, and `search` are independent capabilities. Use the pure cores,
+    wire a capability factory, or compose a backend bundle.
   </Card>
-  <Card title="Hard filters stay hard">
-    "Under 20,000" and "available now" compile to typed constraint predicates pushed
-    into SQL — not soft semantic vibes. Every search carries an auditable constraint trace.
+  <Card title="Ports, not infrastructure">
+    Retrieval, enrichment state, candidate generation, vocabulary, and models are
+    injected contracts. The engine does not require a hosted service or a specific store.
   </Card>
-  <Card title="Image and intent together">
-    Image similarity, text intent, price, freshness, and availability are separate,
-    query-time-weighted signals. Tune visual vs intent vs price without reindexing.
+  <Card title="Grounded search and facets">
+    Search and facets are one retrieval capability: a backend can provide exact counts,
+    while a lightweight backend can expose the result shape it supports.
   </Card>
-  <Card title="Two containers in production">
-    Postgres (pgvector + pg_trgm) and your app process. Bring your own embedding and
-    generation models. No Redis, no Elasticsearch, no hosted vector DB.
+  <Card title="Bring your choices">
+    Models, dimensions, domains, runtimes, and persistence are consumer configuration.
+    Presets and reference adapters are optional starting points.
   </Card>
 </CardGrid>
 
@@ -47,19 +46,18 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 
 <CardGrid>
   <Card title="New to this?">
-    [Build a search experience](/start/build-a-search-experience/) walks from an idea to a
-    working search, in plain language.
+    [Build a search experience](/start/build-a-search-experience/) walks from an idea to
+    a working search, in plain language.
   </Card>
-  <Card title="Already know what you want?">
-    [Quickstart](/start/quickstart/) — collection to push to index to search in about
-    fifteen minutes, no LLM required.
+  <Card title="Know the architecture?">
+    [Canonical API](/reference/canonical-api/) maps the six package contracts and the
+    composition tiers.
   </Card>
   <Card title="Have a store already?">
-    Wire it up: [MedusaJS](/integrations/medusajs/), [headless Shopify](/integrations/shopify/),
-    or [headless WooCommerce](/integrations/woocommerce/).
+    Wire your own ports, or start with the [reference backend](/reference/packages/postgres/).
   </Card>
-  <Card title="Want proof?">
-    [Eval from search snapshots](/guides/eval-from-snapshots/) builds a corpus from real
-    catalogs and scores keyword vs hybrid.
+  <Card title="Need a portable workflow?">
+    Run [search without the reference backend](/guides/search-without-postgres/) or
+    [enrichment without the reference backend](/guides/enrichment-without-postgres/).
   </Card>
 </CardGrid>
