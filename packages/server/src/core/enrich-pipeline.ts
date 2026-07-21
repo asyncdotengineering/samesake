@@ -1,9 +1,12 @@
-import { createHash } from "node:crypto";
-import type { CollectionDef, DerivedDocContext, DerivedDocDef, IndexingDef, PipelineDef, StageContext } from "@samesake/core";
+import type { CollectionDef, IndexingDef, PipelineDef } from "@samesake/core";
+import {
+  enrich,
+  type EnrichResult,
+  type IndexingPersistResult,
+  type RawRow,
+} from "@samesake/enrich";
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
-import { imageVersionToken } from "../connectors/normalize.ts";
-import { makeStageCacheService } from "../db/stage-cache.ts";
 import { fetchRemoteImageSafe } from "./fetch-image.ts";
 import { callWithRetry } from "./policy.ts";
 import { collectionTableName } from "./db-utils.ts";
@@ -12,7 +15,7 @@ import {
   recordPipelineFailure,
   type ErrorRateOpts,
 } from "./pipeline-failure.ts";
-import { normalizeSchema } from "./schema-input.ts";
+import { pgStageCache } from "../db/stage-cache.ts";
 
 function isPipeline(def: CollectionDef["enrich"]): def is PipelineDef {
   return !!def && typeof def === "object" && Array.isArray((def as PipelineDef).stages);
@@ -22,124 +25,89 @@ function hasIndexing(def: CollectionDef): def is CollectionDef & { indexing: Ind
   return !!def.indexing && typeof def.indexing.gate === "function";
 }
 
-import { deriveSurfaces as persistIndexingSurfaces, type IndexingPersistResult } from "@samesake/enrich";
-export { persistIndexingSurfaces, type IndexingPersistResult };
+export { deriveSurfaces as persistIndexingSurfaces, type IndexingPersistResult } from "@samesake/enrich";
 
-function imageValidatorsForUrls(
-  imageUrls: string[],
-  data: Record<string, unknown>,
-  rowImageEtag?: string | null
-): string[] {
-  const rowToken =
-    rowImageEtag ??
-    imageVersionToken({
-      image_etag: data.image_etag,
-      image_updated_at: data.image_updated_at,
-      image_version: data.image_version,
-    });
-  return imageUrls.map(() => rowToken ?? "");
+export function toRawRow(row: {
+  id: string;
+  data: unknown;
+  image_etag?: string | null;
+}): RawRow {
+  const data = typeof row.data === "string"
+    ? JSON.parse(row.data) as Record<string, unknown>
+    : row.data as Record<string, unknown>;
+  return {
+    id: String(row.id),
+    data,
+    imageEtag: row.image_etag ?? null,
+  };
 }
 
-function stageCacheKey(
-  stageName: string,
-  model: string,
-  prompt: string,
-  imageUrls: string[],
-  imageValidators: string[],
-  schema: Record<string, unknown>
-): string {
-  const urlMaterial = imageUrls
-    .map((url, i) => `${url}@${imageValidators[i] ?? ""}`)
-    .join(",");
-  const material = `${prompt}|${urlMaterial}|${JSON.stringify(schema)}`;
-  const hash = createHash("sha1").update(material).digest("hex");
-  return `stage:${stageName}:${model}:${hash}`;
+export function toIndexingPersistResult(result: EnrichResult): IndexingPersistResult {
+  return {
+    doc: result.surfaces.doc,
+    denseByEmbedding: result.surfaces.denseByEmbedding,
+    rerank_doc: result.surfaces.rerank_doc,
+    fts_src: result.surfaces.fts_src,
+    fts_src_a: result.surfaces.fts_src_a,
+    pipeline_status: result.status,
+    gate_reason: result.gateReason,
+  };
+}
+
+function enrichDeps(ctx: MatcherCtx, fewShot: string, concurrency?: number) {
+  return {
+    generate: (request: Parameters<MatcherCtx["generate"]>[0]) =>
+      callWithRetry(() => ctx.generate(request), { ...ctx.policy.llm, timeoutMs: undefined }),
+    stageCache: pgStageCache(ctx),
+    fetchImage: async (url: string) => {
+      const fetched = await fetchRemoteImageSafe(url);
+      return fetched.ok
+        ? { ok: true as const, mimeType: fetched.contentType, bytes: fetched.bytes }
+        : { ok: false as const };
+    },
+    fewShot,
+    concurrency,
+    onError: (row: RawRow, error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      ctx.observability.inc("enrich_failures_total");
+      ctx.observability.log("error", "enrich", "enrichment core failed", {
+        docId: row.id,
+        error: message.slice(0, 200),
+      });
+    },
+  };
+}
+
+async function persistResult(
+  ctx: MatcherCtx,
+  table: string,
+  result: EnrichResult
+): Promise<void> {
+  if (!result.ok) {
+    await recordPipelineFailure(ctx, table, result.id, result.error ?? "enrich failed");
+    return;
+  }
+  await ctx.storage.persistEnrichment(
+    table,
+    result.id,
+    JSON.stringify(result.enriched),
+    toIndexingPersistResult(result)
+  );
+  ctx.observability.inc("enrich_docs_total");
 }
 
 export function makeEnrichPipelineService(
   ctx: MatcherCtx,
   projectsService: ProjectsService
 ) {
-  const stageCache = makeStageCacheService(ctx);
+  const stageCache = pgStageCache(ctx);
 
   function requireGenerate(def: CollectionDef): void {
     if (!isPipeline(def.enrich)) return;
     if (!ctx.generateConfigured) {
       throw new Error(
-        "createMatcher's `generate` is not configured, but a collection declared an `enrich:` pipeline.\n\n" +
-          "Wire it up by providing a function that calls your LLM with schema-constrained JSON output:\n\n" +
-          "  createMatcher({\n" +
-          "    /* ...db, apiKey, embed... */\n" +
-          "    generate: async ({ model, prompt, images, schema }) => {\n" +
-          "      // call Gemini / OpenAI / etc with responseSchema\n" +
-          "      return parsedJson;\n" +
-          "    },\n" +
-          "  });\n\n" +
-          "Or remove the `enrich:` block from collections that do not need enrichment."
+        "createMatcher's `generate` is not configured, but a collection declared an `enrich:` pipeline."
       );
-    }
-  }
-
-  async function runStage(
-    stage: PipelineDef["stages"][number],
-    stageCtx: StageContext,
-    docId: string,
-    rowImageEtag: string | null | undefined,
-    fewShot = ""
-  ): Promise<Record<string, unknown> | null> {
-    if (stage.condition && !stage.condition(stageCtx)) return null;
-
-    const prompt = stage.prompt(stageCtx) + fewShot;
-    const imageUrls = stage.images?.(stageCtx) ?? [];
-    const schema = normalizeSchema(stage.schema(stageCtx));
-    const model = stage.model ?? "<default>";
-    const imageValidators = imageValidatorsForUrls(imageUrls, stageCtx.data, rowImageEtag);
-    const key = stageCacheKey(stage.name, model, prompt, imageUrls, imageValidators, schema);
-
-    const cached = await stageCache.getStageCache(key);
-    if (cached && typeof cached === "object") {
-      return cached as Record<string, unknown>;
-    }
-
-    const images: { mimeType: string; data: string }[] = [];
-    for (const url of imageUrls) {
-      const fetched = await fetchRemoteImageSafe(url);
-      if (fetched.ok) {
-        images.push({
-          mimeType: fetched.contentType,
-          data: Buffer.from(fetched.bytes).toString("base64"),
-        });
-      } else {
-        ctx.observability.log("warn", "enrich", "image fetch skipped", {
-          reason: fetched.reason,
-          url: url.slice(0, 120),
-        });
-      }
-    }
-
-    try {
-      const result = await callWithRetry(
-        () =>
-          ctx.generate({
-            model: stage.model,
-            prompt,
-            images: images.length ? images : undefined,
-            schema,
-          }),
-        { ...ctx.policy.llm, timeoutMs: undefined }
-      );
-      const payload =
-        result && typeof result === "object" ? (result as Record<string, unknown>) : { value: result };
-      await stageCache.setStageCache(key, stage.name, payload, model);
-      return payload;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      ctx.observability.inc("enrich_failures_total");
-      ctx.observability.log("error", "enrich", `stage "${stage.name}" failed`, {
-        docId,
-        error: msg.slice(0, 200),
-      });
-      return null;
     }
   }
 
@@ -155,54 +123,22 @@ export function makeEnrichPipelineService(
     fewShot = ""
   ): Promise<boolean> {
     if (!isPipeline(def.enrich)) return false;
+    if (!hasIndexing(def)) throw new Error("enrich requires indexing surfaces and gate");
     requireGenerate(def);
-
-    const data = row.data;
-    const enriched: Record<string, unknown> = {};
-    const stageCtx: StageContext = { data, enriched };
-
-    for (const stage of def.enrich.stages) {
-      const result = await runStage(stage, stageCtx, row.id, row.image_etag, fewShot);
-      if (result) {
-        Object.assign(enriched, result);
-        enriched._stages = {
-          ...(enriched._stages as Record<string, unknown> | undefined),
-          [stage.name]: result,
-        };
-        stageCtx.enriched = enriched;
-      }
-    }
-
+    const [result] = await enrich(
+      [toRawRow(row)],
+      { pipeline: def.enrich, indexing: def.indexing },
+      { ...enrichDeps(ctx, fewShot, 1), stageCache }
+    );
+    if (!result) return false;
     const table = collectionTableName(schema, collectionName);
     try {
-      if (hasIndexing(def)) {
-        for (const [key, surface] of Object.entries(def.indexing.surfaces) as Array<[string, DerivedDocDef]>) {
-          if (typeof surface.build !== "function") {
-            throw new Error(`indexing surface "${key}" has no callable build`);
-          }
-        }
-        if (typeof def.indexing.gate !== "function") {
-          throw new Error("indexing gate is not callable");
-        }
-
-        const derivedCtx: DerivedDocContext = { data, enriched };
-        const surfaces = persistIndexingSurfaces(def.indexing, derivedCtx);
-
-        await ctx.storage.persistEnrichment(
-          table,
-          row.id,
-          JSON.stringify(enriched),
-          surfaces
-        );
-      } else {
-        await ctx.storage.persistEnrichmentMinimal(table, row.id, JSON.stringify(enriched));
-      }
-    } catch (e) {
-      await recordFailure(table, row.id, e);
+      await persistResult(ctx, table, result);
+      return result.ok;
+    } catch (error) {
+      await recordFailure(table, result.id, error);
       return false;
     }
-    ctx.observability.inc("enrich_docs_total");
-    return true;
   }
 
   async function enrichCollection(
@@ -225,46 +161,11 @@ export function makeEnrichPipelineService(
     if (!isPipeline(def.enrich)) {
       throw new Error(`collection "${collectionName}" has no enrich pipeline configured`);
     }
-    for (const stage of def.enrich.stages) {
-      if (typeof stage.prompt !== "function" || typeof stage.schema !== "function") {
-        throw new Error(
-          `collection "${collectionName}" stage "${stage.name}" has no callable prompt/schema. ` +
-            `Pipeline functions cannot be loaded from the database — pass this collection's config ` +
-            `to createMatcher (or re-apply the project in-process) before calling enrich.`
-        );
-      }
-    }
-    if (hasIndexing(def)) {
-      for (const [key, surface] of Object.entries(def.indexing.surfaces) as Array<[string, DerivedDocDef]>) {
-        if (typeof surface.build !== "function") {
-          throw new Error(
-            `collection "${collectionName}" indexing surface "${key}" has no callable build. ` +
-              `Indexing functions cannot be loaded from the database — pass this collection's config ` +
-              `to createMatcher (or re-apply the project in-process) before calling enrich.`
-          );
-        }
-      }
-      if (typeof def.indexing.gate !== "function") {
-        throw new Error(
-          `collection "${collectionName}" has no callable indexing gate. ` +
-            `Indexing functions cannot be loaded from the database — pass this collection's config ` +
-            `to createMatcher (or re-apply the project in-process) before calling enrich.`
-        );
-      }
-    } else {
-      throw new Error(
-        `collection "${collectionName}" has no callable indexing surfaces/gate. ` +
-          `Indexing functions cannot be loaded from the database — pass this collection's config ` +
-          `to createMatcher (or re-apply the project in-process) before calling enrich.`
-      );
+    if (!hasIndexing(def)) {
+      throw new Error(`collection "${collectionName}" has no callable indexing surfaces/gate`);
     }
     requireGenerate(def);
 
-    const table = collectionTableName(project.schema_name, collectionName);
-    const limit = opts?.limit ?? 100_000;
-    const concurrency = opts?.concurrency ?? 8;
-
-    // Few-shot guidance from human corrections (Q6 review loop) — fetched once per run.
     let fewShot = "";
     try {
       const { makeReviewService } = await import("./review.ts");
@@ -273,57 +174,40 @@ export function makeEnrichPipelineService(
         fewShot = "\n\nCorrections from human review of similar products in this catalog (follow these patterns):\n" + examples.join("\n");
       }
     } catch {
-      // corrections table may not exist on older deployments; few-shot is best-effort
+      fewShot = "";
     }
 
-    const pending = await ctx.storage.pendingForEnrich(table, limit);
-
-    let enriched = 0;
-    let skipped = 0;
-    let failed = 0;
-    let processed = 0;
-    let idx = 0;
+    const table = collectionTableName(project.schema_name, collectionName);
+    const pending = await ctx.storage.pendingForEnrich(table, opts?.limit ?? 100_000);
+    const results = await enrich(
+      pending.map(toRawRow),
+      { pipeline: def.enrich, indexing: def.indexing },
+      { ...enrichDeps(ctx, fewShot, opts?.concurrency ?? 8), stageCache }
+    );
     const errorRateOpts: ErrorRateOpts = {
       maxErrorRate: opts?.maxErrorRate,
       minSamples: opts?.minSamples,
     };
-
-    await Promise.all(
-      Array.from({ length: concurrency }, async () => {
-        while (idx < pending.length) {
-          const row = pending[idx++]!;
-          const data =
-            typeof row.data === "string"
-              ? (JSON.parse(row.data as string) as Record<string, unknown>)
-              : (row.data as Record<string, unknown>);
-          try {
-            const ok = await enrichOne(
-              def,
-              {
-                id: String(row.id),
-                data,
-                image_etag: (row.image_etag as string | null | undefined) ?? null,
-              },
-              project.schema_name,
-              collectionName,
-              fewShot
-            );
-            processed++;
-            if (ok) enriched++;
-            else {
-              failed++;
-              assertErrorRateWithinLimit(processed, failed, errorRateOpts);
-            }
-          } catch {
-            processed++;
-            failed++;
-            assertErrorRateWithinLimit(processed, failed, errorRateOpts);
-          }
+    let enriched = 0;
+    let failed = 0;
+    let processed = 0;
+    for (const result of results) {
+      processed++;
+      try {
+        await persistResult(ctx, table, result);
+        if (result.ok) enriched++;
+        else {
+          failed++;
+          assertErrorRateWithinLimit(processed, failed, errorRateOpts);
         }
-      })
-    );
+      } catch (error) {
+        failed++;
+        await recordFailure(table, result.id, error);
+        assertErrorRateWithinLimit(processed, failed, errorRateOpts);
+      }
+    }
 
-    return { enriched, skipped, failed };
+    return { enriched, skipped: 0, failed };
   }
 
   return { enrichCollection, enrichOne, recordFailure, requireGenerate };
