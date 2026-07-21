@@ -1,4 +1,5 @@
-import { collection, f, Channels, pipeline, stage, fashion } from "@samesake/core";
+import { collection, f, Channels, pipeline, stage } from "@samesake/core";
+import { fashion } from "@samesake/presets";
 import { createMatcher } from "@samesake/server";
 import {
   CATEGORIES,

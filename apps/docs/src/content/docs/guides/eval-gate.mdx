@@ -7,7 +7,7 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 
 Ranking and gate thresholds are **empirical**. The values shipped today are **placeholders**:
 
-- `FASHION_CONFIDENCE_FLOOR = 0.5` in `@samesake/core` (`fashion.indexing().gate`)
+- `FASHION_CONFIDENCE_FLOOR = 0.5` in `@samesake/presets` (`fashion.indexing().gate`)
 - `relevanceExponent = 1` (default in `rankingPolicy` / core ranking fusion)
 
 Do not change these without running the harness. Fabricating "calibrated" numbers defeats the purpose of the eval loop.

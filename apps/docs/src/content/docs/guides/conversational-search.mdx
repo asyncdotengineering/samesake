@@ -59,14 +59,15 @@ Hard filters always win over semantic similarity. A gorgeous 5,200 dress that's 
 The `fashion` template (`fashion.nlq`) wires the parser, the schema, and the filterable fields for you:
 
 ```ts
-import { collection, Channels, fashion } from "@samesake/core";
+import { collection, Channels } from "@samesake/core";
+import { fashion } from "@samesake/presets";
 
 const products = collection("products", {
   fields: fashion.fields(),
   indexing: fashion.indexing(),
   embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
   spaces: fashion.spaces(),
-  enrich: fashion.enrichPipeline(),
+  enrich: fashion.enrich(),
   search: {
     channels: [Channels.fts({ fields: ["title"] }), Channels.cosine({ embedding: "doc" }), Channels.spaces({})],
     combiner: "rrf",

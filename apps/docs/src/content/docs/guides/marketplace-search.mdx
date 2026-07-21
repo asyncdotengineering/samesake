@@ -25,12 +25,13 @@ Notice these are the same two jobs, pointed in opposite directions: **understand
 One file. The fashion preset fills in the parts that take real expertise — which attributes matter, how to read a product *and its photo* into structured fields, and a quality gate.
 
 ```ts title="catalog.ts"
-import { collection, Channels, fashion } from "@samesake/core";
+import { collection, Channels } from "@samesake/core";
+import { fashion } from "@samesake/presets";
 
 export const products = collection("products", {
   fields:     fashion.fields(),                 // brand, price, category, gender, colors, occasions… + filterable flags
   spaces:     fashion.spaces({ visual: true }), // photo + price + category + freshness signals
-  enrich:     fashion.enrichPipeline(),         // reads each messy listing (+ image) into consistent attributes
+  enrich:     fashion.enrich(),         // reads each messy listing (+ image) into consistent attributes
   indexing:   fashion.indexing(),               // builds the searchable text + the quality gate
   embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
   search: {
@@ -118,7 +119,7 @@ Now the shopper side. Two things are happening when someone searches *"breezy su
 **The hard constraints become filters.** "Under 5000" and "nothing pink" are walls, not vibes. The fashion preset gives you a query parser (`fashion.nlq`) that turns the sentence into structured constraints, which you pass as real filters:
 
 ```ts title="search.ts"
-import { fashion } from "@samesake/core";
+import { fashion, fashionSearchDefaults } from "@samesake/presets";
 import { matcher } from "./matcher.ts";
 import { geminiGenerate } from "./gemini.ts";
 
@@ -148,7 +149,7 @@ And because `llmRerank` is wired, the top handful get a final "is this *actually
 **Zero-result recovery is opt-in.** Pass `recoverNoResults: true` and, when a query dead-ends, `shopSearch` retries once with the filters your collection declared in `search.relaxableFilters` dropped — reported back as `fallback.relaxedFilters` so the UI can say "we loosened colour and price". A collection that declares nothing relaxes nothing. The fashion preset ships a sane list you can spread in:
 
 ```ts
-search: { ...fashion.searchDefaults(), /* channels, rankingPolicy, … */ }
+search: { ...fashionSearchDefaults(), /* channels, rankingPolicy, … */ }
 // relaxableFilters: colors, material, fit, styles, category, price —
 // gender and brand deliberately excluded: never fill the page with men's
 // items on a women's query, or another brand on a brand query.

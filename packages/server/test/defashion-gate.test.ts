@@ -1,5 +1,5 @@
 // Regression gate for the 360-audit guardrail: the generic core must stay vertical-neutral.
-// Anything fashion-specific belongs in the SDK template (@samesake/core `fashion.*`), which
+// Anything fashion-specific belongs in the @samesake/presets bundle (`fashion.*`), which
 // plugs in through declarative seams (CollectionSearchDef, enrich pipelines, indexing).
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";

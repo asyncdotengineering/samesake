@@ -43,12 +43,13 @@ You can start keyword-only with no model at all. But for "understands what peopl
 Read this like a sentence: *"products are fashion items; use the fashion defaults for fields, for the photo+price+category signals, for understanding each product, and for what gets indexed."*
 
 ```ts title="catalog.ts"
-import { collection, Channels, fashion } from "@samesake/core";
+import { collection, Channels } from "@samesake/core";
+import { fashion } from "@samesake/presets";
 
 export const products = collection("products", {
   fields:     fashion.fields(),                 // title, brand, price, colors, category, gender… sensible defaults
   spaces:     fashion.spaces({ visual: true }), // image + price + category + freshness signals (visual ON)
-  enrich:     fashion.enrichPipeline(),         // reads each product (and its photo) into structured attributes
+  enrich:     fashion.enrich(),         // reads each product (and its photo) into structured attributes
   indexing:   fashion.indexing(),               // builds the searchable text + a quality gate
   embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } }, // the "meaning" vectors
   search: {

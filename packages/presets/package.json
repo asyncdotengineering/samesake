@@ -1,0 +1,45 @@
+{
+  "name": "@samesake/presets",
+  "version": "5.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/asyncdotengineering/samesake"
+  },
+  "description": "Predefined, overridable enrichment+search presets for samesake (fashion, products) and the definePreset authoring helper. Depends only on @samesake/core; ships no model/dim/provider.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "keywords": [
+    "samesake",
+    "presets",
+    "enrichment",
+    "fashion",
+    "commerce",
+    "search"
+  ],
+  "dependencies": {
+    "@samesake/core": "workspace:^",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1"
+  }
+}

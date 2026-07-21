@@ -1,4 +1,5 @@
-import { collection, Channels, f, fashion, type CollectionDef, type CollectionFieldDef } from "@samesake/core";
+import { collection, Channels, f, type CollectionDef, type CollectionFieldDef } from "@samesake/core";
+import { fashion } from "@samesake/presets";
 import { createMatcher } from "@samesake/server";
 import { geminiEmbedder, geminiGenerator } from "@samesake/providers";
 
@@ -18,7 +19,7 @@ export const products = collection(COLLECTION, {
     doc: { model: "gemini-embedding-2", dim: 1536, taskType: "RETRIEVAL_DOCUMENT" },
   },
   spaces: fashion.spaces(),
-  enrich: fashion.enrichPipeline(),
+  enrich: fashion.enrich(),
   search: {
     channels: [
       Channels.fts({ fields: ["title"], weight: 1 }),

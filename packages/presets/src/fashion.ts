@@ -1,4 +1,4 @@
-// Fashion commerce enrichment template — best-default catalog enrichment so consumers get
+// Fashion commerce enrichment preset — best-default catalog enrichment so consumers get
 // genuine attribute extraction (category, colors, occasion, style, material, fit…) + a
 // search-ready embed doc + fashion-aware NLQ without rewriting ~200 lines per project.
 //
@@ -8,9 +8,18 @@
 //
 // Mechanism (the pipeline runner, modes, RRF, etc.) already lives in core/server; this module
 // is the declarative *content*: taxonomy, enums, two-stage schemas, prompts, embed-doc composer,
-// and NLQ defaults.
+// and NLQ defaults. Relocated verbatim from @samesake/core into @samesake/presets — behavior
+// unchanged — and wrapped behind the EnrichPreset interface.
 import { z } from "zod";
-import type { CollectionFieldDef, CollectionSearchDef, DerivedDocContext, IndexingDef, PipelineDef, StageDef } from "../types.ts";
+import type {
+  CollectionFieldDef,
+  CollectionSearchDef,
+  DerivedDocContext,
+  IndexingDef,
+  PipelineDef,
+  StageDef,
+} from "@samesake/core";
+import type { AttrSpec, EnrichPreset } from "./types.ts";
 
 // ── Taxonomy + controlled vocabulary ────────────────────────────────────
 export const fashionTaxonomy = [
@@ -415,22 +424,13 @@ export function fashionSearchDefaults(): Pick<CollectionSearchDef, "relaxableFil
 }
 
 // ── Enrichment-accuracy eval defaults ───────────────────────────────────
-/** One scorable attribute for enrichment-accuracy eval. Structurally matches @samesake/server's
- * `AttrSpec` (kept dependency-free here so the SDK does not import the server). */
-export interface EnrichEvalAttr {
-  name: string;
-  kind: "single" | "multi";
-  /** Values that mean "no value" beyond ""/null/missing. Defaults to ["unknown"] in the scorer. */
-  empty?: string[];
-}
-
 /**
  * Default attribute specs for scoring fashion enrichment accuracy via `matcher.evaluateEnrichment`.
  * The controlled, gate/filter-critical attributes the classify+extract pipeline is expected to get
  * right. `is_apparel_product` has no "unknown" state (true/false are both real), so its empty-set is
- * []. Baked into the template (like fashion.fields/aspects/nlq) so consumers score without hand-rolling.
+ * []. Baked into the preset (like fashion.fields/aspects/nlq) so consumers score without hand-rolling.
  */
-export function fashionEvalAttributes(): EnrichEvalAttr[] {
+export function fashionEvalAttributes(): AttrSpec[] {
   return [
     { name: "category", kind: "single" },
     { name: "gender", kind: "single" },
@@ -440,17 +440,12 @@ export function fashionEvalAttributes(): EnrichEvalAttr[] {
   ];
 }
 
-/** Grouped namespace — `import { fashion } from "@samesake/core"`. */
-export const fashion = {
-  taxonomy: fashionTaxonomy,
-  enums: fashionEnums,
+/** The fashion preset — `import { fashion } from "@samesake/presets"`. */
+export const fashion: EnrichPreset = {
+  name: "fashion",
   fields: fashionSearchFields,
-  enrichPipeline: fashionEnrichPipeline,
+  enrich: fashionEnrichPipeline,
   indexing: fashionIndexing,
-  classifySchema: fashionClassifySchema,
-  extractSchema: fashionExtractSchema,
-  extractInstructions: FASHION_EXTRACT_INSTRUCTIONS,
-  nlq: { instructions: FASHION_NLQ_INSTRUCTIONS, schema: fashionNlqSchema },
-  searchDefaults: fashionSearchDefaults,
   evalAttributes: fashionEvalAttributes,
+  nlq: { instructions: FASHION_NLQ_INSTRUCTIONS, schema: fashionNlqSchema },
 };

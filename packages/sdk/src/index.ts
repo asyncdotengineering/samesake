@@ -75,28 +75,6 @@ export type {
 } from "./ports.ts";
 // Retrieval plan / fused-result types consumed by Retriever.
 export type { RetrievalPlan, RankedRow } from "./plan.ts";
-// Best-default enrichment templates (fashion commerce).
-export {
-  fashion,
-  fashionTaxonomy,
-  fashionEnums,
-  fashionEnrichPipeline,
-  fashionSearchFields,
-  fashionSearchDefaults,
-  composeFashionEmbedDoc,
-  composeFashionRerankDoc,
-  fashionIndexing,
-  FASHION_CONFIDENCE_FLOOR,
-  fashionClassifySchema,
-  fashionExtractSchema,
-  fashionCategoryAttrBlock,
-  fashionNlqSchema,
-  FASHION_EXTRACT_INSTRUCTIONS,
-  FASHION_NLQ_INSTRUCTIONS,
-  fashionEvalAttributes,
-  type FashionEnrichOptions,
-  type EnrichEvalAttr,
-} from "./templates/fashion.ts";
 export { IdentError, assertIdent, assertNoIdentCollisions } from "./ident.ts";
 
 const DEF_KIND = Symbol.for("@samesake/core.defKind");

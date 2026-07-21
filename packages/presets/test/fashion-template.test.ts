@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { collection, Channels } from "../../sdk/src/index.ts";
 import {
   fashion,
   fashionTaxonomy,
@@ -9,9 +10,7 @@ import {
   fashionSearchFields,
   composeFashionEmbedDoc,
   fashionNlqSchema,
-  collection,
-  Channels,
-} from "../../sdk/src/index.ts";
+} from "../src/index.ts";
 
 describe("fashion enrichment template", () => {
   test("taxonomy + enums cover the basics", () => {
@@ -220,7 +219,7 @@ describe("fashion enrichment template", () => {
         channels: [Channels.cosine({ embedding: "doc", weight: 1 })],
         combiner: "rrf",
         variantGroup: "brand",
-        nlq: { instructions: fashion.nlq.instructions, schema: fashion.nlq.schema() },
+        nlq: { instructions: fashion.nlq!.instructions, schema: fashion.nlq!.schema!() },
       },
     });
     expect(c.name).toBe("products");

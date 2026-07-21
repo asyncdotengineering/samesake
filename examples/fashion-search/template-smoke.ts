@@ -1,5 +1,5 @@
 /**
- * Live smoke for the core fashion enrichment TEMPLATE builders — proves fashion.enrichPipeline()
+ * Live smoke for the @samesake/presets fashion enrichment builders — proves fashion.enrich()
  * + fashion.fields() + composeFashionEmbedDoc + fashion.nlq actually enrich real products and
  * power attribute-aware search, with zero hand-written taxonomy/schemas.
  *
@@ -10,9 +10,8 @@ import {
   fashion,
   fashionSearchFields,
   fashionEnrichPipeline,
-  collection,
-  Channels,
-} from "@samesake/core";
+} from "@samesake/presets";
+import { collection, Channels } from "@samesake/core";
 import { createMatcher, createDbFromUrl } from "@samesake/server";
 import { geminiEmbed, geminiGenerate } from "./gemini.ts";
 

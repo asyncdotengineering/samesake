@@ -22,12 +22,13 @@ On the collection, fields play three different jobs:
 The fashion preset declares all three sensibly out of the box:
 
 ```ts title="catalog.ts"
-import { collection, Channels, fashion } from "@samesake/core";
+import { collection, Channels } from "@samesake/core";
+import { fashion } from "@samesake/presets";
 
 export const products = collection("products", {
   fields:     fashion.fields(),       // brand, category, colors, price… with filterable + facet flags
   spaces:     fashion.spaces({ visual: true }),
-  enrich:     fashion.enrichPipeline(),
+  enrich:     fashion.enrich(),
   indexing:   fashion.indexing(),
   embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
   search: {
@@ -202,7 +203,7 @@ For production quality on fashion, keep `llmRerank(geminiGenerate)` wired global
 | Piece | Default |
 | --- | --- |
 | Field shapes + facet flags | `fashion.fields()` |
-| Enrich + gate | `fashion.enrichPipeline()` + `fashion.indexing()` |
+| Enrich + gate | `fashion.enrich()` + `fashion.indexing()` |
 | Embeddings | `gemini-embedding-2`, dim 1536 |
 | Generate / judge / rerank | `gemini-3.1-flash-lite` via `llmRerank(geminiGenerate)` |
 | Visual signal | `fashion.spaces({ visual: true })` |
