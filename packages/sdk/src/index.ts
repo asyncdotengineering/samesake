@@ -66,6 +66,7 @@ export type {
 // VocabProvider + RetrievalPlan/RankedRow in @samesake/query.
 export type { Scope } from "./ports.ts";
 export { IdentError, assertIdent, assertNoIdentCollisions, sanitiseIdent } from "./ident.ts";
+export { ClientError } from "./errors.ts";
 // Pure schema / image-token / path helpers shared by @samesake/enrich and @samesake/server.
 export { normalizeSchema } from "./schema-input.ts";
 export { imageVersionToken } from "./image-token.ts";
