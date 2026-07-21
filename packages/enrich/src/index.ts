@@ -20,3 +20,5 @@ export { contentHash, selectDirty } from "./dirty.ts";
 export { scoreCandidate, scoreBest } from "./dedup-score.ts";
 export { clusterBatch } from "./cluster.ts";
 export type { EnrichStore, EnrichedRow } from "./store.ts";
+export { createEnricher, type Enricher } from "./factory.ts";
+export { memoryStore, trigramSimilarity } from "./memory-store.ts";
