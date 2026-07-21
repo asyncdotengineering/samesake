@@ -1,7 +1,7 @@
 // Tier-1 ergonomic factory — wires the shipped pure cores (enrich, clusterBatch,
 // scoreEnrichment, contentHash via the store) to an EnrichStore port. The
 // factory owns NO retry/backoff/dead-lettering: that state machine lives in the
-// store (memoryStore here; a Postgres/D1 store in production). The factory only
+// store (memoryStore here; a durable store in production). The factory only
 // orchestrates load -> transform -> persist across the four lifecycle methods.
 import type {
   CollectionDef,
@@ -81,7 +81,13 @@ export function createEnricher(cfg: {
       { pipeline, indexing },
       { generate, fewShot: cfg.fewShot, concurrency }
     );
-    const ready = results.filter((r) => r.ok).map((r) => ({ id: r.id, enriched: r.enriched }));
+    const ready = results.filter((r) => r.ok).map((r) => ({
+      id: r.id,
+      enriched: r.enriched,
+      surfaces: r.surfaces,
+      status: r.status,
+      gateReason: r.gateReason,
+    }));
     await store.writeEnriched(ready);
     for (const f of results.filter((r) => !r.ok)) {
       await store.recordFailure(f.id, f.error ?? "enrich failed");

@@ -1,4 +1,4 @@
-import type { RawRow, DedupCandidateProvider, DedupFeedback } from "./types.ts";
+import type { EnrichedSurfaces, RawRow, DedupCandidateProvider, DedupFeedback } from "./types.ts";
 
 // The minimal persisted shape written back by the store after a successful pass.
 // The rich per-row transform output is EnrichResult (see types.ts); this is what
@@ -6,6 +6,9 @@ import type { RawRow, DedupCandidateProvider, DedupFeedback } from "./types.ts";
 export interface EnrichedRow {
   id: string;
   enriched: Record<string, unknown>;
+  surfaces?: EnrichedSurfaces;
+  status?: "ready" | "quarantined";
+  gateReason?: string | null;
 }
 
 /**
@@ -32,7 +35,7 @@ export interface EnrichedRow {
  * mirrors entity-resolution prior art (Splink/Dedupe/Zingg): one data plane
  * owns records AND labels, and the pipeline is blocking (`candidates`) -> score
  * (`scoreBest`) -> cluster (`clusterBatch`). This package ships `memoryStore`;
- * production stores (a Postgres shell store, a D1 + LanceDB store) are supplied
+ * production stores (durable relational or vector-backed implementations) are supplied
  * by the caller.
  */
 export interface EnrichStore {
