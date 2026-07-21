@@ -7,6 +7,7 @@ import type { Embedder } from "@samesake/embed";
 const products = collection("products", {
   fields: {
     title: f.text({ searchable: true }),
+    brand: f.text({ filterable: true }),
     category: f.enum(["dress", "shirt"] as const, { filterable: true }),
     available: f.boolean(),
   },
@@ -49,6 +50,7 @@ function testEmbedder(calls: Array<{ text?: string; image?: unknown }>): Embedde
 describe("createSearch", () => {
   test("runs NLQ, emits a predicate plan, cuts weak evidence, and ranks hits without a database", async () => {
     const embedCalls: Array<{ text?: string; image?: unknown }> = [];
+    let rerankCalls = 0;
     const plans: RetrievalPlan[] = [];
     const rows: RankedRow[] = [
       {
@@ -85,7 +87,10 @@ describe("createSearch", () => {
       retriever,
       generate: async () => ({ semantic_query: "dress", lexical_query: "dress" }),
       embed: testEmbedder(embedCalls),
-      rerank: async ({ candidates }) => candidates.map((candidate) => ({ id: candidate.id, score: candidate.id === "medium" ? 1 : 0 })),
+      rerank: async ({ candidates }) => {
+        rerankCalls++;
+        return candidates.map((candidate) => ({ id: candidate.id, score: candidate.id === "medium" ? 1 : 0 }));
+      },
     });
 
     const result = await search("dress", { filters: { category: "dress" }, limit: 3 });
@@ -100,16 +105,21 @@ describe("createSearch", () => {
     ]);
     expect(result.cutoff_dropped).toBe(1);
     expect(result.hits.map((hit) => hit.id)).toEqual(["strong", "medium"]);
+    expect(rerankCalls).toBe(1);
     expect(result.constraintTrace.items[0]?.field).toBe("category");
     expect(result.nlq_degraded).toBeUndefined();
   });
 
   test("works without vocab grounding", async () => {
-    const retriever = async (): Promise<RankedRow[]> => [];
+    const plans: RetrievalPlan[] = [];
+    const retriever = async (plan: RetrievalPlan): Promise<RankedRow[]> => {
+      plans.push(plan);
+      return [];
+    };
     const search = createSearch({
       collection: products,
       retriever,
-      generate: async () => ({ semantic_query: "a blue product" }),
+      generate: async () => ({ semantic_query: "a blue product", brand: "Acme" }),
       embed: testEmbedder([]),
     });
 
@@ -118,5 +128,8 @@ describe("createSearch", () => {
       relaxed: false,
       relaxedFields: [],
     });
+    expect(plans[0]?.filters).toEqual([
+      { field: "brand", fieldType: "text", operator: "eq", value: "Acme", source: "nlq", soft: false },
+    ]);
   });
 });

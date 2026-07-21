@@ -138,6 +138,31 @@ function boundedOffset(value: number | undefined): number {
   return Math.min(200, Math.max(0, Math.floor(value)));
 }
 
+async function applyRerank(
+  rerank: RerankFn,
+  query: string,
+  image: SearchCallOpts["image"],
+  hits: SearchHit[],
+  topK: number
+): Promise<SearchHit[]> {
+  try {
+    const ordered = await rerank({
+      query,
+      image: rerankImage(image),
+      candidates: hits.map((hit) => ({
+        id: hit.id,
+        text: rerankCandidateText(hit),
+        data: hit.data,
+        score: hit.score,
+      })),
+      topK,
+    });
+    return mergeBlendedRerank(hits, ordered);
+  } catch {
+    return hits;
+  }
+}
+
 export function createSearch(config: SearchConfig): SearchFn {
   if (!config.collection) {
     if (config.preset) {
@@ -180,12 +205,7 @@ export function createSearch(config: SearchConfig): SearchFn {
     const semanticText = nlq.parsed.semantic_query || query || "image query";
     const aspectPlans = await resolveAspectPlans(
       def,
-      weights: {
-        fts: weights.fts,
-        cosine: weights.cosine,
-        recency: weights.recency,
-        aspects: weights.aspects,
-      },
+      weights,
       nlq,
       semanticText,
       query,
@@ -202,7 +222,12 @@ export function createSearch(config: SearchConfig): SearchFn {
         aspect.queryVector ? [{ embedding: aspect.name, vec: aspect.queryVector }] : []
       ),
       filters: predicatesFor(def, nlq, explicitFilters, merged),
-      weights,
+      weights: {
+        fts: weights.fts,
+        cosine: weights.cosine,
+        recency: weights.recency,
+        aspects: weights.aspects,
+      },
       ...(scope ? { scope } : {}),
       limit: limit + offset,
     };
@@ -220,22 +245,7 @@ export function createSearch(config: SearchConfig): SearchFn {
     }
 
     if (config.rerank && opts.rerank !== false && hits.length > 1) {
-      try {
-        const ordered = await config.rerank({
-          query,
-          image: rerankImage(opts.image),
-          candidates: hits.map((hit) => ({
-            id: hit.id,
-            text: rerankCandidateText(hit),
-            data: hit.data,
-            score: hit.score,
-          })),
-          topK: Math.min(limit + offset, hits.length),
-        });
-        hits = mergeBlendedRerank(hits, ordered);
-      } catch {
-        hits = hits;
-      }
+      hits = await applyRerank(config.rerank, query, opts.image, hits, Math.min(limit + offset, hits.length));
     }
 
     const facets = config.facets && opts.facets?.length && config.retriever.facets
