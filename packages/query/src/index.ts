@@ -4,7 +4,7 @@
 // builder, and the query-understanding brain (nlq parsing + aspect/image
 // planning). Impure seams are injected as deps (see ./deps.ts); depends only
 // on @samesake/core.
-export type { Retriever, VocabProvider } from "./ports.ts";
+export type { Retriever, VocabProvider, RetrieverFacetRequest } from "./ports.ts";
 export type { RetrievalPlan, RankedRow } from "./plan.ts";
 export { normalizeFiltersToConstraintPredicates } from "./filters.ts";
 export type { FilterOperator, FilterClause, SearchFilters } from "./filters.ts";
@@ -20,6 +20,19 @@ export type { CutoffEvidence } from "./cutoff.ts";
 export { applyRankingPolicy } from "./ranking.ts";
 export type { RankingApplyContext, RankingFactorValue } from "./ranking.ts";
 export { buildConstraintTrace } from "./constraint-trace.ts";
+export {
+  createSearch,
+  type SearchConfig,
+  type SearchFn,
+  type SearchCallOpts,
+} from "./search.ts";
+export {
+  mergeBlendedRerank,
+  blendRerankScore,
+  DEFAULT_RERANK_BLEND_WEIGHTS,
+  rerankCandidateText,
+  type RerankBlendWeights,
+} from "./rerank.ts";
 
 // ── NLQ + aspect-planning brain (Q3b) ─────────────────────────────────────
 // Grounded query understanding + aspect/weight planner. The impure seams

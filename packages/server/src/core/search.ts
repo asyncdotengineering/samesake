@@ -21,7 +21,7 @@ import {
   proposeRewrites,
   type RewriteRecord,
   type SearchResult,
-  type SearchOpts,
+  type SearchOpts as QuerySearchOpts,
   type SearchExplainResult,
   type ExplainDocBreakdown,
   type FacetResult,
@@ -35,6 +35,8 @@ import {
   type ChannelWeights,
 } from "@samesake/query";
 import { embeddingColumn, embeddingEntries, evidenceEntries, evidenceTable, EVIDENCE_OVERFETCH_FACTOR } from "./aspects.ts";
+
+export type SearchOpts = QuerySearchOpts & { q: string };
 
 export {
   buildFilterSql,
@@ -64,7 +66,7 @@ export interface IndexDocumentRow {
 
 export type { SearchHit } from "@samesake/query";
 
-export type { SearchResult, SearchOpts, SearchExplainResult, ExplainDocBreakdown } from "@samesake/query";
+export type { SearchResult, SearchExplainResult, ExplainDocBreakdown } from "@samesake/query";
 
 // Second-stage rerank: how many first-stage candidates to hand the reranker.
 const RERANK_POOL = 50;

@@ -6,6 +6,13 @@
 // ownership here adds no coupling.
 import type { Scope } from "@samesake/core";
 import type { RankedRow, RetrievalPlan } from "./plan.ts";
+import type { FacetResult } from "./facets.ts";
+
+export interface RetrieverFacetRequest {
+  fields: string[];
+  filters: RetrievalPlan["filters"];
+  scope?: Scope;
+}
 
 /**
  * Executes a resolved `RetrievalPlan` against whatever store backs it and
@@ -15,6 +22,7 @@ import type { RankedRow, RetrievalPlan } from "./plan.ts";
  */
 export interface Retriever {
   (plan: RetrievalPlan): Promise<RankedRow[]>;
+  facets?: (request: RetrieverFacetRequest) => Promise<Record<string, FacetResult>>;
 }
 
 /**

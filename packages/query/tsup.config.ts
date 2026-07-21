@@ -8,5 +8,5 @@ export default defineConfig({
   sourcemap: false,
   target: "es2022",
   // Consumers bring this.
-  external: ["@samesake/core"],
+  external: ["@samesake/core", "@samesake/embed"],
 });

@@ -107,7 +107,7 @@ export async function buildQueryAspectImageVectors(
   def: CollectionDef,
   image: QueryImageInput | undefined,
   embedService: EmbedService,
-  fetchImage: QueryFetchImage,
+  fetchImage?: QueryFetchImage,
   groundImage?: GroundImageFn
 ): Promise<Record<string, number[]>> {
   if (!image) return {};
@@ -115,7 +115,7 @@ export async function buildQueryAspectImageVectors(
   let mimeType = image.mimeType;
   let url = image.url;
 
-  if (image.url) {
+  if (image.url && fetchImage) {
     const fetched = await fetchImage(image.url);
     if (!fetched.ok) throw new Error(`image query fetch failed: ${fetched.reason}`);
     bytes = fetched.bytes;
@@ -132,16 +132,24 @@ export async function buildQueryAspectImageVectors(
     }
   }
 
-  const out: Record<string, number[]> = {};
+  const requests: Array<{ name: string; request: Parameters<NonNullable<EmbedService["embedMany"]>>[0][number] }> = [];
   for (const [name, embedding] of embeddingEntries(def)) {
     if (embedding.kind !== "image") continue;
-    out[name] = await embedService.embedQuery({
+    requests.push({ name, request: {
       image: { url, bytes, mimeType },
       model: embedding.model,
       dim: embedding.dim,
       taskType: embedding.taskType ?? "RETRIEVAL_QUERY",
       inputType: "query",
-    });
+    } });
+  }
+  if (embedService.embedMany) {
+    const vectors = await embedService.embedMany(requests.map(({ request }) => request));
+    return Object.fromEntries(requests.map(({ name }, index) => [name, vectors[index]!])) as Record<string, number[]>;
+  }
+  const out: Record<string, number[]> = {};
+  for (const { name, request } of requests) {
+    out[name] = await embedService.embedQuery(request);
   }
   return out;
 }
@@ -197,6 +205,7 @@ export async function resolveAspectPlans(
   const routed = Object.keys(routes).length > 0;
   const skipToFirst = mode === "intent" && (nlq.degraded || shouldSkipNlq(def, q));
   const plans: AspectPlan[] = [];
+  const pending: Array<{ name: string; embedding: CollectionEmbeddingDef; weight: number; request: Parameters<EmbedService["embedQuery"]>[0] }> = [];
 
   for (const [index, [name, embedding]] of entries.entries()) {
     const configuredWeight = weights.aspects[name] ?? 0;
@@ -228,11 +237,38 @@ export async function resolveAspectPlans(
     }
     if (weight <= 0) continue;
 
+    if (imageVectors[name]) {
+      plans.push({ name, embedding, queryVector: imageVectors[name]!, weight });
+      continue;
+    }
+    pending.push({
+      name,
+      embedding,
+      weight,
+      request: {
+        text,
+        model: embedding.model,
+        dim: embedding.dim,
+        taskType: embedding.taskType ?? "RETRIEVAL_QUERY",
+        inputType: "query",
+      },
+    });
+  }
+  let vectors: number[][] = [];
+  if (pending.length > 1 && embedService.embedMany) {
     try {
-      const queryVector = await queryTextForAspect(embedding, text, imageVectors[name], embedService);
-      plans.push({ name, embedding, queryVector, weight });
+      vectors = await embedService.embedMany(pending.map(({ request }) => request));
     } catch {
-      plans.push({ name, embedding, queryVector: null, weight });
+      vectors = [];
+    }
+  }
+  for (let index = 0; index < pending.length; index++) {
+    const item = pending[index]!;
+    try {
+      const queryVector = vectors[index] ?? await queryTextForAspect(item.embedding, String(item.request.text ?? ""), undefined, embedService);
+      plans.push({ name: item.name, embedding: item.embedding, queryVector, weight: item.weight });
+    } catch {
+      plans.push({ name: item.name, embedding: item.embedding, queryVector: null, weight: item.weight });
     }
   }
   return plans;

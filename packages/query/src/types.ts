@@ -69,7 +69,13 @@ export interface SearchExplainResult {
 }
 
 export interface SearchOpts {
-  q: string;
+  /**
+   * The query text. `createSearch` takes `q` as its first positional arg (per the
+   * contract: `search(q, opts)`), NOT from here. This optional field exists only
+   * for the legacy `@samesake/server` search API (makeSearchService), which carries
+   * `q` inside opts; it is removed once the server migrates to `createSearch`.
+   */
+  q?: string;
   image?: {
     url?: string;
     bytes?: Uint8Array;

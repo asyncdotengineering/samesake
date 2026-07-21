@@ -8,7 +8,12 @@ export interface RetrievalPlan {
   query: string | null;
   vectors: { embedding: string; vec: number[] }[];
   filters: ConstraintPredicate[];
-  weights: Record<string, number>;
+  weights: {
+    fts: number;
+    cosine: number;
+    recency: number;
+    aspects: Record<string, number>;
+  };
   scope?: Scope;
   limit: number;
 }
@@ -18,4 +23,6 @@ export interface RankedRow {
   data: Record<string, unknown>;
   rrf_score: number;
   legRanks?: Record<string, number>;
+  fts_present?: boolean;
+  cos_sim?: number | null;
 }

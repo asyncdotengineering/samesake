@@ -38,6 +38,7 @@ export type QueryFetchImage = (url: string) => Promise<QueryFetchImageResult>;
  *  method of the host's embed service. */
 export interface EmbedService {
   embedQuery(req: EmbedRequest): Promise<number[]>;
+  embedMany?(reqs: EmbedRequest[]): Promise<number[][]>;
 }
 
 /** Ground parsed open-vocab filter values against the live corpus. Mirrors the host's
