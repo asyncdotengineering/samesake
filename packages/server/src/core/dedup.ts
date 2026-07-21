@@ -10,8 +10,8 @@
 // (>= suggest), or founds its own cluster. Precision-first: uncertain pairs are
 // suggestions, never auto-merges. Candidates are pinned to the row's own scope,
 // so a cluster can never span tenancy scopes (REQ-5, by construction).
-import { clusterBatch } from "@samesake/enrich";
-import type { ClusterDecision, DedupCandidate, DedupRow } from "@samesake/enrich";
+import { scoreBest } from "@samesake/enrich";
+import type { DedupCandidate } from "@samesake/enrich";
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import { collectionTableName } from "./db-utils.ts";
@@ -38,16 +38,6 @@ export interface DedupRunResult {
   suggested: number;
 }
 
-function parseEmbedding(value: unknown): number[] | null {
-  if (Array.isArray(value)) {
-    const vector = value.filter((entry): entry is number => typeof entry === "number");
-    return vector.length ? vector : null;
-  }
-  if (typeof value !== "string") return null;
-  const values = value.replace(/^[\[{]|[\]}]$/g, "").split(",").map(Number);
-  return values.length && values.every(Number.isFinite) ? values : null;
-}
-
 export function makeDedupService(ctx: MatcherCtx, projectsService: ProjectsService) {
   function client(context: string) {
     return ctx.storage.client(context);
@@ -72,30 +62,6 @@ export function makeDedupService(ctx: MatcherCtx, projectsService: ProjectsServi
       ),
     ];
     return { project, def, cfg, table, sugg, group, scopeCols, channelFields };
-  }
-
-  type ResolvedDedup = Awaited<ReturnType<typeof resolveDedup>>;
-
-  function toDedupCandidates(
-    r: ResolvedDedup,
-    rows: Record<string, unknown>[]
-  ): DedupCandidate[] {
-    return rows.map((cr) => {
-      const fields: Record<string, unknown> = {};
-      for (const col of r.channelFields) fields[col] = cr[col];
-      const trgm: Record<string, number> = {};
-      for (const key of Object.keys(cr).filter((key) => key.startsWith("trgm_"))) {
-        const field = key.slice("trgm_".length);
-        trgm[field] = cr[key] == null ? 0 : Number(cr[key]);
-      }
-      return {
-        id: String(cr.id),
-        group: cr._group == null ? null : String(cr._group),
-        fields,
-        trgm,
-        cos: cr._cos == null ? null : Number(cr._cos),
-      };
-    });
   }
 
   // One round trip: exactKey btree ∪ trigram GIN top-20 ∪ ANN top-20, all
@@ -164,58 +130,22 @@ export function makeDedupService(ctx: MatcherCtx, projectsService: ProjectsServi
       WHERE d.pipeline_status = 'ready'`;
 
     const rows = await ctx.storage.dedupCandidateProbe(sql, params);
-    return toDedupCandidates(r, rows);
-  }
-
-  function toProbeRow(r: ResolvedDedup, row: DedupRow): Record<string, unknown> {
-    const probe: Record<string, unknown> = {
-      id: row.id,
-      _emb: row.embedding?.length ? `[${row.embedding.join(",")}]` : null,
-      ...row.fields,
-    };
-    for (const scopeColumnName of r.scopeCols) {
-      const scopeKey = scopeColumnName.startsWith("scope_")
-        ? scopeColumnName.slice("scope_".length)
-        : scopeColumnName;
-      probe[scopeColumnName] = row.scope?.[scopeColumnName] ?? row.scope?.[scopeKey];
-    }
-    return probe;
-  }
-
-  async function applyDecisions(
-    r: ResolvedDedup,
-    decisions: ClusterDecision[]
-  ): Promise<DedupRunResult> {
-    const counters: DedupRunResult = { processed: 0, autoLinked: 0, founded: 0, suggested: 0 };
-    for (const decision of decisions) {
-      if (decision.outcome === "link" && decision.group !== decision.rowId) {
-        await client("dedup found-leader").unsafe(
-          `UPDATE ${r.table} SET ${r.group} = id WHERE id = $1 AND ${r.group} IS NULL`,
-          [decision.group]
-        );
+    return rows.map((cr) => {
+      const fields: Record<string, unknown> = {};
+      for (const col of channelFields) fields[col] = cr[col];
+      const trgm: Record<string, number> = {};
+      for (const col of Object.keys(trgmRefs)) {
+        const v = cr[`trgm_${col}`];
+        trgm[col] = v == null ? 0 : Number(v);
       }
-      if (decision.outcome === "suggest") {
-        if ((await suggestionStatus(r.sugg, decision.rowId, decision.group)) !== "confirmed") {
-          await client("dedup suggest").unsafe(
-            `INSERT INTO ${r.sugg} (row_id, candidate_group, score, status)
-             VALUES ($1, $2, $3, 'open')
-             ON CONFLICT (row_id, candidate_group) DO UPDATE SET score = EXCLUDED.score`,
-            [decision.rowId, decision.group, decision.score]
-          );
-        }
-      }
-      await client("dedup assign").unsafe(
-        `UPDATE ${r.table}
-         SET ${r.group} = $1, dedup_score = $2, dedup_checked_at = now()
-         WHERE id = $3`,
-        [decision.outcome === "link" ? decision.group : decision.rowId, decision.score, decision.rowId]
-      );
-      counters.processed++;
-      if (decision.outcome === "link") counters.autoLinked++;
-      else if (decision.outcome === "suggest") counters.suggested++;
-      else counters.founded++;
-    }
-    return counters;
+      return {
+        id: String(cr.id),
+        group: cr._group == null ? null : String(cr._group),
+        fields,
+        trgm,
+        cos: cr._cos == null ? null : Number(cr._cos),
+      };
+    });
   }
 
   async function suggestionStatus(sugg: string, rowId: string, group: string): Promise<string | null> {
@@ -267,19 +197,66 @@ export function makeDedupService(ctx: MatcherCtx, projectsService: ProjectsServi
       [opts.limit ?? 500]
     );
 
-    const dedupRows: DedupRow[] = rows.map((row) => ({
-      id: String(row.id),
-      fields: Object.fromEntries(channelFields.map((field) => [field, row[field]])),
-      embedding: parseEmbedding(row._emb),
-      scope: Object.fromEntries(scopeCols.map((field) => [field, String(row[field])])),
-    }));
-    const provider = (row: DedupRow) => candidates(r, toProbeRow(r, row));
-    const feedback = {
-      isDeclined: (a: string, b: string) => isDeclined(sugg, a, b),
-      suggestionStatus: (rowId: string, targetGroup: string) => suggestionStatus(sugg, rowId, targetGroup),
-    };
-    const decisions = await clusterBatch(cfg, dedupRows, provider, feedback);
-    const counters = await applyDecisions(r, decisions);
+    const counters: DedupRunResult = { processed: 0, autoLinked: 0, founded: 0, suggested: 0 };
+    // Rows given a group during THIS run (as leader or member). The row snapshot is
+    // taken once, but leader-founding assigns groups to other snapshot rows mid-loop;
+    // reprocessing one from the stale snapshot would thrash its cluster, so skip it.
+    const assigned = new Set<string>();
+    for (const row of rows) {
+      if (assigned.has(String(row.id))) continue;
+      const cands = await candidates(r, row);
+      const rowFields: Record<string, unknown> = {};
+      for (const col of channelFields) rowFields[col] = row[col];
+      const best = scoreBest(cfg, rowFields, cands);
+      const score = best ? best.score : null;
+      const rowId = String(row.id);
+
+      let outcome: "link" | "suggest" | "found" = "found";
+      let targetGroup = rowId;
+
+      if (best && best.score >= cfg.autoLink) {
+        const tg = best.cand.group ?? best.cand.id;
+        if (await isDeclined(sugg, rowId, tg)) {
+          outcome = "found"; // human split this pair — never re-link, either direction (REQ-7/10)
+        } else {
+          // Found the leader first if the candidate is not yet clustered.
+          if (best.cand.group == null) {
+            await client("dedup found-leader").unsafe(
+              `UPDATE ${table} SET ${group} = id WHERE id = $1 AND ${group} IS NULL`,
+              [best.cand.id]
+            );
+            assigned.add(best.cand.id);
+          }
+          outcome = "link";
+          targetGroup = tg;
+        }
+      } else if (best && cfg.suggest !== undefined && best.score >= cfg.suggest) {
+        const tg = best.cand.group ?? best.cand.id;
+        if (await isDeclined(sugg, rowId, tg)) {
+          outcome = "found"; // declined pair — never re-suggest, either direction (REQ-7)
+        } else {
+          if ((await suggestionStatus(sugg, rowId, tg)) !== "confirmed") {
+            await client("dedup suggest").unsafe(
+              `INSERT INTO ${sugg} (row_id, candidate_group, score, status) VALUES ($1, $2, $3, 'open')
+               ON CONFLICT (row_id, candidate_group) DO UPDATE SET score = EXCLUDED.score`,
+              [rowId, tg, best.score]
+            );
+          }
+          outcome = "suggest"; // suggested rows still found their own cluster (precision-first)
+        }
+      }
+
+      await client("dedup assign").unsafe(
+        `UPDATE ${table} SET ${group} = $1, dedup_score = $2, dedup_checked_at = now() WHERE id = $3`,
+        [outcome === "link" ? targetGroup : rowId, score, rowId]
+      );
+
+      assigned.add(rowId);
+      counters.processed++;
+      if (outcome === "link") counters.autoLinked++;
+      else if (outcome === "suggest") counters.suggested++;
+      else counters.founded++;
+    }
 
     searchResultCache.invalidateProjectCollection(projectSlug, collectionName);
     return counters;
