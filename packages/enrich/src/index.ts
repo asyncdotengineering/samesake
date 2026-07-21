@@ -6,3 +6,4 @@ export {
   type IndexingPersistResult,
 } from "./surfaces.ts";
 export { enrich, enrichRow } from "./enrich.ts";
+export { contentHash, selectDirty } from "./dirty.ts";

@@ -107,34 +107,7 @@ export function normalizeWoo(
   return { ...p, content_hash: contentHash(p, null) };
 }
 
-export function computeContentHash(data: Record<string, unknown>): string {
-  const p = {
-    title: data.title ?? "",
-    description: data.description ?? null,
-    price: data.price ?? null,
-    image_url: data.image_url ?? null,
-    available: data.available ?? false,
-    raw_type: data.raw_type ?? null,
-    raw_tags: Array.isArray(data.raw_tags) ? data.raw_tags : [],
-  };
-  const imageVersion = imageVersionToken({
-    image_etag: data.image_etag,
-    image_updated_at: data.image_updated_at,
-    image_version: data.image_version,
-  });
-  return contentHash(
-    {
-      title: String(p.title),
-      description: p.description != null ? String(p.description) : null,
-      price: p.price != null ? Number(p.price) : null,
-      currency: String(data.currency ?? ""),
-      image_url: p.image_url != null ? String(p.image_url) : null,
-      url: String(data.url ?? ""),
-      vendor: data.vendor != null ? String(data.vendor) : null,
-      raw_type: p.raw_type != null ? String(p.raw_type) : null,
-      raw_tags: p.raw_tags as string[],
-      available: Boolean(p.available),
-    },
-    imageVersion
-  );
-}
+// Relocated to @samesake/enrich so Postgres and Cloudflare/D1 shells share one
+// source of truth. Re-exported here under the historical name for back-compat;
+// every importer (ingest.ts, jsonl.ts, the server barrel) resolves this symbol.
+export { contentHash as computeContentHash } from "@samesake/enrich";
