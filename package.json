@@ -12,10 +12,10 @@
     "examples:hello-search": "bun examples/hello-search/run.ts",
     "examples:quickstart": "bun examples/quickstart/run.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test packages/sdk packages/server packages/providers packages/enrich packages/embed packages/presets",
-    "lint": "oxlint packages/sdk/src packages/server/src packages/providers/src packages/enrich/src packages/embed/src packages/presets/src packages/cli/src packages/mcp/src",
+    "test": "bun test packages/sdk packages/server packages/providers packages/enrich packages/embed packages/presets packages/query",
+    "lint": "oxlint packages/sdk/src packages/server/src packages/providers/src packages/enrich/src packages/embed/src packages/presets/src packages/query/src packages/cli/src packages/mcp/src",
     "pack:assert": "bun scripts/pack-assert.ts",
-    "build": "for d in packages/sdk packages/enrich packages/server packages/providers packages/embed packages/presets packages/cli packages/mcp; do (cd \"$d\" && bun run build) || exit 1; done",
+    "build": "for d in packages/sdk packages/enrich packages/query packages/server packages/providers packages/embed packages/presets packages/cli packages/mcp; do (cd \"$d\" && bun run build) || exit 1; done",
     "changeset": "changeset",
     "release:version": "changeset version && bun update",
     "release:publish": "bun run build && for dir in packages/*; do [ -f \"$dir/package.json\" ] && (cd \"$dir\" && bun publish || true); done && changeset tag"

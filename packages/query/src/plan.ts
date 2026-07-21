@@ -1,8 +1,8 @@
 // Retrieval plan and result types — the store-agnostic description of one
 // hybrid-retrieval execution, produced upstream by query understanding and
-// consumed by a `Retriever`.
-import type { Scope } from "./ports.ts";
-import type { ConstraintPredicate } from "./types.ts";
+// consumed by a `Retriever`. Scope + ConstraintPredicate are shared primitives
+// that stay in @samesake/core.
+import type { Scope, ConstraintPredicate } from "@samesake/core";
 
 export interface RetrievalPlan {
   query: string | null;

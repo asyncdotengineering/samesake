@@ -61,12 +61,10 @@ export type {
   GroundImageResult,
   GroundImageFn,
 } from "./model.ts";
-// Query-side ports — store-agnostic seams; interfaces only, no implementations.
-// The enrich-side ports (EnrichStore, dedup CandidateProvider) live in
-// @samesake/enrich with the state machine they model.
-export type { Scope, Retriever, VocabProvider } from "./ports.ts";
-// Retrieval plan / fused-result types consumed by Retriever.
-export type { RetrievalPlan, RankedRow } from "./plan.ts";
+// Scope — the shared tenancy primitive. Domain ports live with their packages:
+// EnrichStore + dedup CandidateProvider in @samesake/enrich; Retriever +
+// VocabProvider + RetrievalPlan/RankedRow in @samesake/query.
+export type { Scope } from "./ports.ts";
 export { IdentError, assertIdent, assertNoIdentCollisions, sanitiseIdent } from "./ident.ts";
 // Pure schema / image-token / path helpers shared by @samesake/enrich and @samesake/server.
 export { normalizeSchema } from "./schema-input.ts";
