@@ -43,7 +43,7 @@ export function d1EnrichStore(db: DB, candidates?: DedupCandidateProvider): Enri
       const update = db.prepare(
         `UPDATE catalog SET data = ?, content_hash = ?, pipeline_status = 'pending',
          enriched = NULL, attempt_count = 0, next_attempt_at = 0, last_error = NULL,
-         gate_reason = NULL, doc = NULL, rerank_doc = NULL, fts_src = NULL,
+         gate_reason = NULL, doc = NULL, vectors = NULL, rerank_doc = NULL, fts_src = NULL,
          fts_src_a = NULL, product_group = NULL, updated_at = ? WHERE id = ?`,
       );
       for (const row of rows) {
@@ -67,7 +67,7 @@ export function d1EnrichStore(db: DB, candidates?: DedupCandidateProvider): Enri
     async writeEnriched(rows: EnrichedRow[]) {
       const update = db.prepare(
         `UPDATE catalog SET enriched = ?, pipeline_status = ?, gate_reason = ?,
-         doc = ?, rerank_doc = ?, fts_src = ?, fts_src_a = ?, attempt_count = 0,
+         doc = ?, vectors = ?, rerank_doc = ?, fts_src = ?, fts_src_a = ?, attempt_count = 0,
          next_attempt_at = 0, last_error = NULL, updated_at = ? WHERE id = ?`,
       );
       for (const row of rows) {
@@ -76,6 +76,7 @@ export function d1EnrichStore(db: DB, candidates?: DedupCandidateProvider): Enri
           row.status ?? "ready",
           row.gateReason ?? null,
           row.surfaces?.doc ?? null,
+          row.vectors ? JSON.stringify(row.vectors) : null,
           row.surfaces?.rerank_doc ?? null,
           row.surfaces?.fts_src ?? null,
           row.surfaces?.fts_src_a ?? null,
@@ -121,11 +122,12 @@ export function d1EnrichStore(db: DB, candidates?: DedupCandidateProvider): Enri
 
     async loadEnriched(limit) {
       const rows = db.prepare(
-        `SELECT id, enriched, doc, rerank_doc, fts_src, fts_src_a, pipeline_status, gate_reason
+        `SELECT id, enriched, vectors, doc, rerank_doc, fts_src, fts_src_a, pipeline_status, gate_reason
          FROM catalog WHERE enriched IS NOT NULL ORDER BY seq LIMIT ?`,
       ).all(limit) as Array<{
         id: string;
         enriched: string;
+        vectors: string | null;
         doc: string | null;
         rerank_doc: string | null;
         fts_src: string | null;
@@ -136,6 +138,7 @@ export function d1EnrichStore(db: DB, candidates?: DedupCandidateProvider): Enri
       return rows.map((row) => ({
         id: row.id,
         enriched: JSON.parse(row.enriched) as Record<string, unknown>,
+        vectors: row.vectors ? JSON.parse(row.vectors) as Record<string, number[]> : undefined,
         surfaces: {
           doc: row.doc,
           denseByEmbedding: {},

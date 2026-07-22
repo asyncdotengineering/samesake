@@ -1,6 +1,8 @@
 import { contentHash, type RawRow, type EnrichedRow, type EnrichStore, type DedupCandidateProvider, type DedupFeedback } from "@samesake/enrich";
+import { embeddingEntries } from "@samesake/query";
 import type { PostgresAdapter } from "./adapter.ts";
 import type { CollectionBackendOptions } from "./types.ts";
+import { embeddingColumn, vectorLiteral } from "./ident.ts";
 
 function json(value: unknown): string {
   return JSON.stringify(value ?? null);
@@ -47,6 +49,11 @@ export class PostgresEnrichStore implements EnrichStore {
     }
   }
 
+  async delete(ids: string[]): Promise<void> {
+    if (!ids.length) return;
+    await this.adapter.query(`DELETE FROM ${this.options.table} WHERE id = ANY($1::text[])`, [ids]);
+  }
+
   async loadDirty(limit: number): Promise<RawRow[]> {
     const rows = await this.adapter.query(
       `SELECT id, data, image_etag FROM ${this.options.table} WHERE enriched_at IS NULL ORDER BY id LIMIT $1`,
@@ -56,16 +63,34 @@ export class PostgresEnrichStore implements EnrichStore {
   }
 
   async writeEnriched(rows: EnrichedRow[]): Promise<void> {
+    const vectorEntries = embeddingEntries(this.options.collection)
+      .map(([name, embedding], index) => embedding.evidence ? null : { name, column: embeddingColumn(name, index) })
+      .filter((entry): entry is { name: string; column: string } => entry !== null);
     for (const row of rows) {
+      const vectors = vectorEntries.flatMap(({ name, column }) => {
+        const vector = row.vectors?.[name];
+        return vector ? [{ column, value: vectorLiteral(vector) }] : [];
+      });
+      const set = [
+        "enriched = $1::jsonb",
+        "enriched_at = now()",
+        "doc = $2",
+        "rerank_doc = $3",
+        "fts_src = $4",
+        "fts_src_a = $5",
+        "pipeline_status = $6",
+        "gate_reason = $7",
+        ...vectors.map(({ column }, index) => `${column} = $${8 + index}`),
+        `updated_at = now()`,
+      ].join(", ");
       await this.adapter.query(
         `UPDATE ${this.options.table}
-         SET enriched = $1::jsonb, enriched_at = now(),
-             doc = $2, rerank_doc = $3, fts_src = $4, fts_src_a = $5,
-             pipeline_status = $6, gate_reason = $7, updated_at = now()
-         WHERE id = $8`,
+         SET ${set}
+         WHERE id = $${8 + vectors.length}`,
         [json(row.enriched), row.surfaces?.doc ?? null, row.surfaces?.rerank_doc ?? null,
           row.surfaces?.fts_src ?? null, row.surfaces?.fts_src_a ?? null,
-          row.status ?? "ready", row.gateReason ?? null, row.id]
+          row.status ?? "ready", row.gateReason ?? null,
+          ...vectors.map(({ value }) => value), row.id]
       );
     }
   }

@@ -7,6 +7,7 @@ export interface EnrichedRow {
   id: string;
   enriched: Record<string, unknown>;
   surfaces?: EnrichedSurfaces;
+  vectors?: Record<string, number[]>;
   status?: "ready" | "quarantined";
   gateReason?: string | null;
 }
@@ -40,6 +41,7 @@ export interface EnrichedRow {
  */
 export interface EnrichStore {
   upsert(rows: RawRow[]): Promise<void>;
+  delete?(ids: string[]): Promise<void>;
   loadDirty(limit: number): Promise<RawRow[]>;
   writeEnriched(rows: EnrichedRow[]): Promise<void>;
   recordFailure(id: string, error: unknown): Promise<void>;

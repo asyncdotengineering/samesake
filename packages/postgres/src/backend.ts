@@ -146,6 +146,7 @@ function unconfiguredEnricher(): Enricher {
   };
   return {
     upsert: fail,
+    remove: fail,
     enrich: fail,
     resolve: fail,
     retryFailed: fail,

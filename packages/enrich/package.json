@@ -35,7 +35,8 @@
     "record-linkage"
   ],
   "dependencies": {
-    "@samesake/core": "workspace:^"
+    "@samesake/core": "workspace:^",
+    "@samesake/embed": "workspace:^"
   },
   "devDependencies": {
     "tsup": "^8.5.1"

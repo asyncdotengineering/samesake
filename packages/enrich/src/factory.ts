@@ -11,6 +11,7 @@ import type {
   GenerateFn,
   EmbedFn,
 } from "@samesake/core";
+import type { Embedder } from "@samesake/embed";
 import { enrich } from "./enrich.ts";
 import { clusterBatch } from "./cluster.ts";
 import { scoreEnrichment } from "./eval.ts";
@@ -26,6 +27,7 @@ import { memoryStore } from "./memory-store.ts";
 
 export interface Enricher {
   upsert(rows: RawRow[]): Promise<void>;
+  remove(ids: string[]): Promise<void>;
   enrich(opts?: { limit?: number; concurrency?: number }): Promise<EnrichedRow[]>;
   resolve(opts?: { limit?: number }): Promise<ClusterDecision[]>;
   retryFailed(opts?: { limit?: number }): Promise<EnrichedRow[]>;
@@ -36,6 +38,15 @@ function isPipeline(def: unknown): def is PipelineDef {
   return !!def && typeof def === "object" && Array.isArray((def as PipelineDef).stages);
 }
 
+function l2Renormalize(vec: number[]): number[] {
+  const norm = Math.sqrt(vec.reduce((sum, value) => sum + value * value, 0)) || 1;
+  return vec.map((value) => value / norm);
+}
+
+function hasBatchForm(embed: Embedder | EmbedFn): embed is Embedder {
+  return typeof (embed as Embedder).many === "function";
+}
+
 export function createEnricher(cfg: {
   collection?: CollectionDef;
   pipeline?: PipelineDef;
@@ -43,7 +54,8 @@ export function createEnricher(cfg: {
   dedup?: CollectionDedupDef;
   evalAttributes?: AttrSpec[];
   generate: GenerateFn;
-  embed?: EmbedFn;
+  embed?: Embedder | EmbedFn;
+  embeddings?: CollectionDef["embeddings"];
   store?: EnrichStore;
   fewShot?: string;
   concurrency?: number;
@@ -71,6 +83,51 @@ export function createEnricher(cfg: {
   const generate = cfg.generate;
   const store = cfg.store ?? memoryStore();
   const baseConcurrency = cfg.concurrency;
+  const embeddings = cfg.collection?.embeddings ?? cfg.embeddings ?? {};
+
+  const embedSurfaces = async (rows: EnrichedRow[]): Promise<void> => {
+    if (!cfg.embed) return;
+    const inputs = rows.flatMap((row) => {
+      if (row.status !== "ready") return [];
+      return Object.entries(row.surfaces?.denseByEmbedding ?? {}).map(([name, text]) => {
+        const embedding = embeddings[name];
+        if (!embedding) {
+          throw new Error(`createEnricher: no embedding definition for dense surface "${name}"`);
+        }
+        return {
+          row,
+          name,
+          dim: embedding.dim,
+          request: {
+            text,
+            model: embedding.model,
+            dim: embedding.dim,
+            taskType: embedding.taskType ?? "RETRIEVAL_DOCUMENT",
+            inputType: "document" as const,
+          },
+        };
+      });
+    });
+    if (!inputs.length) return;
+
+    const vectors = hasBatchForm(cfg.embed)
+      ? await cfg.embed.many(inputs.map((input) => input.request))
+      : await Promise.all(inputs.map((input) => cfg.embed!(input.request)));
+    if (vectors.length !== inputs.length) {
+      throw new Error(`createEnricher: embed returned ${vectors.length} vectors for ${inputs.length} requests`);
+    }
+    for (const [index, input] of inputs.entries()) {
+      const vector = vectors[index];
+      if (!vector || vector.length !== input.dim || vector.some((value) => !Number.isFinite(value))) {
+        throw new Error(
+          `createEnricher.embed returned an invalid vector for "${input.name}": ` +
+          `expected ${input.dim} finite values`
+        );
+      }
+      input.row.vectors ??= {};
+      input.row.vectors[input.name] = l2Renormalize(vector);
+    }
+  };
 
   // Shared enrich-and-persist loop for both fresh (enrich) and retry (retryFailed)
   // paths. ok:true covers ready AND quarantined (a gate-quarantine is a successful
@@ -88,6 +145,7 @@ export function createEnricher(cfg: {
       status: r.status,
       gateReason: r.gateReason,
     }));
+    await embedSurfaces(ready);
     await store.writeEnriched(ready);
     for (const f of results.filter((r) => !r.ok)) {
       await store.recordFailure(f.id, f.error ?? "enrich failed");
@@ -98,6 +156,10 @@ export function createEnricher(cfg: {
   return {
     async upsert(rows) {
       await store.upsert(rows);
+    },
+    async remove(ids) {
+      if (!store.delete) throw new Error("remove requires a store with delete support");
+      await store.delete(ids);
     },
     async enrich(opts) {
       const rows = await store.loadDirty(opts?.limit ?? 1000);

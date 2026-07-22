@@ -107,6 +107,10 @@ export function memoryStore(): EnrichStore {
       }
     },
 
+    async delete(ids) {
+      for (const id of ids) rows.delete(id);
+    },
+
     async loadDirty(limit) {
       const out: RawRow[] = [];
       for (const e of rows.values()) {

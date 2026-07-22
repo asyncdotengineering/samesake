@@ -200,6 +200,7 @@
       "version": "5.0.0",
       "dependencies": {
         "@samesake/core": "workspace:^",
+        "@samesake/embed": "workspace:^",
       },
       "devDependencies": {
         "tsup": "^8.5.1",

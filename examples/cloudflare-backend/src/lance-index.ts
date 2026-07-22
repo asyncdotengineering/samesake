@@ -1,4 +1,4 @@
-import { getByPath, type CollectionDef, type EmbedFn } from "@samesake/core";
+import { getByPath, type CollectionDef } from "@samesake/core";
 import * as lancedb from "@lancedb/lancedb";
 import type { Connection, Table } from "@lancedb/lancedb";
 import type { ClusterDecision } from "@samesake/enrich";
@@ -10,6 +10,7 @@ interface CatalogRow {
   enriched: string;
   doc: string | null;
   fts_src: string | null;
+  vectors: string | null;
   product_group: string | null;
 }
 
@@ -40,17 +41,16 @@ export async function indexEnriched(
   db: DB,
   lance: LanceConnection,
   def: CollectionDef,
-  embed: EmbedFn,
   tableName: string
 ): Promise<{ table: Table; count: number }> {
   const rows = db.prepare(
-    `SELECT id, data, enriched, doc, fts_src, product_group
+    `SELECT id, data, enriched, vectors, doc, fts_src, product_group
      FROM catalog WHERE pipeline_status = 'ready' AND enriched IS NOT NULL ORDER BY seq`
   ).all() as CatalogRow[];
   if (!rows.length) throw new Error("indexEnriched: no ready rows");
   const primary = Object.entries(def.embeddings ?? {})[0];
   if (!primary) throw new Error("indexEnriched: collection declares no embedding");
-  const [, embedding] = primary;
+  const [embeddingName] = primary;
   const lanceRows: Array<Record<string, unknown>> = [];
   const vocab = new Map<string, Map<string, number>>();
 
@@ -59,13 +59,10 @@ export async function indexEnriched(
     const enriched = JSON.parse(row.enriched) as Record<string, unknown>;
     const merged = { ...data, ...enriched, id: row.id };
     const doc = row.doc ?? "";
-    const vector = await embed({
-      text: doc,
-      model: embedding.model,
-      dim: embedding.dim,
-      taskType: embedding.taskType ?? "RETRIEVAL_DOCUMENT",
-      inputType: "document",
-    });
+    const vector = row.vectors
+      ? (JSON.parse(row.vectors) as Record<string, number[]>)[embeddingName]
+      : undefined;
+    if (!vector) throw new Error(`indexEnriched: row "${row.id}" has no vector for "${embeddingName}"`);
     const lanceRow: Record<string, unknown> = {
       id: row.id,
       vector,

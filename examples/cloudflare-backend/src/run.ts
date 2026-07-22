@@ -39,7 +39,7 @@ export async function runHarness(options: { writeEvidence?: boolean } = {}): Pro
     const enricher = createEnricher({ collection: products, generate: stubGenerate, embed: stubEmbed, store });
     await enricher.upsert(CATALOG);
     const enriched = await enricher.enrich();
-    const indexed = await indexEnriched(db, lance, products, stubEmbed, tableName);
+    const indexed = await indexEnriched(db, lance, products, tableName);
     table = indexed.table;
     if (indexed.count !== CATALOG.length) throw new Error(`indexed ${indexed.count} rows; expected ${CATALOG.length}`);
 

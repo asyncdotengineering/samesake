@@ -21,6 +21,7 @@ export function createSchema(db: DB): void {
       last_error TEXT,
       gate_reason TEXT,
       doc TEXT,
+      vectors TEXT,
       rerank_doc TEXT,
       fts_src TEXT,
       fts_src_a TEXT,
