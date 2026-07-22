@@ -12,6 +12,7 @@ import type { FacetResult } from "./facets.ts";
 import type { RewriteRecord } from "./query-rewrite.ts";
 import type { ChannelWeights } from "./search-query.ts";
 import type { SearchFilters } from "./filters.ts";
+import type { RetrievalPlan } from "./plan.ts";
 
 export interface SearchHit {
   id: string;
@@ -65,6 +66,8 @@ export interface SearchExplainResult {
   weights: ChannelWeights;
   docs: ExplainDocBreakdown[];
   took_ms: number;
+  /** The store-neutral retrieval plan captured before the backend executes it. */
+  retrievalPlan?: RetrievalPlan;
   rewritten?: RewriteRecord;
 }
 

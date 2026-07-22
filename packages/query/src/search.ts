@@ -23,7 +23,8 @@ import { normalizeFiltersToConstraintPredicates, type SearchFilters } from "./fi
 import { openVocabFieldNames, type VocabCandidates } from "./vocab.ts";
 import type { Retriever, VocabProvider } from "./ports.ts";
 import type { RankedRow } from "./plan.ts";
-import type { SearchHit, SearchOpts, SearchResult } from "./types.ts";
+import type { RetrievalPlan } from "./plan.ts";
+import type { ExplainDocBreakdown, SearchExplainResult, SearchHit, SearchOpts, SearchResult } from "./types.ts";
 import { applyCutoff, type CutoffEvidence } from "./cutoff.ts";
 import { applyRankingPolicy } from "./ranking.ts";
 import { buildConstraintTrace } from "./constraint-trace.ts";
@@ -43,7 +44,10 @@ export interface SearchConfig {
   facets?: boolean;
 }
 
-export type SearchFn = (q: string, opts?: SearchCallOpts) => Promise<SearchResult>;
+export interface SearchFn {
+  (q: string, opts?: SearchCallOpts): Promise<SearchResult>;
+  searchExplain(q: string, opts?: SearchCallOpts): Promise<SearchExplainResult>;
+}
 
 interface LoadedVocab {
   candidates: VocabCandidates;
@@ -176,7 +180,7 @@ export function createSearch(config: SearchConfig): SearchFn {
     embedQuery: config.embed,
     embedMany: config.embed.many,
   };
-  return async (q, opts = {}) => {
+  const search: SearchFn = async (q, opts = {}) => {
     const started = Date.now();
     const query = q.trim();
     if (!query && !opts.image) throw new Error("search requires a non-empty q or image");
@@ -276,4 +280,59 @@ export function createSearch(config: SearchConfig): SearchFn {
     }
     return result;
   };
+
+  search.searchExplain = async (q, opts = {}) => {
+    let retrievalPlan: RetrievalPlan | undefined;
+    let rankedRows: RankedRow[] = [];
+    const tracedRetriever: Retriever = async (plan) => {
+      retrievalPlan = plan;
+      rankedRows = await config.retriever(plan);
+      return rankedRows;
+    };
+    if (config.retriever.facets) tracedRetriever.facets = config.retriever.facets;
+    const result = await createSearch({ ...config, retriever: tracedRetriever })(q, opts);
+    if (!retrievalPlan) throw new Error("searchExplain: retriever did not receive a plan");
+
+    const firstEmbedding = Object.keys(def.embeddings ?? {})[0];
+    const docs: ExplainDocBreakdown[] = rankedRows.map((row) => {
+      const ranks = row.legRanks ?? {};
+      const cosineRank = ranks.cosine ?? (firstEmbedding ? ranks[firstEmbedding] : undefined);
+      const breakdown: ExplainDocBreakdown = {
+        id: row.id,
+        fts_rank: ranks.fts ?? null,
+        cosine_rank: cosineRank ?? null,
+        recency_rank: ranks.recency ?? null,
+        rrf_score: row.rrf_score,
+      };
+      const aspectNames = Object.keys(def.embeddings ?? {});
+      if (aspectNames.length > 1) {
+        breakdown.aspect_ranks = Object.fromEntries(
+          aspectNames.map((name) => [name, {
+            rank: ranks[name] ?? null,
+            cosine: name === firstEmbedding ? row.cos_sim ?? null : null,
+          }])
+        );
+      }
+      return breakdown;
+    });
+    const mode = opts.mode ?? (opts.image ? "similar" : "intent");
+    const weights = parseSearchWeights(def, opts.weights, mode, !!opts.image);
+    return {
+      q,
+      ...(result.parsed ? { parsed: result.parsed } : {}),
+      constraintTrace: result.constraintTrace,
+      ...(result.nlq_degraded ? { nlq_degraded: true } : {}),
+      filters: { sql: "", params: [] },
+      relaxation: result.relaxed,
+      relaxedFields: result.relaxedFields,
+      cache_hit: false,
+      weights,
+      docs,
+      took_ms: result.took_ms,
+      retrievalPlan,
+      ...(result.rewritten ? { rewritten: result.rewritten } : {}),
+    };
+  };
+
+  return search;
 }

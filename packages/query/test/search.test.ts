@@ -132,4 +132,32 @@ describe("createSearch", () => {
       { field: "brand", fieldType: "text", operator: "eq", value: "Acme", source: "nlq", soft: false },
     ]);
   });
+
+  test("searchExplain exposes per-leg ranks from the retriever", async () => {
+    const retriever = async (_plan: RetrievalPlan): Promise<RankedRow[]> => [{
+      id: "explained",
+      data: { title: "explained dress" },
+      rrf_score: 0.75,
+      legRanks: { fts: 1, doc: 2, recency: 3 },
+      fts_present: true,
+      cos_sim: 0.88,
+    }];
+    const search = createSearch({
+      collection: products,
+      retriever,
+      generate: async () => ({ semantic_query: "dress", lexical_query: "dress" }),
+      embed: testEmbedder([]),
+    });
+
+    const explain = await search.searchExplain("dress");
+
+    expect(explain.docs).toEqual([{
+      id: "explained",
+      fts_rank: 1,
+      cosine_rank: 2,
+      recency_rank: 3,
+      rrf_score: 0.75,
+    }]);
+    expect(explain.retrievalPlan?.query).toBe("dress");
+  });
 });
