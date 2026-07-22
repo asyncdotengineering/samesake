@@ -1,0 +1,16 @@
+{
+  "name": "@samesake-examples/cloudflare-backend",
+  "type": "module",
+  "private": true,
+  "description": "Reference peer backend: the SAME samesake engine (createEnricher + createSearch) over Cloudflare D1 (local SQLite) + LanceDB — no Postgres. Proves the four ports are backend-neutral.",
+  "scripts": {
+    "start": "bun run src/run.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@samesake/core": "workspace:*",
+    "@samesake/enrich": "workspace:*",
+    "@samesake/query": "workspace:*",
+    "@lancedb/lancedb": "^0.31.0"
+  }
+}
