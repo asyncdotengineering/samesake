@@ -2,8 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { runHarness } from "./run.ts";
 
 describe("D1 + LanceDB backend reference", () => {
-  test("runs enrich, resolve, and search without a database URL", async () => {
-    expect(process.env.SAMESAKE_DATABASE_URL ?? "").toBe("");
+  test("runs enrich, resolve, and search over D1 + LanceDB — no Postgres", async () => {
+    // "No Postgres" is a STRUCTURAL property, not an env accident: this example
+    // declares no Postgres dependency and imports no @samesake/postgres, so it
+    // physically cannot open a Postgres connection. (Asserting the env var is unset
+    // is meaningless — bun auto-loads the repo .env; the example never reads it.)
+    const pkg = (await import("../package.json")).default as { dependencies?: Record<string, string> };
+    expect(Object.keys(pkg.dependencies ?? {}).some((d) => /postgres|pgvector|drizzle/i.test(d))).toBe(false);
+
     const result = await runHarness({ writeEvidence: false });
 
     expect(result.enriched.length).toBe(10);
