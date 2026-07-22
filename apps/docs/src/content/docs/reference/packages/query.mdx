@@ -9,7 +9,8 @@ cutoffs, ranking policy, and optional reranking. It does not own an index or dat
 
 ## Public surface
 
-- `createSearch` returns `SearchFn`: `(query, options?) => Promise<SearchResult>`.
+- `createSearch` returns a callable `SearchFn`: `(query, options?) => Promise<SearchResult>`, plus
+  `searchExplain(query, options?)` for per-leg rank diagnostics.
 - `Retriever` executes `RetrievalPlan` and returns `RankedRow[]`.
 - `VocabProvider` supplies known values for grounded constraint parsing.
 - `RetrievalPlan`, `RankedRow`, `SearchHit`, `SearchResult`, `SearchOpts`, and
@@ -51,3 +52,6 @@ const result = await search('waterproof trail shoes', {
 
 The backend owns the semantics of retrieval and facet execution; `@samesake/query`
 owns the common plan and result contract.
+
+The explain entry preserves the hot `search()` response shape while returning each ranked row's
+`fts_rank`, `cosine_rank`, `recency_rank`, `rrf_score`, and optional per-aspect rank breakdown.

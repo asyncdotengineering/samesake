@@ -47,22 +47,25 @@ export const products = collection("products", {
 
 Every `filterable` attribute the preset declares (category, gender, colors, price, availability…) becomes a real database column you can filter on — and crucially, it's filled by *enrichment*, not by trusting whatever the seller typed. That's how your filters stay honest across a thousand sellers' habits.
 
-## Step 2 — Wire the matcher (with the relevance double-check on)
+## Step 2 — Wire the bundle (with the relevance double-check on)
 
-```ts title="matcher.ts"
-import { createMatcher, llmRerank } from "@samesake/server";
+```ts title="search.ts"
+import { samesake } from "@samesake/postgres";
+import { llmRerank } from "@samesake/server";
 import { products } from "./catalog.ts";
 import { geminiEmbed, geminiGenerate } from "./gemini.ts"; // your two model fns — see Providers
 
-export const matcher = createMatcher({
-  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
-  apiKey: process.env.SAMESAKE_API_KEY!,
-  embed: geminiEmbed,                    // gemini-embedding-2
-  generate: geminiGenerate,              // gemini-3.1-flash-lite — reads products + parses queries + judges relevance
+export const app = samesake({
+  url: process.env.SAMESAKE_DATABASE_URL!,
+  collection: products,
+  models: {
+    embed: geminiEmbed,       // gemini-embedding-2
+    generate: geminiGenerate, // gemini-3.1-flash-lite — reads products + parses queries + judges relevance
+  },
   rerank: llmRerank(geminiGenerate), // re-checks the top results, on by default once wired
 });
 
-await matcher.apply("market", { entities: [], collections: [products] });
+await app.migrate();
 ```
 
 ## Step 3 — The pipeline that keeps it fresh (this is the heart of a marketplace)
@@ -74,17 +77,15 @@ The loop is three commands, and the magic is that **they're all incremental and 
 ```ts title="sync.ts"
 // Run this on a schedule (cron) and/or from your store webhooks.
 async function sync(rows) {
-  await matcher.pushDocuments("market", "products", rows); // upsert raw listings
-  await matcher.enrich("market", "products");              // understand the new/changed ones
-  await matcher.index("market", "products");               // (re)build vectors for the new/changed ones
+  await app.enrich.upsert(rows); // upsert raw listings — content-hash dirty-tracked
+  await app.enrich.enrich();     // understand + (re)build surfaces for the new/changed ones
 }
 ```
 
 Why this is safe to run every five minutes over your whole catalog without melting your model bill:
 
-- **`pushDocuments` fingerprints each product.** It computes a `content_hash` from the listing's fields + image. On upsert, if the hash is **identical** to what's stored, nothing else changes — the product is untouched. If the hash is **different** (a seller edited the title, dropped the price, swapped the photo), it resets that row's `enriched_at` and `indexed_at` to null — marking it "dirty."
-- **`enrich` only processes dirty rows** (`enriched_at IS NULL`). New products and genuinely-changed products get re-read by the model; the other 49,000 untouched listings are skipped entirely. No wasted model calls.
-- **`index` only processes stale rows.** Same idea for the vectors.
+- **`enrich.upsert` fingerprints each product.** It computes a `content_hash` from the listing's fields. On upsert, if the hash is **identical** to what's stored, nothing else changes — the product is untouched. If the hash is **different** (a seller edited the title, dropped the price, swapped the photo), it resets that row's `enriched_at` to null — marking it "dirty."
+- **`enrich.enrich` only processes dirty rows** (`enriched_at IS NULL`). New products and genuinely-changed products get re-read by the model; the other 49,000 untouched listings are skipped entirely. No wasted model calls.
 
 So a full re-sync of a 50,000-product marketplace where 80 things changed costs you ~80 enrichments, not 50,000. You can run it as often as you like.
 
@@ -97,12 +98,14 @@ Wire `sync` to your store **webhooks** for near-instant updates (product created
 Two more commands you run on a slower schedule (say, hourly) — these are what separate a toy from something that survives a real marketplace:
 
 ```ts title="maintenance.ts"
-await matcher.revalidateImages("market", "products"); // a seller swapped a photo behind the same URL? re-embed it
-await matcher.retryFailed("market", "products");      // a flaky seller image or model hiccup? retry with backoff
+await app.enrich.retryFailed({ limit: 500 }); // a flaky seller image or model hiccup? retry with backoff
 ```
 
-- **`revalidateImages`** catches the sneaky case: a seller replaces the image at `https://…/red-dress.jpg` with a *blue* dress, same URL. Keyword/URL-based systems never notice and serve the stale look forever. samesake checks the image's fingerprint and, when it changed, forces a re-embed so visual search tells the truth.
-- **`retryFailed`** means a single product whose image timed out, or that hit a model rate-limit, doesn't silently vanish from your marketplace. It's marked `failed`, retried later with exponential backoff, and only given up on (`dead`) after several honest attempts.
+- **Image revalidation** — the old `revalidateImages` probe-and-clear step is a
+  `@samesake/server` workflow, not an `Enricher`/`SamesakeBundle` method. Detect the seller's photo swap yourself (conditional
+  GET / ETag on `image_url`) and re-`upsert` the row with a changed `image_etag`; that marks it dirty
+  and `enrich.enrich()` re-reads it with fresh vision output. See [server-only capabilities](/guides/server-only/).
+- **`retryFailed`** means a single product whose image timed out, or that hit a model rate-limit, doesn't silently vanish from your marketplace. It's marked `failed`, retried later with exponential backoff.
 
 Every product is always in one honest state — `pending`, `ready`, `quarantined`, `failed`, or `dead` — and only `ready` ones show in search. The whole state machine is in [Pipeline lifecycle](/guides/pipeline-lifecycle/).
 
@@ -116,44 +119,32 @@ Now the shopper side. Two things are happening when someone searches *"breezy su
 
 **The meaning is matched, not the words.** Because your `search` config carries the `cosine` (meaning) channel, the query and every product live in the same "meaning space." "Breezy summer garden-party dress" lands near "flowy floral linen midi" even with no shared words. That's intent search — and on text queries it's the default behaviour, so you get it for free.
 
-**The hard constraints become filters.** "Under 5000" and "nothing pink" are walls, not vibes. The fashion preset gives you a query parser (`fashion.nlq`) that turns the sentence into structured constraints, which you pass as real filters:
+**The hard constraints become filters.** "Under 5000" and "nothing pink" are walls, not vibes. Wire
+`fashion.nlq` onto the collection's `search.nlq` and `search()` parses the sentence into structured
+constraints and applies them as real filters itself — no separate parse call:
 
 ```ts title="search.ts"
-import { fashion, fashionSearchDefaults } from "@samesake/presets";
-import { matcher } from "./matcher.ts";
-import { geminiGenerate } from "./gemini.ts";
+import { app } from "./search.ts";
 
-// 1. Parse the shopper's sentence into intent + hard constraints
-const parsed = await geminiGenerate({
-  model: "gemini-3.1-flash-lite",
-  system: fashion.nlq.instructions,
-  prompt: "breezy summer dress for a garden party, nothing pink, under 5000",
-  schema: fashion.nlq.schema(),
-});
-// parsed → { semantic_query: "flowy summer garden-party dress",
-//            max_price: 5000, exclude_colors: ["pink"] }
-
-// 2. Search by the meaning, with the constraints enforced as filters
-const { hits } = await matcher.shopSearch("market", "products", {
-  q: parsed.semantic_query,
-  filters: { available: true, max_price: parsed.max_price, exclude_colors: parsed.exclude_colors },
-  limit: 20,
-});
+const { hits, parsed, constraintTrace } = await app.search(
+  "breezy summer dress for a garden party, nothing pink, under 5000",
+  { filters: { available: true }, limit: 20 }
+);
+// parsed.semantic_query           → "flowy summer garden-party dress"
+// constraintTrace.appliedFilters  → { max_price: 5000, exclude_colors: ["pink"], available: true }
 ```
 
-A pink 6,000 dress can be the most beautiful match in your catalog and it still won't show — because price and colour were walls, and `shopSearch` pushes them into the database as real conditions. The meaning only decides the *order* of the dresses that were allowed through. That's the rule from the very top, working exactly as promised.
+A pink 6,000 dress can be the most beautiful match in your catalog and it still won't show — because price and colour were walls, and `search()` pushes them into the database as real conditions. The meaning only decides the *order* of the dresses that were allowed through. That's the rule from the very top, working exactly as promised.
 
 And because `llmRerank` is wired, the top handful get a final "is this *actually* a garden-party dress?" pass from a model — blended with the retrieval order, never blindly replacing it ([Reranking](/reference/reranking/)).
 
-<Aside type="note">
-**Zero-result recovery is opt-in.** Pass `recoverNoResults: true` and, when a query dead-ends, `shopSearch` retries once with the filters your collection declared in `search.relaxableFilters` dropped — reported back as `fallback.relaxedFilters` so the UI can say "we loosened colour and price". A collection that declares nothing relaxes nothing. The fashion preset ships a sane list you can spread in:
-
-```ts
-search: { ...fashionSearchDefaults(), /* channels, rankingPolicy, … */ }
-// relaxableFilters: colors, material, fit, styles, category, price —
-// gender and brand deliberately excluded: never fill the page with men's
-// items on a women's query, or another brand on a brand query.
-```
+<Aside type="caution">
+The old `shopSearch`'s **zero-result recovery** (`recoverNoResults: true`, retrying once
+with `search.relaxableFilters` dropped, reporting `fallback.relaxedFilters`) has not been ported to
+`@samesake/query`'s `createSearch` — the new `SearchResult.relaxed`/`relaxedFields` fields exist on
+the type but the current implementation always returns `relaxed: false`. `search.relaxableFilters`
+is still a valid `CollectionDef` field; the retry workflow remains in `@samesake/server`. See
+[server-only capabilities](/guides/server-only/).
 </Aside>
 
 ## Step 5 — Improve on numbers, not vibes
@@ -165,7 +156,8 @@ const result = await matcher.runEval("market", "products", { queries: golden, ju
 console.log(result.aggregate, "pass:", result.pass);
 ```
 
-That's how you tune a marketplace without playing whack-a-mole. See [Eval gate](/guides/eval-gate/).
+That's how you tune a marketplace without playing whack-a-mole. See [Eval gate](/guides/eval-gate/)
+(`runEval` today still runs through the legacy `@samesake/server` `Matcher` — see that guide's note).
 
 ## Collapse duplicate listings — one product, many offers
 
@@ -204,20 +196,20 @@ down until precision starts to slip. The `examples/fashion-search/dedup-eval.ts`
 this precision/recall tradeoff on a labelled set — run it against your own model before you pick numbers.
 </Aside>
 
-Clustering is an **explicit stage** — it runs after `index`, in the same incremental spirit as the
-rest of the pipeline (it only touches rows that are indexed and not yet clustered):
+Clustering is an **explicit stage** — it runs after `enrich`, in the same incremental spirit as the
+rest of the pipeline (it only touches rows that are enriched and not yet clustered). `resolve` is
+exposed directly on the Tier-2 bundle (`app.resolve === app.enrich.resolve`):
 
 ```ts title="sync.ts"
-await matcher.pushDocuments("market", "products", rows);
-await matcher.enrich("market", "products");
-await matcher.index("market", "products");
-await matcher.dedup("market", "products");   // ← cluster same-product listings
+await app.enrich.upsert(rows);
+await app.enrich.enrich();
+await app.resolve();   // ← cluster same-product listings
 ```
 
 Now search collapses on the cluster and attaches the offers:
 
 ```ts
-const { hits } = await matcher.search("market", "products", { q: "silicone case iphone 15 black" });
+const { hits } = await app.search("silicone case iphone 15 black");
 // hits[0] = { id: "...", title: "...", offers: [
 //   { id: "a", vendor: "AStore", price: 12, available: true },
 //   { id: "b", vendor: "BShop",  price: 10, available: true },
@@ -230,20 +222,17 @@ listing — so you control exactly what cross-vendor data a search response reve
 goes out of stock or gets quarantined drops out of `offers` automatically. Pass `offers: false` to
 skip the attachment, or `diversify: false` to see every raw listing again.
 
-<Aside type="note">
+<Aside type="caution">
 **Precision over recall — uncertain pairs are suggestions, not merges.** A pair scoring below
 `autoLink` but at/above `suggest` is queued for a human rather than merged, so two genuinely
-different products are never silently collapsed. Review the queue and act on it:
+different products are never silently collapsed.
 
-```ts
-const { suggestions } = await matcher.dedupSuggestions("market", "products");
-await matcher.confirmGroup("market", "products", { id: "listing-9", group: "cluster-3" }); // merge
-await matcher.splitGroup("market", "products", { id: "listing-9" });                        // separate
-```
-
-A `split` is remembered: re-running `dedup` (even with `{ rebuild: true }`) never re-suggests or
-re-merges a pair a human pulled apart. All of it is also available over HTTP and the CLI
-(`samesake dedup`, `dedup-clusters`, `dedup-suggestions`, `dedup-confirm`, `dedup-split`).
+The human-review write path (`dedupSuggestions`, `confirmGroup`, `splitGroup`) is not
+exposed on `Enricher`/`EnrichStore` in the new package graph — `EnrichStore.feedback` only exposes
+the *read* side (`isDeclined`, `suggestionStatus`) that `clusterBatch` consumes internally. Reviewing
+and acting on the suggestion queue is still a `@samesake/server` `Matcher`/HTTP/CLI capability
+(`matcher.dedupSuggestions(...)`, `matcher.confirmGroup(...)`, `matcher.splitGroup(...)`, or
+`samesake dedup-suggestions` / `dedup-confirm` / `dedup-split`). See [server-only capabilities](/guides/server-only/).
 </Aside>
 
 Clusters never span tenancy `scopes` (below) — candidates are pinned to the row's own scope, so a
@@ -262,17 +251,18 @@ const products = collection("products", {
   // ...fields, embeddings, search as before
 });
 
-// Every write carries the scope…
-await matcher.pushDocuments("platform", "products", [
-  { id: "sku-1", scope: { store_id: "acme" }, data: { /* … */ } },
-]);
-
 // …and every read runs inside exactly one scope. There is no cross-scope search.
-const hits = await matcher.search("platform", "products", {
-  q: "red running shoes",
+const hits = await app.search("red running shoes", {
   scope: { store_id: "acme" },
 });
 ```
+
+<Aside type="caution">
+`SearchOpts.scope` is a required-when-declared field on `@samesake/query`'s `createSearch`, and
+`RawRow.scope` supplies the same keys on writes. `PostgresEnrichStore.upsert` persists those values
+into the collection's `scope_<name>` columns and rejects missing, unknown, or cross-scope IDs. Supply
+the complete scope on every upsert and search; there is no cross-scope query.
+</Aside>
 
 The scope compiles to an indexed column plus a **mandatory** filter on every surface — search,
 facets, explain, document reads, deletes. Forgetting it is an error, not an unscoped query; an

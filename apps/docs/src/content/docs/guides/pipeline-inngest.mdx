@@ -5,22 +5,22 @@ description: Durable push → enrich → index with Inngest steps, cron schedule
 
 import { Aside } from '@astrojs/starlight/components';
 
-[Inngest](https://www.inngest.com/) turns each matcher call into a **durable step**. If `index` fails, Inngest retries just that step — `enrich` doesn't re-run. Cron triggers give you the safety-net loop; events give you webhook fast-paths. You serve the functions from your existing Node app.
+[Inngest](https://www.inngest.com/) turns each bundle call into a **durable step**. If `enrich` fails, Inngest retries just that step — `upsert` doesn't re-run. Cron triggers give you the safety-net loop; events give you webhook fast-paths. You serve the functions from your existing Node app.
 
-See [Running the enrich pipeline durably](/guides/enrich-pipeline/) for the five-step model. This page wires it to Inngest.
+See [Running the enrich pipeline durably](/guides/enrich-pipeline/) for the model. This page wires it to Inngest.
 
-## Matcher setup
+## Bundle setup
 
-```ts title="lib/matcher.ts"
-import { createMatcher, llmRerank } from "@samesake/server";
+```ts title="lib/search.ts"
+import { samesake } from "@samesake/postgres";
+import { llmRerank } from "@samesake/server";
 import { products } from "../catalog.ts";
 import { geminiEmbed, geminiGenerate } from "../gemini.ts";
 
-export const matcher = createMatcher({
-  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
-  apiKey: process.env.SAMESAKE_API_KEY!,
-  embed: geminiEmbed,
-  generate: geminiGenerate,
+export const app = samesake({
+  url: process.env.SAMESAKE_DATABASE_URL!,
+  collection: products,
+  models: { embed: geminiEmbed, generate: geminiGenerate },
   rerank: llmRerank(geminiGenerate),
 });
 ```
@@ -37,11 +37,8 @@ export const inngest = new Inngest({ id: "samesake-pipeline" });
 
 ```ts title="inngest/functions.ts"
 import { inngest } from "./client.ts";
-import { matcher } from "../lib/matcher.ts";
+import { app } from "../lib/search.ts";
 import { fetchChangedRows, rowFromWebhook } from "../catalog-source.ts";
-
-const PROJECT = "market";
-const COLLECTION = "products";
 
 // Scheduled full-loop — every 5 minutes, one at a time
 export const syncCatalog = inngest.createFunction(
@@ -51,12 +48,11 @@ export const syncCatalog = inngest.createFunction(
     concurrency: 1,
   },
   async ({ step }) => {
-    await step.run("push", async () => {
+    await step.run("upsert", async () => {
       const rows = await fetchChangedRows();
-      await matcher.pushDocuments(PROJECT, COLLECTION, rows);
+      await app.enrich.upsert(rows);
     });
-    await step.run("enrich", () => matcher.enrich(PROJECT, COLLECTION));
-    await step.run("index", () => matcher.index(PROJECT, COLLECTION));
+    await step.run("enrich", () => app.enrich.enrich());
   },
 );
 
@@ -67,12 +63,8 @@ export const catalogMaintenance = inngest.createFunction(
     triggers: [{ cron: "0 * * * *" }],
   },
   async ({ step }) => {
-    await step.run("revalidate-images", () =>
-      matcher.revalidateImages(PROJECT, COLLECTION),
-    );
-    await step.run("retry-failed", () =>
-      matcher.retryFailed(PROJECT, COLLECTION),
-    );
+    // Image revalidation is a caller-owned @samesake/server workflow; retry failed rows here.
+    await step.run("retry-failed", () => app.enrich.retryFailed({ limit: 500 }));
   },
 );
 
@@ -83,13 +75,12 @@ export const onProductUpdated = inngest.createFunction(
     triggers: [{ event: "store/product.updated" }],
   },
   async ({ event, step }) => {
-    await step.run("push", async () => {
+    await step.run("upsert", async () => {
       const row = rowFromWebhook(event.data);
-      await matcher.pushDocuments(PROJECT, COLLECTION, [row]);
+      await app.enrich.upsert([row]);
     });
-    // Optional: run enrich + index inline for instant search
-    // await step.run("enrich", () => matcher.enrich(PROJECT, COLLECTION));
-    // await step.run("index", () => matcher.index(PROJECT, COLLECTION));
+    // Optional: run enrich inline for instant search
+    // await step.run("enrich", () => app.enrich.enrich());
   },
 );
 ```
@@ -136,7 +127,7 @@ Use `step.sendEvent("name", events[])` inside a function when you need to fan ou
 
 ## Why this fits samesake
 
-Inngest's job is durability and observability, not catalog fan-out. Your 50,000-product marketplace still runs three matcher calls per sync; samesake skips unchanged rows inside each call. Separate steps mean a failed embed retry doesn't re-fetch your Shopify feed.
+Inngest's job is durability and observability, not catalog fan-out. Your 50,000-product marketplace still runs two bundle calls per sync; samesake skips unchanged rows inside each call. Separate steps mean a failed embed retry doesn't re-fetch your Shopify feed.
 
 <Aside type="note">
 Row statuses (`pending`, `ready`, `failed`, …) are in Postgres, not Inngest. See [Pipeline lifecycle](/guides/pipeline-lifecycle/).

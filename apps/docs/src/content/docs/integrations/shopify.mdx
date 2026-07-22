@@ -72,7 +72,7 @@ For the full catalog, use a **bulk operation**, not paginated queries: one async
 
 2. Poll `bulkOperation(id:)` until `status == COMPLETED`, then download the JSONL from its `url`.
 
-3. Reassemble: nested connections (variants, images) are separate lines carrying `__parentId`. Group them onto the parent, map to docs, and `pushDocuments` in batches, then `index`.
+3. Reassemble: nested connections (variants, images) are separate lines carrying `__parentId`. Group them onto the parent, map to docs, and `enrich.upsert` in batches, then `enrich.enrich` once.
 
    ```ts
    // for each reassembled product p:
@@ -82,8 +82,8 @@ For the full catalog, use a **bulk operation**, not paginated queries: one async
      price: Number(p.variants?.[0]?.price ?? 0),
      available: p.variants?.some((v) => v.inventoryQuantity > 0) ?? true,
    } };
-   await matcher.pushDocuments("shop", "products", batch);
-   await matcher.index("shop", "products");
+   await app.enrich.upsert(batch);
+   await app.enrich.enrich();
    ```
 
 </Steps>
@@ -115,8 +115,12 @@ export function verify(rawBody: Buffer, hmacHeader: string, secret: string) {
 // after verify + res.status(200):
 const topic = req.get("X-Shopify-Topic");
 const product = JSON.parse(rawBody.toString("utf8"));
-if (topic === "products/delete") await matcher.removeDocuments("shop", "products", [String(product.id)]);
-else { await matcher.pushDocuments("shop", "products", [toDoc(product)]); await matcher.index("shop", "products"); }
+if (topic === "products/delete") {
+  await app.enrich.remove([String(product.id)]);
+} else {
+  await app.enrich.upsert([toDoc(product)]);
+  await app.enrich.enrich();
+}
 ```
 
 Webhooks are unordered and may be duplicated — dedupe on `X-Shopify-Webhook-Id` and keep writes idempotent (upsert/remove by id).
@@ -124,8 +128,8 @@ Webhooks are unordered and may be duplicated — dedupe on `X-Shopify-Webhook-Id
 ## 4. Recommended shape
 
 1. **Custom app** with `read_products`; capture the Admin token + app client secret (the secret signs webhooks).
-2. **Initial index:** one Admin GraphQL bulk operation → stream JSONL → batch `pushDocuments` → `index`.
-3. **Deltas:** `products/create|update|delete` webhooks → verify HMAC → push/index or remove.
+2. **Initial index:** one Admin GraphQL bulk operation → stream JSONL → batch `enrich.upsert` → `enrich.enrich`.
+3. **Deltas:** `products/create|update|delete` webhooks → verify HMAC → upsert/enrich or soft-delete.
 4. **Backstop:** periodic reconciliation with a bulk query filtered by `updated_at:>{lastSync}` to catch missed events. `handle` is your stable join key back to the storefront route.
 
 Auth summary: **Storefront access token** (buyer-facing, browser-safe) vs **Admin access token** (full read, bulk ops, webhook registration). Product sync needs Admin `read_products`.

@@ -75,9 +75,8 @@ export const products = collection("products", {
 Facets read live from the same Postgres rows as search — so run the usual pipeline after you load or change catalog data:
 
 ```ts title="sync.ts"
-await matcher.pushDocuments("shop", "products", rows);
-await matcher.enrich("shop", "products");
-await matcher.index("shop", "products");
+await app.enrich.upsert(rows);
+await app.enrich.enrich();
 ```
 
 For a catalog that changes often, schedule that trio (or wire it to webhooks) so facet counts stay honest. The durable version — retries, image revalidation, quarantine — is in [Pipeline lifecycle](/guides/pipeline-lifecycle/) and the [Running the pipeline](/guides/enrich-pipeline/) guides.
@@ -87,19 +86,18 @@ For a catalog that changes often, schedule that trio (or wire it to webhooks) so
 Pass the facet field names on `search`. samesake runs the same query and filters you would for results, then aggregates counts for each requested facet **on that narrowed set**:
 
 ```ts title="search.ts"
-import { createMatcher, llmRerank } from "@samesake/server";
+import { samesake } from "@samesake/postgres";
+import { llmRerank } from "@samesake/server";
 import { geminiEmbed, geminiGenerate } from "./gemini.ts";
 
-const matcher = createMatcher({
-  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
-  apiKey: process.env.SAMESAKE_API_KEY!,
-  embed: geminiEmbed,
-  generate: geminiGenerate,
+const app = samesake({
+  url: process.env.SAMESAKE_DATABASE_URL!,
+  collection: products,
+  models: { embed: geminiEmbed, generate: geminiGenerate },
   rerank: llmRerank(geminiGenerate),
 });
 
-const result = await matcher.search("shop", "products", {
-  q: "linen dress",
+const result = await app.search("linen dress", {
   facets: ["brand", "category", "colors"],
   filters: { available: true },
   limit: 24,
@@ -141,8 +139,7 @@ result.facets.price
 Your UI renders `values` as checkboxes (or chips) with the count beside each label. When someone clicks **Uniqlo**, you don't need a separate facet API — add a filter and search again:
 
 ```ts
-await matcher.search("shop", "products", {
-  q: "linen dress",
+await app.search("linen dress", {
   facets: ["brand", "category", "colors"],
   filters: { available: true, brand: "Uniqlo" },
   limit: 24,
@@ -157,27 +154,35 @@ Request only the facets you render. Each name in `facets: [...]` is a grouped SQ
 
 ## Aggregations without a search query
 
-Facets above ride on `search()`, which needs a query (or image). But some questions are pure aggregation — *"how many products does each brand list?"*, *"what's the average price for Loom & Aura?"* — with no search at all. Reaching for raw SQL against samesake's compiled table couples you to its internal schema. Use **`matcher.facets()`** instead: the same facet/stats engine, no query required.
+Facets above ride on `search()`, which needs a query (or image). But some questions are pure aggregation — *"how many products does each brand list?"*, *"what's the average price for Loom & Aura?"* — with no search at all. Reaching for raw SQL against samesake's compiled table couples you to its internal schema. Use the backend's **`facets()`** instead: the same facet/stats engine, no query required.
+
+<Aside type="tip">
+The Tier-2 `SamesakeBundle` returned by `samesake()` exposes `facets()` alongside
+`enrich`, `resolve`, and `search`, so query-free aggregations can use the same bundle.
+</Aside>
 
 ```ts title="Pure aggregation — no query"
+import { normalizeFiltersToConstraintPredicates } from "@samesake/query";
+import { products } from "./catalog.ts";
+
 // Count per brand across the catalog (optionally scoped by a filter)
-const brands = await matcher.facets("shop", "products", {
-  facets: ["brand"],
-  filters: { category: "Footwear" }, // optional
+const brands = await app.facets({
+  fields: ["brand"],
+  filters: normalizeFiltersToConstraintPredicates({ category: "Footwear" }, products), // optional
 });
 brands.brand;
 // { values: [{ value: "Nike", count: 32 }, { value: "Adidas", count: 21 }, … ] }
 
 // Average + count for one brand — range facets carry numeric stats
-const price = await matcher.facets("shop", "products", {
-  filters: { brand: "Loom & Aura" },
-  facets: ["price"],
+const price = await app.facets({
+  filters: normalizeFiltersToConstraintPredicates({ brand: "Loom & Aura" }, products),
+  fields: ["price"],
 });
 price.price;
 // { count: 18, min: 4200, max: 28000, avg: 11910, buckets: [ … ] }
 ```
 
-`facets()` takes only `filters` + the facet field names — no `q`. It returns the same `FacetResult` shapes as `result.facets`: text/enum/boolean fields give `{ values: [{ value, count }] }`; range fields give `{ count, min, max, avg, buckets }`. This is the primitive for "count per X" and "average Y" — the [Mastra e-commerce assistant](/guides/mastra-ecommerce-assistant/) uses it for its `count_products_by_brand` and `average_price` tools.
+`facets()` takes `fields` + normalized `filters` — no `q`. It returns the same `FacetResult` shapes as `result.facets`: text/enum/boolean fields give `{ values: [{ value, count }] }`; range fields give `{ count, min, max, avg, buckets }`. This is the primitive for "count per X" and "average Y" — the [Mastra e-commerce assistant](/guides/mastra-ecommerce-assistant/) uses it for its `count_products_by_brand` and `average_price` tools.
 
 <Aside type="tip">
 Everything stays in your Postgres, so a one-off `GROUP BY` you don't want to model as a facet is always a plain SQL query away. But for the counts and averages an agent or dashboard asks repeatedly, `facets()` keeps you on a stable API instead of samesake's internal table names.
@@ -208,7 +213,7 @@ For production quality on fashion, keep `llmRerank(geminiGenerate)` wired global
 | Generate / judge / rerank | `gemini-3.1-flash-lite` via `llmRerank(geminiGenerate)` |
 | Visual signal | `fashion.spaces({ visual: true })` |
 
-Copy the provider adapters from [Providers](/reference/providers/), `apply` once, then the push → enrich → index loop above.
+Copy the provider adapters from [Providers](/reference/providers/), `migrate` once, then the `enrich.upsert` → `enrich.enrich` loop above.
 
 ## Where to go next
 

@@ -12,7 +12,7 @@ For a complete, runnable build (Next.js storefront + live demo), see [Fashion ap
 ## Install
 
 ```bash
-bun add @porulle/core @porulle/adapter-postgres @samesake/core @samesake/server
+bun add @porulle/core @porulle/adapter-postgres @samesake/core @samesake/postgres
 ```
 
 <Aside type="note">
@@ -89,8 +89,10 @@ export function toDoc(e: any) {
 Read the live catalog from Porulle's REST API (`x-api-key` auth), paging until you've covered `meta.pagination.total`, and `include` the relations you map:
 
 ```ts title="bulk-index.ts"
-async function bulkIndex(base: string, apiKey: string, matcher: any) {
-  await matcher.apply("store", { entities: [], collections: [products] });
+import type { SamesakeBundle } from "@samesake/postgres";
+
+async function bulkIndex(base: string, apiKey: string, app: SamesakeBundle) {
+  await app.migrate();
   for (let page = 1; ; page++) {
     const res = await fetch(
       `${base}/api/catalog/entities?status=active&include=attributes,pricing&limit=100&page=${page}`,
@@ -98,10 +100,10 @@ async function bulkIndex(base: string, apiKey: string, matcher: any) {
     );
     const { data, meta } = await res.json();
     if (!data.length) break;
-    await matcher.pushDocuments("store", "products", data.map(toDoc));
+    await app.enrich.upsert(data.map(toDoc));
     if (page >= meta.pagination.totalPages) break;
   }
-  await matcher.index("store", "products");
+  await app.enrich.enrich();
 }
 ```
 
@@ -114,7 +116,7 @@ In-process? Skip HTTP and read via the kernel: `createKernel(config).services.ca
 Porulle entity config supports lifecycle **hooks** (`afterCreate`, `afterUpdate`, `afterDelete`, …). Hang the sync off them so the index tracks catalog mutations with no extra infrastructure:
 
 ```ts title="commerce.config.ts"
-import { matcher } from "./samesake"; // your createMatcher instance + products collection
+import { app } from "./samesake"; // your samesake() bundle + products collection
 
 export default defineConfig({
   // …
@@ -122,9 +124,9 @@ export default defineConfig({
     product: {
       fields: [ /* material, color, category, imageUrl */ ],
       hooks: {
-        afterCreate: [async (ctx) => { await matcher.pushDocuments("store", "products", [toDoc(ctx.entity)]); await matcher.index("store", "products"); }],
-        afterUpdate: [async (ctx) => { await matcher.pushDocuments("store", "products", [toDoc(ctx.entity)]); await matcher.index("store", "products"); }],
-        afterDelete: [async (ctx) => { await matcher.removeDocuments("store", "products", [ctx.entity.slug]); }],
+        afterCreate: [async (ctx) => { await app.enrich.upsert([toDoc(ctx.entity)]); await app.enrich.enrich(); }],
+        afterUpdate: [async (ctx) => { await app.enrich.upsert([toDoc(ctx.entity)]); await app.enrich.enrich(); }],
+        afterDelete: [async (ctx) => { await app.enrich.remove([ctx.entity.slug]); }],
       },
     },
   },
@@ -138,14 +140,14 @@ export default defineConfig({
 Expose a search route that proxies to samesake — in Next.js that's one route handler; under Porulle's Hono app it's a custom route:
 
 ```ts
-const result = await matcher.search("store", "products", { q, filters: { available: true }, limit: 24 });
+const result = await app.search(q, { filters: { available: true }, limit: 24 });
 ```
 
 ## Recommended shape
 
-1. One `createMatcher` instance with the `products` collection (same DB as Porulle, or its own).
+1. One `samesake()` bundle with the `products` collection (same DB as Porulle, or its own).
 2. **Bulk index** the active catalog via `/api/catalog/entities` (or the in-process kernel) on first boot.
 3. **Sync** via `afterCreate`/`afterUpdate`/`afterDelete` hooks on the product entity.
-4. A search route calling `matcher.search`.
+4. A search route calling `app.search`.
 
 See the [full Next.js build](/guides/porulle-fashion-app/) for a working end-to-end example with a storefront and a live demo.

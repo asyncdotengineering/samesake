@@ -11,14 +11,14 @@ It's the [Weaviate Query Agent e-commerce recipe](https://docs.weaviate.io/agent
 
 ```
 Mastra Agent (gpt-4.1-mini)
-├── searchProducts        →  samesake.search  (hybrid: FTS + vector, NLQ budget parsing)
-├── searchBrands          →  samesake.search  (brand hierarchy / country / rating)
-├── countProductsByBrand  →  samesake.facets   (terms facet on brand — count per brand)
-└── averagePrice          →  samesake.facets   (range facet on price — count + avg)
+├── searchProducts        →  productsApp.search  (hybrid: FTS + vector, NLQ budget parsing)
+├── searchBrands          →  brandsApp.search    (brand hierarchy / country / rating)
+├── countProductsByBrand  →  facets (terms on brand — count per brand)
+└── averagePrice          →  facets (range on price — count + avg)
         │
         ▼
   Postgres + pgvector
-  └── project_qa_ecommerce.c_products / c_brands   (samesake, namespaced)
+  └── qa_ecommerce.c_products / c_brands   (samesake, namespaced via `schema`)
 
 MCPServer (stdio)  →  exposes all four tools + the agent itself
 ```
@@ -39,8 +39,8 @@ A standalone Bun app — no framework needed.
 
 ```jsonc
 // package.json (deps)
-"@samesake/core": "^2.0.0",   // inside this monorepo the app uses "workspace:*"; published is ^2.0.0
-"@samesake/server": "^2.0.0",
+"@samesake/core": "^2.0.0",     // inside this monorepo the app uses "workspace:*"; published is ^2.0.0
+"@samesake/postgres": "^2.0.0",
 "@mastra/core": "^1.42.0",
 "@mastra/mcp": "^1.10.0",
 "@ai-sdk/openai": "^3.0.71",
@@ -58,10 +58,9 @@ The recipe has two datasets — clothing items and brands — so we declare two 
 // src/samesake.ts
 import { z } from "zod";
 import { collection, f, Channels, gates } from "@samesake/core";
-import { createMatcher } from "@samesake/server";
+import { samesake } from "@samesake/postgres";
 import { geminiEmbed, geminiGenerate } from "./providers.ts";
 
-export const PROJECT = "qa-ecommerce";
 export const PRODUCTS = "products";
 export const BRANDS = "brands";
 
@@ -107,8 +106,11 @@ The `budget: true` on `price` plus the `nlq` block is what lets a shopper say *"
 
 ## 3. Wire your models
 
-`@samesake/server` ships no AI SDK — you pick the models. This app uses the ready-made Gemini
-adapters from `@samesake/providers` (retry/backoff and bulk-indexing throttling built in):
+`@samesake/postgres` ships no AI SDK — you pick the models. This app uses the ready-made Gemini
+adapters from `@samesake/providers`; its embedder export delegates to the dual-form
+`@samesake/embed` implementation, while generation keeps provider retry/backoff options. Two
+collections mean two bundles sharing one `schema` for namespacing (the Tier-2 bundle is one
+collection per bundle, unlike the old project+collection matcher):
 
 ```ts
 // src/samesake.ts
@@ -117,22 +119,39 @@ import { geminiEmbedder, geminiGenerator } from "@samesake/providers";
 
 ```ts
 // src/samesake.ts (continued)
-let _matcher: ReturnType<typeof createMatcher> | null = null;
-export function getMatcher() {
-  if (_matcher) return _matcher;
-  _matcher = createMatcher({
-    databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
-    apiKey: process.env.SAMESAKE_API_KEY ?? "dev-key-please-change",
+const models = {
+  embed: geminiEmbedder(),
+  generate: geminiGenerator({ retries: 8 }),
+};
+
+let _productsApp: ReturnType<typeof samesake> | null = null;
+export function getProductsApp() {
+  return (_productsApp ??= samesake({
+    url: process.env.SAMESAKE_DATABASE_URL!,
+    schema: "qa_ecommerce",
+    collection: products,
+    models,
     migrate: "eager",
-    embed: geminiEmbedder({ minIntervalMs: 120, retries: 8 }),
-    generate: geminiGenerator({ retries: 8 }),
-  });
-  return _matcher;
+  }));
+}
+
+let _brandsApp: ReturnType<typeof samesake> | null = null;
+export function getBrandsApp() {
+  return (_brandsApp ??= samesake({
+    url: process.env.SAMESAKE_DATABASE_URL!,
+    schema: "qa_ecommerce",
+    collection: brands,
+    models,
+    migrate: "eager",
+  }));
 }
 ```
 
-<Aside type="caution" title="Embedding rate limits will bite during the seed">
-Bulk indexing makes one embedding call per document. Depending on your key/tier, the embedding API may throttle you (we saw 429s at ~40 req/min on a Gemini key whose project had no billing enabled). The fix is in `providers.ts`: a light delay between calls plus exponential backoff on 429/500/503. Indexing then completes — just slower. A billing-enabled key removes the throttle with zero code changes.
+<Aside type="caution" title="Embedding quotas still apply during the seed">
+`@samesake/embed` uses the provider's batch endpoint for enrichment, so the pipeline does not make
+one single-request call per document. Provider quotas still apply; use the provider's batch limits
+and schedule large seeds accordingly. Retry/backoff options on `geminiGenerator` cover generation,
+not the canonical embedder.
 </Aside>
 
 ## 4. The tools
@@ -155,27 +174,35 @@ export const searchProducts = createTool({
     const filters: Record<string, unknown> = {};
     if (typeof max_price === "number") filters.price = { $lte: max_price };
     if (category) filters.category = category;
-    const result = await getMatcher().search(PROJECT, PRODUCTS, { q: query, filters, limit });
+    const result = await getProductsApp().search(query, { filters, limit });
     return { count: result.hits.length, products: result.hits.map(toProduct) };
   },
 });
 ```
 
 <Aside type="tip" title="search() needs a query — aggregations use facets() instead">
-`search()` requires a non-empty `q` (or image) — it's a retrieval call, it can't express a `GROUP BY`. So *"which brand lists the most shoes"* and *"average price for brand X"* go through [`matcher.facets()`](/guides/faceted-search/#aggregations-without-a-search-query) — samesake's query-free aggregation. A terms facet on `brand` *is* a count-per-brand `GROUP BY`; a range facet on `price` carries `count` + `avg`. No raw SQL, no coupling to samesake's internal table.
+`search()` requires a non-empty `q` (or image) — it's a retrieval call, it can't express a `GROUP BY`. So *"which brand lists the most shoes"* and *"average price for brand X"* go through [`facets()`](/guides/faceted-search/#aggregations-without-a-search-query) — samesake's query-free aggregation. A terms facet on `brand` *is* a count-per-brand `GROUP BY`; a range facet on `price` carries `count` + `avg`. No raw SQL, no coupling to samesake's internal table.
+</Aside>
+
+<Aside type="tip">
+The Tier-2 `SamesakeBundle` exposes `facets()` alongside `search()`, so these aggregation tools
+can use the same products app instead of creating a second backend.
 </Aside>
 
 ```ts
 // src/tools.ts (aggregations — abridged)
+import { normalizeFiltersToConstraintPredicates } from "@samesake/query";
+import { products } from "./samesake.ts";
+
+const app = getProductsApp();
+
 export const countProductsByBrand = createTool({
   id: "count_products_by_brand",
   description: "Count items per brand, ranked. Pass `category` (e.g. shoes -> Footwear) or omit for the whole catalog.",
   inputSchema: z.object({ category: z.enum(PRODUCT_CATEGORIES).optional() }),
   execute: async ({ category }) => {
-    const f = await getMatcher().facets(PROJECT, PRODUCTS, {
-      filters: category ? { category } : {},
-      facets: ["brand"],
-    });
+    const filters = normalizeFiltersToConstraintPredicates(category ? { category } : {}, products);
+    const f = await app.facets({ filters, fields: ["brand"] });
     const by_brand = "values" in f.brand ? f.brand.values : [];
     return { top: by_brand[0] ?? null, by_brand };
   },
@@ -186,7 +213,8 @@ export const averagePrice = createTool({
   description: "Average price (USD) and item count for a brand across the whole catalog.",
   inputSchema: z.object({ brand: z.string() }),
   execute: async ({ brand }) => {
-    const f = await getMatcher().facets(PROJECT, PRODUCTS, { filters: { brand }, facets: ["price"] });
+    const filters = normalizeFiltersToConstraintPredicates({ brand }, products);
+    const f = await app.facets({ filters, fields: ["price"] });
     const p = "avg" in f.price ? f.price : null;
     return { brand, item_count: p?.count ?? 0, average_price_usd: p?.avg ?? null };
   },

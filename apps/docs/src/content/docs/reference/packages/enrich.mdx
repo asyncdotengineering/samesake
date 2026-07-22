@@ -21,7 +21,7 @@ performs model I/O only through closures supplied by the consumer.
 ## Ports
 
 `EnrichStore` is the durable row-state contract. It covers upsert, dirty loading,
-enriched writes, failures, retries, and optional enriched-row/candidate access for
+optional hard deletion, enriched writes, failures, retries, and optional enriched-row/candidate access for
 resolution. `CandidateProvider` supplies a shortlist; blocking is backend work, while
 scoring remains pure.
 
@@ -29,14 +29,16 @@ The factory returns an `Enricher` with:
 
 ```ts
 upsert(rows)
+remove(ids)
 enrich({ limit, concurrency })
 resolve({ limit })
 retryFailed({ limit })
 evaluate(gold)
 ```
 
-`createEnricher` does not schedule jobs, retry network calls, or run a dead-letter
-queue. The application platform and its store own those concerns.
+`remove(ids)` calls the store's optional hard-delete capability and throws a clear error when the
+store does not implement it. `createEnricher` does not schedule jobs, retry network calls, or run a
+dead-letter queue. The application platform and its store own those concerns.
 
 ## Example
 

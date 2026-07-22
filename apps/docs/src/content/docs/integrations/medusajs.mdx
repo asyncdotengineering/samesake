@@ -79,8 +79,9 @@ Prefer Medusa's internal `query.graph` over HTTP for same-process sync. Page unt
 
 ```ts title="src/workflows/index-products.ts (sketch)"
 import { QueryContext } from "@medusajs/framework/utils";
+import type { SamesakeBundle } from "@samesake/postgres";
 
-export async function bulkIndex(container, matcher) {
+export async function bulkIndex(container, app: SamesakeBundle) {
   const query = container.resolve("query");
   let skip = 0;
   for (;;) {
@@ -93,11 +94,11 @@ export async function bulkIndex(container, matcher) {
       context: { variants: { calculated_price: QueryContext({ region_id: process.env.REGION_ID, currency_code: "usd" }) } },
     });
     if (!data.length) break;
-    await matcher.pushDocuments("store", "products", data.map(toDoc));
+    await app.enrich.upsert(data.map(toDoc));
     skip += 100;
     if (skip >= (metadata?.count ?? 0)) break;
   }
-  await matcher.index("store", "products");
+  await app.enrich.enrich();
 }
 ```
 
@@ -110,24 +111,25 @@ import type { SubscriberArgs, SubscriberConfig } from "@medusajs/framework";
 
 export default async function handler({ event: { data }, container }: SubscriberArgs<{ id: string }>) {
   const query = container.resolve("query");
-  const matcher = container.resolve("samesake"); // your module wrapping createMatcher
+  const app = container.resolve("samesake"); // your module wrapping samesake()
   const { data: [p] } = await query.graph({
     entity: "product",
     fields: ["id","title","description","handle","status","categories.name","collection.title","variants.calculated_price.*"],
     filters: { id: data.id },
   });
   if (p?.status === "published") {
-    await matcher.pushDocuments("store", "products", [toDoc(p)]);
-    await matcher.index("store", "products");
+    await app.enrich.upsert([toDoc(p)]);
+    await app.enrich.enrich();
   } else {
-    await matcher.removeDocuments("store", "products", [data.id]);
+    await app.enrich.remove([data.id]);
   }
 }
 
 export const config: SubscriberConfig = { event: ["product.created", "product.updated"] };
 ```
 
-A second subscriber on `product.deleted` calls `matcher.removeDocuments(...)`.
+A second subscriber on `product.deleted` runs the same soft-delete upsert — see the TODO
+above; there is no hard-delete port on the current Tier-2 bundle.
 
 <Aside type="note">
 The default in-memory Local Event Bus is dev-only. Use the **Redis Event Bus** module in production so events survive restarts and retry.
@@ -141,9 +143,9 @@ File-based routing: `src/api/store/products/search/route.ts` → `POST /store/pr
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const matcher = req.scope.resolve("samesake");
+  const app = req.scope.resolve("samesake");
   const { q, filters, limit } = req.body as any;
-  res.json(await matcher.search("store", "products", { q, filters, limit: limit ?? 20 }));
+  res.json(await app.search(q, { filters, limit: limit ?? 20 }));
 }
 ```
 
@@ -151,7 +153,7 @@ Store routes require an `x-publishable-api-key`. For the Admin API during bulk s
 
 ## Recommended shape
 
-1. Custom **samesake module** (`src/modules/samesake`) wrapping `createMatcher`.
+1. Custom **samesake module** (`src/modules/samesake`) wrapping `samesake()` from `@samesake/postgres`.
 2. **Bulk index** via the Query graph on first boot / a one-off admin route.
-3. **Subscribers** for `product.created|updated|deleted` → push/index or remove.
-4. **`/store/products/search`** proxying to `matcher.search`.
+3. **Subscribers** for `product.created|updated|deleted` → upsert/enrich or soft-delete.
+4. **`/store/products/search`** proxying to `app.search`.

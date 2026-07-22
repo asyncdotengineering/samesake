@@ -7,23 +7,23 @@ import { Aside } from '@astrojs/starlight/components';
 
 [Cloudflare Workflows](https://developers.cloudflare.com/workflows/) gives you durable steps on Workers via `step.do`. Cron schedules on the workflow binding auto-create instances — no separate cron Worker. Failed steps retry with configurable backoff.
 
-See [Running the enrich pipeline durably](/guides/enrich-pipeline/) for the five-step model.
+See [Running the enrich pipeline durably](/guides/enrich-pipeline/) for the model.
 
-## Matcher setup
+## Bundle setup
 
-Your matcher runs inside the Worker (or calls out to a Node service that holds it — same matcher calls either way). For a Worker-hosted matcher, keep the database URL and API key in secrets:
+Your bundle runs inside the Worker (or calls out to a Node service that holds it — same bundle calls either way). For a Worker-hosted bundle, keep the database URL in secrets:
 
-```ts title="src/matcher.ts"
-import { createMatcher, llmRerank } from "@samesake/server";
+```ts title="src/search.ts"
+import { samesake } from "@samesake/postgres";
+import { llmRerank } from "@samesake/server";
 import { products } from "./catalog.ts";
 import { geminiEmbed, geminiGenerate } from "./gemini.ts";
 
-export function createCatalogMatcher(env: Env) {
-  return createMatcher({
-    databaseUrl: env.SAMESAKE_DATABASE_URL,
-    apiKey: env.API_KEY,
-    embed: geminiEmbed,
-    generate: geminiGenerate,
+export function createCatalogApp(env: Env) {
+  return samesake({
+    url: env.SAMESAKE_DATABASE_URL,
+    collection: products,
+    models: { embed: geminiEmbed, generate: geminiGenerate },
     rerank: llmRerank(geminiGenerate),
   });
 }
@@ -37,47 +37,39 @@ import {
   type WorkflowEvent,
   type WorkflowStep,
 } from "cloudflare:workers";
-import { createCatalogMatcher } from "../matcher.ts";
+import { createCatalogApp } from "../search.ts";
 import { fetchChangedRows } from "../catalog-source.ts";
 
 type Env = {
   SAMESAKE_DATABASE_URL: string;
-  API_KEY: string;
 };
-
-const PROJECT = "market";
-const COLLECTION = "products";
 
 export class CatalogSync extends WorkflowEntrypoint<Env> {
   async run(event: WorkflowEvent<unknown>, step: WorkflowStep) {
-    const matcher = createCatalogMatcher(this.env);
+    const app = createCatalogApp(this.env);
 
-    await step.do("push", async () => {
+    await step.do("upsert", async () => {
       const rows = await fetchChangedRows();
-      await matcher.pushDocuments(PROJECT, COLLECTION, rows);
+      await app.enrich.upsert(rows);
     });
 
-    await step.do("enrich", () => matcher.enrich(PROJECT, COLLECTION));
-
     await step.do(
-      "index",
+      "enrich",
       {
         retries: { limit: 5, delay: "5 seconds", backoff: "exponential" },
       },
-      () => matcher.index(PROJECT, COLLECTION),
+      () => app.enrich.enrich(),
     );
   }
 }
 
 export class CatalogMaintenance extends WorkflowEntrypoint<Env> {
   async run(_event: WorkflowEvent<unknown>, step: WorkflowStep) {
-    const matcher = createCatalogMatcher(this.env);
+    const app = createCatalogApp(this.env);
 
-    await step.do("revalidate-images", () =>
-      matcher.revalidateImages(PROJECT, COLLECTION),
-    );
+    // Image revalidation is a caller-owned @samesake/server workflow; retry failed rows here.
     await step.do("retry-failed", () =>
-      matcher.retryFailed(PROJECT, COLLECTION),
+      app.enrich.retryFailed({ limit: 500 }),
     );
   }
 }
@@ -110,7 +102,7 @@ schedules = ["0 * * * *"]
 When a product changes, create a workflow instance with that row in `params`, or push directly and let the scheduled sync pick it up:
 
 ```ts title="src/index.ts"
-import { createCatalogMatcher } from "./matcher.ts";
+import { createCatalogApp } from "./search.ts";
 import { CatalogSync } from "./workflows/catalog-sync.ts";
 
 export default {
@@ -118,9 +110,9 @@ export default {
     if (request.method === "POST" && new URL(request.url).pathname === "/webhooks/product") {
       const product = await request.json();
 
-      // Option A: push inline, scheduled sync handles enrich/index
-      const matcher = createCatalogMatcher(env);
-      await matcher.pushDocuments("market", "products", [product]);
+      // Option A: push inline, scheduled sync handles enrich
+      const app = createCatalogApp(env);
+      await app.enrich.upsert([product]);
 
       // Option B: trigger a sync workflow now
       const instance = await env.CATALOG_SYNC.create({
@@ -138,12 +130,12 @@ export default {
 Use `step.sleep("name", "20 seconds")` between steps if you need deliberate delays — instances in a waiting state don't count toward concurrency limits.
 
 <Aside type="note">
-Per-step retry config (`retries: { limit, delay, backoff }`) applies to that `step.do` only. A failure in `index` retries `index` — not `push` or `enrich`.
+Per-step retry config (`retries: { limit, delay, backoff }`) applies to that `step.do` only. A failure in `enrich` retries `enrich` — not `upsert`.
 </Aside>
 
 ## Why this fits samesake
 
-Workers + Workflows keep everything at the edge if your app already lives there. samesake's incrementality means each scheduled instance still runs three matcher calls over the whole collection — cheap when only dozens of rows changed. You don't fan out per product; Cloudflare's durability covers per-step retries.
+Workers + Workflows keep everything at the edge if your app already lives there. samesake's incrementality means each scheduled instance still runs two bundle calls over the whole collection — cheap when only dozens of rows changed. You don't fan out per product; Cloudflare's durability covers per-step retries.
 
 ## Where to go next
 

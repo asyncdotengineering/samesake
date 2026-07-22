@@ -66,46 +66,56 @@ export const products = collection("products", {
 
 That's a *lot* of good behaviour for not a lot of typing — because the preset already made the choices. The four `fashion.*` lines are the defaults; you can swap any of them for your own later.
 
-### 2. Wire up your matcher (and turn on the smart re-check)
+### 2. Wire up your bundle (and turn on the smart re-check)
 
-The `matcher` holds your database connection and your two model functions. We'll also switch on a second-stage **re-ranker** — a quick "is this *actually* relevant?" pass over the top results — because for fashion it's worth it.
+`samesake()` from `@samesake/postgres` holds your database connection and your two model functions.
+We'll also switch on a second-stage **re-ranker** — a quick "is this *actually* relevant?" pass over
+the top results — because for fashion it's worth it.
 
 ```ts title="search.ts"
-import { createMatcher, llmRerank } from "@samesake/server";
+import { samesake } from "@samesake/postgres";
+import { llmRerank } from "@samesake/server";
 import { products } from "./catalog.ts";
 import { geminiEmbed, geminiGenerate } from "./gemini.ts"; // your two model fns — see Providers
 
-const matcher = createMatcher({
-  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
-  apiKey: process.env.SAMESAKE_API_KEY!,
-  embed: geminiEmbed,                       // turns text/images into vectors (gemini-embedding-2)
-  generate: geminiGenerate,                 // reads products + judges relevance (gemini-3.1-flash-lite)
-  rerank: llmRerank(geminiGenerate),    // the relevance double-check, on by default once wired
+const app = samesake({
+  url: process.env.SAMESAKE_DATABASE_URL!,
+  collection: products,
+  models: {
+    embed: geminiEmbed,       // turns text/images into vectors (gemini-embedding-2)
+    generate: geminiGenerate, // reads products + judges relevance (gemini-3.1-flash-lite)
+  },
+  rerank: llmRerank(geminiGenerate), // the relevance double-check, on by default once wired
 });
 
-await matcher.apply("shop", { entities: [], collections: [products] });
+await app.migrate();
 ```
 
-`apply` builds your database tables from the catalog file. (The two model functions are small adapters — a dozen lines each — that call Gemini/OpenAI/whatever. Copy them from [Providers](/reference/providers/).)
+`migrate` builds your database tables from the catalog file. (The two model functions are small adapters — a dozen lines each — that call Gemini/OpenAI/whatever. Copy them from [Providers](/reference/providers/).)
 
 ### 3. Put products in, then bring them to life
 
-Three steps, and each one is exactly what it sounds like:
+Two steps now — the model transform and the vectors are one call:
 
 ```ts title="search.ts"
 // load raw products
-await matcher.pushDocuments("shop", "products", [
+await app.enrich.upsert([
   { id: "1", data: { title: "ivory linen slip dress", vendor: "atelier", price: 12900, image_url: "https://…/1.jpg", available: true } },
   { id: "2", data: { title: "black sequin party gown",  vendor: "luxe",    price: 28000, image_url: "https://…/2.jpg", available: true } },
 ]);
 
-await matcher.enrich("shop", "products"); // the model reads each product (+ photo) → colours, occasions, style, confidence
-await matcher.index("shop", "products");  // computes the meaning + visual vectors and makes it all searchable
+await app.enrich.enrich(); // the model reads each product (+ photo) → colours, occasions, style, confidence, and writes the searchable text
 ```
 
-- **`pushDocuments`** just stores the raw rows.
-- **`enrich`** is where the understanding happens: the model looks at the title, description, and the *image*, and fills in structured attributes — category, colours, occasions, fabric, style — plus how confident it is.
-- **`index`** turns the enriched text and the photo into vectors and writes the search index.
+- **`enrich.upsert`** just stores the raw rows.
+- **`enrich.enrich`** is where the understanding happens: the model looks at the title, description, and the *image*, and fills in structured attributes — category, colours, occasions, fabric, style, confidence — then writes the searchable text surfaces.
+
+<Aside type="tip">
+This collection declares `cosine` and `spaces` channels, so its `samesake()` configuration must
+include an embedder. `enrich.enrich()` embeds ready dense surfaces and persists the vectors before
+search uses them; without `models.embed`, the same pipeline is surfaces-only. See
+[Pipeline lifecycle](/guides/pipeline-lifecycle/#enrich-writes-surfaces-and-optional-vectors).
+</Aside>
 
 <Aside type="note">
 `enrich` is also where the **quality gate** runs. If the model isn't confident, or the photo says "dress" while the tags say "jacket", that product is set aside (`quarantined`) instead of polluting your results. You don't configure this — the fashion preset's gate just does it. The full story is in [Pipeline lifecycle](/guides/pipeline-lifecycle/).
@@ -114,8 +124,7 @@ await matcher.index("shop", "products");  // computes the meaning + visual vecto
 ### 4. Search the way your shopper actually talks
 
 ```ts title="search.ts"
-const { hits } = await matcher.search("shop", "products", {
-  q: "light dress for a beach wedding under 15000",
+const { hits } = await app.search("light dress for a beach wedding under 15000", {
   filters: { available: true },
   limit: 10,
 });
@@ -123,11 +132,11 @@ const { hits } = await matcher.search("shop", "products", {
 
 The ivory linen dress comes back. The 28,000 gown does **not** — not because it's "less relevant," but because the budget was a hard line and it crossed it. Exactly the behaviour you pictured in the very first paragraph.
 
-Want to see *why* something ranked where it did?
+Want to see *why* something ranked where it did? Every result already carries it:
 
 ```ts
-const explained = await matcher.searchExplain("shop", "products", { q: "beach wedding dress" });
-// per result: which signals fired, the rank from each, and the merged score
+const result = await app.search("beach wedding dress", { limit: 10 });
+// result.parsed — the NLQ split; result.constraintTrace.appliedFilters — which filters fired
 ```
 
 ## What just happened, under the hood
@@ -152,7 +161,7 @@ const result = await matcher.runEval("shop", "products", { queries: golden, judg
 console.log(result.aggregate, "pass:", result.pass);
 ```
 
-That's the loop that lets you improve at engineering speed instead of vibes. Start it whenever you're ready — see [Eval gate](/guides/eval-gate/). And the same judge that grades your search is the one re-ranking it, so the effort compounds.
+That's the loop that lets you improve at engineering speed instead of vibes. Start it whenever you're ready — see [Eval gate](/guides/eval-gate/) (`runEval` today still runs through the legacy `@samesake/server` `Matcher`; see that guide's note on the gap). And the same judge that grades your search is the one re-ranking it, so the effort compounds.
 
 A couple of free knobs you'll reach for first:
 
