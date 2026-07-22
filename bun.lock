@@ -253,6 +253,7 @@
       "name": "@samesake/providers",
       "version": "5.0.0",
       "dependencies": {
+        "@samesake/embed": "workspace:^",
         "zod": "^4.4.3",
       },
       "devDependencies": {

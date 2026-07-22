@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { z } from "zod";
+import { gemini, voyage } from "@samesake/embed";
 import {
   cohereReranker,
   geminiEmbedder,
@@ -53,45 +54,13 @@ const CANDIDATES = [
   { id: "b", text: "blue dress", data: {}, score: 0.02 },
 ];
 
-describe("geminiEmbedder", () => {
-  test("maps model/dim/taskType, sends the key as a header, parses values", async () => {
-    const { calls } = mockFetch([{ embedding: { values: [0.1, 0.2, 0.3] } }]);
-    const embed = geminiEmbedder({ apiKey: "k1" });
-    const v = await embed({
-      text: "red dress",
-      model: "gemini-embedding-2",
-      dim: 3,
-      taskType: "RETRIEVAL_QUERY",
-    });
-    expect(v).toEqual([0.1, 0.2, 0.3]);
-    const c = calls[0]!;
-    expect(c.url).toContain("/models/gemini-embedding-2:embedContent");
-    expect(c.url).not.toContain("k1"); // key travels in the header, not the URL
-    expect(c.headers["x-goog-api-key"]).toBe("k1");
-    expect(c.body.outputDimensionality).toBe(3);
-    expect(c.body.taskType).toBe("RETRIEVAL_QUERY");
+describe("provider embedders", () => {
+  test("delegates Gemini to @samesake/embed", () => {
+    expect(geminiEmbedder).toBe(gemini);
   });
 
-  test("retries on 429 then succeeds", async () => {
-    const { calls } = mockFetch([
-      new Response("rate limited", { status: 429 }),
-      { embedding: { values: [1] } },
-    ]);
-    const embed = geminiEmbedder({ apiKey: "k", retries: 1 });
-    const v = await embed({ text: "x", model: "gemini-embedding-2", dim: 1 });
-    expect(v).toEqual([1]);
-    expect(calls.length).toBe(2);
-  }, 15000);
-
-  test("throws a clear error when no key is available", async () => {
-    const prev = process.env.GEMINI_API_KEY;
-    delete process.env.GEMINI_API_KEY;
-    try {
-      const embed = geminiEmbedder();
-      expect(embed({ text: "x", model: "m", dim: 1 })).rejects.toThrow("GEMINI_API_KEY");
-    } finally {
-      if (prev !== undefined) process.env.GEMINI_API_KEY = prev;
-    }
+  test("delegates Voyage to @samesake/embed", () => {
+    expect(voyageEmbedder).toBe(voyage);
   });
 });
 
@@ -167,21 +136,6 @@ describe("openaiGenerator", () => {
     const body = calls[0]!.body as { model: string; response_format: { type: string } };
     expect(body.model).toBe("gpt-4.1-mini");
     expect(body.response_format.type).toBe("json_schema");
-  });
-});
-
-describe("voyageEmbedder", () => {
-  test("maps input_type and output_dimension", async () => {
-    const { calls } = mockFetch([{ data: [{ embedding: [1, 2] }] }]);
-    const embed = voyageEmbedder({ apiKey: "vk" });
-    const v = await embed({ text: "q", model: "voyage-3.5", dim: 2, inputType: "query" });
-    expect(v).toEqual([1, 2]);
-    expect(calls[0]!.body).toMatchObject({
-      model: "voyage-3.5",
-      input: ["q"],
-      output_dimension: 2,
-      input_type: "query",
-    });
   });
 });
 

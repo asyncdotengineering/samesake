@@ -1,47 +1,16 @@
 // Voyage AI adapters (plain fetch): embeddings + cross-encoder rerank.
-import type { EmbedFn, RerankFn } from "@samesake/server";
+import type { RerankFn } from "@samesake/server";
 import {
   type ProviderOptions,
   fail,
   fetchWithRetry,
-  makeThrottle,
   resolveKey,
 } from "./shared.ts";
 
 const BASE = "https://api.voyageai.com/v1";
-const DEFAULT_EMBED_MODEL = "voyage-3.5";
 const DEFAULT_RERANK_MODEL = "rerank-2.5";
 
-export function voyageEmbedder(opts: ProviderOptions = {}): EmbedFn {
-  const throttle = makeThrottle(opts.minIntervalMs);
-  return async ({ text, image, model, dim, inputType }) => {
-    if (image) {
-      throw new Error(
-        "[@samesake/providers] voyage embed: image embeddings are not supported here — use a multimodal embedder (e.g. geminiEmbedder) for image spaces"
-      );
-    }
-    await throttle();
-    const key = resolveKey(opts, "VOYAGE_API_KEY", "voyage");
-    const res = await fetchWithRetry(
-      `${opts.baseUrl ?? BASE}/embeddings`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-        body: JSON.stringify({
-          model: model || opts.model || DEFAULT_EMBED_MODEL,
-          input: [text ?? ""],
-          output_dimension: dim,
-          ...(inputType ? { input_type: inputType } : {}),
-        }),
-      },
-      opts.retries
-    );
-    if (!res.ok) await fail(res, "voyage embed");
-    const data = (await res.json()) as { data?: { embedding: number[] }[] };
-    if (!data.data?.[0]?.embedding) throw new Error("[@samesake/providers] voyage embed: no embedding");
-    return data.data[0].embedding;
-  };
-}
+export { voyage as voyageEmbedder } from "@samesake/embed";
 
 export function voyageReranker(opts: ProviderOptions = {}): RerankFn {
   return async ({ query, candidates, topK }) => {

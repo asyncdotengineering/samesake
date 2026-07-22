@@ -52,6 +52,7 @@
     }
   },
   "dependencies": {
+    "@samesake/embed": "workspace:^",
     "zod": "^4.4.3"
   },
   "devDependencies": {
