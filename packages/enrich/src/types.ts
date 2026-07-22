@@ -1,6 +1,11 @@
 import type { PipelineDef, IndexingDef, CollectionDedupDef, DerivedDocContext, GenerateFn } from "@samesake/core";
 
-export interface RawRow { id: string; data: Record<string, unknown>; imageEtag?: string | null; }
+export interface RawRow {
+  id: string;
+  data: Record<string, unknown>;
+  imageEtag?: string | null;
+  scope?: Record<string, string>;
+}
 
 export interface EnrichedSurfaces {
   doc: string | null;

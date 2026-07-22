@@ -38,6 +38,7 @@ interface Entry {
   id: string;
   data: Record<string, unknown>;
   imageEtag?: string | null;
+  scope?: Record<string, string>;
   hash: string;
   dirty: boolean;
   enriched?: Record<string, unknown>;
@@ -62,6 +63,7 @@ export function memoryStore(): EnrichStore {
     id: e.id,
     data: e.data,
     ...(e.imageEtag !== undefined ? { imageEtag: e.imageEtag } : {}),
+    ...(e.scope ? { scope: e.scope } : {}),
   });
 
   const candidates: DedupCandidateProvider = async (row) => {
@@ -96,6 +98,7 @@ export function memoryStore(): EnrichStore {
           id: r.id,
           data: r.data,
           imageEtag: r.imageEtag ?? null,
+          scope: r.scope,
           hash,
           dirty: true,
           enriched: undefined,

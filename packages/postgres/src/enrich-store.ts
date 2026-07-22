@@ -2,7 +2,7 @@ import { contentHash, type RawRow, type EnrichedRow, type EnrichStore, type Dedu
 import { embeddingEntries } from "@samesake/query";
 import type { PostgresAdapter } from "./adapter.ts";
 import type { CollectionBackendOptions } from "./types.ts";
-import { embeddingColumn, vectorLiteral } from "./ident.ts";
+import { embeddingColumn, ident, vectorLiteral } from "./ident.ts";
 
 function json(value: unknown): string {
   return JSON.stringify(value ?? null);
@@ -41,11 +41,43 @@ export class PostgresEnrichStore implements EnrichStore {
   }
 
   async upsert(rows: RawRow[]): Promise<void> {
+    const scopeKeys = this.options.collection.scopes ?? [];
+    const scopeColumns = scopeKeys.map((key) => `scope_${ident(key, "scope")}`);
     for (const row of rows) {
-      await this.adapter.query(
-        `INSERT INTO ${this.options.table} (id, data, content_hash, enriched_at, pipeline_status) VALUES ($1, $2::jsonb, $3, NULL, 'pending') ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, content_hash = EXCLUDED.content_hash, enriched_at = NULL, pipeline_status = 'pending', updated_at = now()`,
-        [row.id, json(row.data), contentHash(row.data)]
+      const providedScope = row.scope ?? {};
+      if (!scopeKeys.length && Object.keys(providedScope).length) {
+        throw new Error(`collection "${this.options.collection.name ?? this.options.table}" declares no scopes`);
+      }
+      for (const key of Object.keys(providedScope)) {
+        if (!scopeKeys.includes(key)) throw new Error(`unknown scope key "${key}"`);
+      }
+      const scopeValues = scopeKeys.map((key) => {
+        const value = providedScope[key];
+        if (value == null || value === "") throw new Error(`scope.${key} is required for this collection`);
+        return value;
+      });
+      const columns = ["id", "data", "content_hash", "enriched_at", "pipeline_status", ...scopeColumns];
+      const values = [row.id, json(row.data), contentHash(row.data), null, "pending", ...scopeValues];
+      const placeholders = values.map((_, index) => `$${index + 1}`).join(", ");
+      const updates = [
+        "data = EXCLUDED.data",
+        "content_hash = EXCLUDED.content_hash",
+        "enriched_at = NULL",
+        "pipeline_status = 'pending'",
+        "updated_at = now()",
+      ];
+      const sameScope = scopeColumns.length
+        ? ` WHERE ${scopeColumns.map((column) => `${this.options.table}.${column} = EXCLUDED.${column}`).join(" AND ")}`
+        : "";
+      const result = await this.adapter.query(
+        `INSERT INTO ${this.options.table} (${columns.join(", ")}) VALUES (${placeholders})
+         ON CONFLICT (id) DO UPDATE SET ${updates.join(", ")}${sameScope}
+         RETURNING id`,
+        values
       );
+      if (scopeColumns.length && !result.length) {
+        throw new Error(`row "${row.id}" belongs to a different scope`);
+      }
     }
   }
 
@@ -55,11 +87,18 @@ export class PostgresEnrichStore implements EnrichStore {
   }
 
   async loadDirty(limit: number): Promise<RawRow[]> {
+    const scopeKeys = this.options.collection.scopes ?? [];
+    const scopeSelect = scopeKeys.map((key) => `scope_${ident(key, "scope")}`).join(", ");
     const rows = await this.adapter.query(
-      `SELECT id, data, image_etag FROM ${this.options.table} WHERE enriched_at IS NULL ORDER BY id LIMIT $1`,
+      `SELECT id, data, image_etag${scopeSelect ? `, ${scopeSelect}` : ""} FROM ${this.options.table} WHERE enriched_at IS NULL ORDER BY id LIMIT $1`,
       [limit]
     );
-    return rows.map((row) => ({ id: String(row.id), data: (row.data as Record<string, unknown>) ?? {}, imageEtag: row.image_etag == null ? null : String(row.image_etag) }));
+    return rows.map((row) => ({
+      id: String(row.id),
+      data: (row.data as Record<string, unknown>) ?? {},
+      imageEtag: row.image_etag == null ? null : String(row.image_etag),
+      ...(scopeKeys.length ? { scope: Object.fromEntries(scopeKeys.map((key) => [key, String(row[`scope_${key}`])])) } : {}),
+    }));
   }
 
   async writeEnriched(rows: EnrichedRow[]): Promise<void> {
@@ -103,11 +142,18 @@ export class PostgresEnrichStore implements EnrichStore {
   }
 
   async loadRetryable(limit: number): Promise<RawRow[]> {
+    const scopeKeys = this.options.collection.scopes ?? [];
+    const scopeSelect = scopeKeys.map((key) => `scope_${ident(key, "scope")}`).join(", ");
     const rows = await this.adapter.query(
-      `SELECT id, data, image_etag FROM ${this.options.table} WHERE pipeline_status = 'failed' AND next_attempt_at <= now() ORDER BY id LIMIT $1`,
+      `SELECT id, data, image_etag${scopeSelect ? `, ${scopeSelect}` : ""} FROM ${this.options.table} WHERE pipeline_status = 'failed' AND next_attempt_at <= now() ORDER BY id LIMIT $1`,
       [limit]
     );
-    return rows.map((row) => ({ id: String(row.id), data: (row.data as Record<string, unknown>) ?? {}, imageEtag: row.image_etag == null ? null : String(row.image_etag) }));
+    return rows.map((row) => ({
+      id: String(row.id),
+      data: (row.data as Record<string, unknown>) ?? {},
+      imageEtag: row.image_etag == null ? null : String(row.image_etag),
+      ...(scopeKeys.length ? { scope: Object.fromEntries(scopeKeys.map((key) => [key, String(row[`scope_${key}`])])) } : {}),
+    }));
   }
 
   async markDead(id: string, reason: string): Promise<void> {
