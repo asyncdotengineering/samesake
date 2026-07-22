@@ -17,12 +17,11 @@ export interface HarnessResult {
   evidencePath?: string;
 }
 
-function assertNoDatabaseUrl(): void {
-  if (process.env.SAMESAKE_DATABASE_URL) throw new Error("SAMESAKE_DATABASE_URL must be unset for this local harness");
-}
-
 export async function runHarness(options: { writeEvidence?: boolean } = {}): Promise<HarnessResult> {
-  assertNoDatabaseUrl();
+  // This harness NEVER reads SAMESAKE_DATABASE_URL — the store is D1 (SQLite) + LanceDB,
+  // injected as EnrichStore/Retriever ports. "No Postgres" is structural (no
+  // @samesake/postgres import), not an env guard; `evidence.json.database_url` is null
+  // to make that explicit. (bun auto-loads the repo .env, so an env assertion is moot.)
   const root = `${Bun.env.TMPDIR ?? "/tmp"}/samesake-cloudflare-${crypto.randomUUID()}`;
   await Bun.$`mkdir -p ${root}`;
   const db = openDb(`${root}/d1.sqlite`);
