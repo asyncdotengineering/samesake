@@ -1,0 +1,32 @@
+---
+title: Server-only capabilities
+description: Which reference-application features live in @samesake/server and which capabilities are available through the composable primitives.
+---
+
+The composable packages provide the core enrichment, retrieval, facets, and resolution
+primitives. The `@samesake/server` reference application adds workflow and operational
+features around those primitives; they are not part of the `@samesake/enrich`,
+`@samesake/query`, or `@samesake/postgres` contracts.
+
+## Reference-application features
+
+These capabilities currently live only on the `@samesake/server` `Matcher` and its associated
+HTTP/CLI workflows:
+
+- **Image revalidation** — `matcher.revalidateImages(project, collection)` probes image validators,
+  clears affected stage state, and schedules fresh enrichment. With the composable primitives,
+  the caller owns the conditional GET/ETag check and can re-upsert a changed `imageEtag` before
+  calling `enrich.enrich()`.
+- **Deduplication review mutations** — `dedupSuggestions`, `confirmGroup`, and `splitGroup` are
+  server feedback workflows. The composable feedback surface currently supplies the read-side
+  signals used during resolution, not these review mutations.
+- **Shop-search no-results relaxation** — `shopSearch` can retry a zero-result query with its
+  configured relaxable filters and report the fallback. `createSearch` exposes the result fields
+  but does not perform that server workflow.
+- **Collection phonetic providers** — the `PhoneticProvider` seam, such as `indicPhonetic`, is
+  wired through `createMatcher({ phonetic })`. The `samesake()` bundle does not currently accept
+  a phonetic provider.
+
+Use the reference application when you need those workflows. Use `@samesake/enrich`,
+`@samesake/query`, and `@samesake/postgres` directly when you need a smaller composition and
+are prepared to own the surrounding workflow.
