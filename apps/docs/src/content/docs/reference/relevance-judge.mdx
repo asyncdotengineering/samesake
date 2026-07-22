@@ -5,7 +5,15 @@ description: makeLlmJudge — the graded LLM relevance judge that powers both of
 
 import { Aside } from '@astrojs/starlight/components';
 
-The relevance judge classifies candidate products against a shopper query on the 4-class **ESCI** rubric — **E**xact / **S**ubstitute / **C**omplement / **I**rrelevant, mapped to gains **3 / 2 / 1 / 0** (Substitute is a soft positive). The same judge implementation powers both `matcher.runEval()` and [`llmRerank`](/reference/reranking/) — one judge, two consumers.
+The relevance judge classifies candidate products against a shopper query on the 4-class **ESCI** rubric — **E**xact / **S**ubstitute / **C**omplement / **I**rrelevant, mapped to gains **3 / 2 / 1 / 0** (Substitute is a soft positive). The same judge implementation powers both the eval loop below and [`llmRerank`](/reference/reranking/) — one judge, two consumers.
+
+<Aside type="note">
+`makeLlmJudge`, `llmRerank`, `calibrateJudge`, and the metric functions (`ndcgAtK`, `hitAtK`, `mrr`, …)
+are standalone exports from `@samesake/server` and compose with the canonical `search`/`samesake`
+primitives. The all-in-one `matcher.runEval()` orchestration convenience is still Matcher-instance-only
+and has not been ported to `@samesake/query`/`@samesake/postgres` — see [Eval gate](/guides/eval-gate/)
+for how to compose the loop yourself against `app.search`.
+</Aside>
 
 Two honesty rules are enforced by the framework:
 

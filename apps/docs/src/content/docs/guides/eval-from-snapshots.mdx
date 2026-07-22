@@ -40,10 +40,14 @@ It scores **relevance@3** (does each query surface its own products), **constrai
 
 ## 3. Go live (real hybrid engine)
 
-Push the same products through the real pipeline — enrich → embed → index — into a dedicated project, then run the same queries through `matcher.search` (NLQ + FTS + cosine ANN).
+Push the same products through the real pipeline — `enrich.upsert` → `enrich.enrich` — into a
+dedicated schema/table, then run the same queries through `app.search` (NLQ + FTS + cosine ANN).
 
-<Aside type="caution" title="Use a dedicated project">
-A default project can carry an *orphaned* catalog: if a prior ingest's project row was deleted, its schema and tables survive. A clean check must look at the **table row count**, not just the project registry row. Use a fresh project slug for an isolated, deterministic eval.
+<Aside type="caution" title="Use a dedicated schema">
+A reused `schema`/`table` can carry an *orphaned* catalog from a prior run — there is no project
+registry to clean up after in the new bundle, just the Postgres tables `migrate()` created. Pass a
+fresh `schema` (or `table`) per eval run and check the **table row count** directly for an isolated,
+deterministic eval.
 </Aside>
 
 ## 4. Keyword vs hybrid — read it honestly
@@ -69,7 +73,8 @@ Against a ~5.5k-product catalog with 50 golden queries (label-free: objective + 
 - **budget enforcement:** 4/5 explicit "under N" queries returned **0% over-budget** results in the top 5 — hard filters held. The one miss was an *implicit* "cheap" query (a percentile heuristic that didn't match the stated cap) — an actionable gap, surfaced honestly.
 - **latency:** ~2s/query, dominated by the per-query model calls (NLQ rewrite + query embed); the Postgres hybrid SQL itself is sub-millisecond at this scale.
 
-For graded relevance (nDCG@K, Hit@K, MRR) over the same golden set, use `matcher.runEval` via
+For graded relevance (nDCG@K, Hit@K, MRR) over the same golden set, use `matcher.runEval` (still a
+`@samesake/server` `Matcher`-only capability — see [Eval gate](/guides/eval-gate/) for the gap) via
 [`examples/fashion-search/eval-judge.ts`](https://github.com/asyncdotengineering/samesake/blob/main/examples/fashion-search/eval-judge.ts).
 It grades hits with a calibrated LLM judge, writes a JSON artifact, and exits nonzero when metrics
 fall below `thresholds`. See [Eval gate — tune floor and exponents](/guides/eval-gate/) for the

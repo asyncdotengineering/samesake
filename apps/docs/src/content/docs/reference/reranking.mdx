@@ -13,13 +13,15 @@ retrieve → RRF fuse (deep pool) → rerank (blend) → rankingPolicy → top-K
 
 ## When it runs
 
-Reranking is on only when a `rerank` function is wired on the matcher **and** the query does not opt out:
+Reranking is on only when a `rerank` function is wired **and** the query does not opt out:
 
 ```ts
-const wantRerank = !!ctx.rerank && opts.rerank !== false;
+const wantRerank = !!config.rerank && opts.rerank !== false;
 ```
 
-Wire `rerank` in `createMatcher({ rerank: myRerank })`. Pass `rerank: false` on a single query to force pure RRF. When `rerank` is absent, search stays on first-stage RRF only.
+Wire `rerank` on `samesake({ rerank: myRerank })` (the Tier-2 bundle) or directly on
+`createSearch({ rerank: myRerank })` (Tier-1). Pass `rerank: false` on a single query to force
+pure RRF. When `rerank` is absent, search stays on first-stage RRF only.
 
 When reranking is enabled (or variant diversification is on), search pulls a deeper pool (`RERANK_POOL = 50`) before the second stage so the final top-`limit` is chosen from real candidates rather than a pre-truncated set.
 
@@ -42,7 +44,7 @@ Blend weights by retrieval rank (`DEFAULT_RERANK_BLEND_WEIGHTS`, tunable via `Re
 
 **Rationale:** rerankers degrade recall below retrieval-alone in 44–53% of strong-first-stage cases ("phantom hits", [arXiv:2411.11767](https://arxiv.org/abs/2411.11767)). The position weight is the guardrail: trust retrieval at the head, trust the reranker more in the tail.
 
-`DEFAULT_RERANK_BLEND_WEIGHTS` is exported from `@samesake/server` for reference; the search layer applies the blend internally via `blendRerankScore` and `mergeBlendedRerank`.
+`DEFAULT_RERANK_BLEND_WEIGHTS` is exported from `@samesake/query` for reference; the search layer applies the blend internally via `blendRerankScore` and `mergeBlendedRerank` (also `@samesake/query`).
 
 ## Unscored candidates keep their RRF slot
 
@@ -80,14 +82,19 @@ Returned scores **must** be in `[0, 1]`. The search layer clamps at the boundary
 
 ## `llmRerank` — LLM-judge rerank, opt-in
 
-`llmRerank` wraps [`makeLlmJudge`](/reference/relevance-judge/) and maps the ESCI gain `{0..3} → score/3`. It is **not** bundled or auto-on — wire it explicitly:
+`llmRerank` wraps [`makeLlmJudge`](/reference/relevance-judge/) and maps the ESCI gain `{0..3} → score/3`.
+It returns a plain `RerankFn`, so it composes with the canonical `search`/`samesake` primitives even
+though the helper itself still ships from `@samesake/server` (it has not been ported into
+`@samesake/query` yet). It is **not** bundled or auto-on — wire it explicitly:
 
 ```ts
-import { createMatcher, llmRerank } from "@samesake/server";
+import { samesake } from "@samesake/postgres";
+import { llmRerank } from "@samesake/server";
 
-const matcher = createMatcher({
-  embed: myEmbed,
-  generate: myGenerate,
+const app = samesake({
+  url: process.env.SAMESAKE_DATABASE_URL!,
+  collection,
+  models: { embed: myEmbed, generate: myGenerate },
   rerank: llmRerank(myGenerate, {
     model: "gemini-3.1-flash-lite",
   }),
