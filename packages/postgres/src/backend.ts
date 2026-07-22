@@ -190,6 +190,7 @@ export function samesake(config: SamesakeConfig): SamesakeBundle {
     enrich,
     resolve: enrich.resolve,
     search,
+    facets: backend.facets,
     migrate,
     close: () => backend.close(),
   };

@@ -59,6 +59,7 @@ export interface SamesakeBundle {
   enrich: Enricher;
   resolve: Enricher["resolve"];
   search: SearchFn;
+  facets: PostgresBackend["facets"];
   migrate(): Promise<void>;
   close(): Promise<void>;
 }
