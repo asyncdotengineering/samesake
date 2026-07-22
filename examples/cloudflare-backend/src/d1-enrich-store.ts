@@ -56,6 +56,12 @@ export function d1EnrichStore(db: DB, candidates?: DedupCandidateProvider): Enri
       }
     },
 
+    async delete(ids) {
+      if (!ids.length) return;
+      const placeholders = ids.map(() => "?").join(", ");
+      db.prepare(`DELETE FROM catalog WHERE id IN (${placeholders})`).run(...ids);
+    },
+
     async loadDirty(limit) {
       const rows = db.prepare(
         `SELECT id, data FROM catalog

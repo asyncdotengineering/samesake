@@ -162,3 +162,22 @@ describe("trigramSimilarity", () => {
     expect(trigramSimilarity("red dress", "blue jeans")).toBeLessThan(0.2);
   });
 });
+
+describe("memoryStore — hard delete", () => {
+  test("removes selected ids from the dirty and enriched row sets", async () => {
+    const store = memoryStore();
+    await store.upsert([
+      { id: "keep", data: { title: "Keep" } },
+      { id: "drop", data: { title: "Drop" } },
+    ]);
+    await store.writeEnriched([
+      { id: "keep", enriched: { title: "Keep" } },
+      { id: "drop", enriched: { title: "Drop" } },
+    ]);
+
+    await store.delete?.(["drop"]);
+
+    expect(await store.loadDirty(10)).toEqual([]);
+    expect((await store.loadEnriched?.(10))?.map((row) => row.id)).toEqual(["keep"]);
+  });
+});
