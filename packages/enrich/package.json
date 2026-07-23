@@ -36,7 +36,9 @@
   ],
   "dependencies": {
     "@samesake/core": "workspace:^",
-    "@samesake/embed": "workspace:^"
+    "@samesake/embed": "workspace:^",
+    "graphology": "^0.26.0",
+    "graphology-components": "^1.5.4"
   },
   "devDependencies": {
     "tsup": "^8.5.1"
