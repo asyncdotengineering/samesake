@@ -59,3 +59,12 @@ ROADMAP.local.md
 !evals/runs/2026-07-18T15-59-54-148Z-search-aspects-cal1.md
 !evals/runs/2026-07-18T16-02-25-909Z-search-aspects-cal2.json
 !evals/runs/2026-07-18T16-02-25-909Z-search-aspects-cal2.md
+
+# worker scratch + local artifacts (never publish)
+*-implementation-notes.md
+*-scratchpad.md
+*.local.md
+spike-*.ts
+.handoff/
+.plandesk/*.db*
+samesake-update-*.md
