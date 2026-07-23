@@ -18,6 +18,7 @@
     "@porulle/adapter-postgres": "^0.1.0",
     "@porulle/adapter-local-storage": "^0.1.0",
     "@samesake/core": "workspace:*",
+    "@samesake/presets": "workspace:*",
     "@samesake/providers": "workspace:*",
     "@samesake/server": "workspace:*",
     "better-auth": "1.6.18",

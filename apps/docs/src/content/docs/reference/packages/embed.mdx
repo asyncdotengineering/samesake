@@ -1,0 +1,38 @@
+---
+title: '@samesake/embed'
+description: A provider-neutral dual-form embedder wrapper with capability declarations, batching, and dimension validation.
+---
+
+`@samesake/embed` defines the dual-form embedder contract. It contains no provider
+transport and no model or dimension default.
+
+## Public surface
+
+`createEmbedder` accepts:
+
+- `single(request)`, a consumer-supplied `EmbedFn` closure;
+- `many(requests)`, a consumer-supplied batch closure;
+- `caps`, an immutable `EmbedderCaps` object with `image`, `interleaved`, `dims`,
+  and `maxBatch`.
+
+It returns an `Embedder` that is callable as the single form and also exposes
+`.many()`. The wrapper chunks batches at `caps.maxBatch`, preserves order, and throws
+if a vector has the wrong declared dimension or if a batch returns the wrong number of
+vectors.
+
+```ts
+import { createEmbedder } from '@samesake/embed';
+
+const embed = createEmbedder({
+  single: (request) => model.embed(request),
+  many: (requests) => model.embedMany(requests),
+  caps: { image: true, interleaved: true, dims: 'any', maxBatch: 64 },
+});
+
+const queryVector = await embed({ text: 'blue jacket', model: 'consumer-model', dim: 1024 });
+const documentVectors = await embed.many(documents);
+```
+
+Provider adapters can live in `@samesake/providers` or in the consumer application.
+The wrapper remains useful for native SDKs, HTTP closures, local models, and test
+doubles alike.

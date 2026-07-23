@@ -65,7 +65,9 @@ HTTPS is required for Basic auth (plain HTTP forces OAuth 1.0a). If the host str
 `per_page` max is **100**; total pages come from the `X-WP-TotalPages` response header. Order by a stable key to avoid skips on a mutating catalog.
 
 ```ts title="bulk-index.ts"
-async function bulkIndex(base: string, auth: string, matcher: any) {
+import type { SamesakeBundle } from "@samesake/postgres";
+
+async function bulkIndex(base: string, auth: string, app: SamesakeBundle) {
   let page = 1, totalPages = 1;
   do {
     const res = await fetch(`${base}/products?status=publish&per_page=100&orderby=id&order=asc&page=${page}`, {
@@ -73,10 +75,10 @@ async function bulkIndex(base: string, auth: string, matcher: any) {
     });
     totalPages = Number(res.headers.get("X-WP-TotalPages") ?? 1);
     const products = await res.json();
-    await matcher.pushDocuments("shop", "products", products.map(toDoc));
+    await app.enrich.upsert(products.map(toDoc));
     page++;
   } while (page <= totalPages);
-  await matcher.index("shop", "products");
+  await app.enrich.enrich();
 }
 ```
 
@@ -100,8 +102,12 @@ export function verify(rawBody: Buffer, sigHeader: string, secret: string) {
 // after verify + res.sendStatus(200):
 const topic = req.get("X-WC-Webhook-Topic");      // product.updated
 const payload = JSON.parse(rawBody.toString("utf8"));
-if (topic === "product.deleted") await matcher.removeDocuments("shop", "products", [String(payload.id)]);
-else { await matcher.pushDocuments("shop", "products", [toDoc(payload)]); await matcher.index("shop", "products"); }
+if (topic === "product.deleted") {
+  await app.enrich.remove([String(payload.id)]);
+} else {
+  await app.enrich.upsert([toDoc(payload)]);
+  await app.enrich.enrich();
+}
 ```
 
 A `*.deleted` payload carries only `{ id }`. On `product.updated` for a variable product, re-fetch its variations.
@@ -110,5 +116,5 @@ A `*.deleted` payload carries only `{ id }`. On `product.updated` for a variable
 
 1. **Read-only REST key**; store on HTTPS so Basic auth works.
 2. **Backfill:** paginate `/products?status=publish&per_page=100` to `X-WP-TotalPages`; flatten variations; strip HTML.
-3. **Webhooks:** `product.created|updated|deleted` → verify raw-body HMAC → push/index or remove.
+3. **Webhooks:** `product.created|updated|deleted` → verify raw-body HMAC → upsert/enrich or soft-delete.
 4. **Backstop:** nightly reconciliation with `?modified_after=<ISO8601>` to repair missed events.

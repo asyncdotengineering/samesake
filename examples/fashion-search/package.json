@@ -16,6 +16,7 @@
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
     "@samesake/core": "workspace:*",
+    "@samesake/presets": "workspace:*",
     "@samesake/server": "workspace:*",
     "drizzle-orm": "^0.45.2"
   }

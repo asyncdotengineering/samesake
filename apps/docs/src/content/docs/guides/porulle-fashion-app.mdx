@@ -14,13 +14,13 @@ Running on Vercel: **[playground-octalpixels-projects.vercel.app](https://playgr
 ```
 Next.js (one process)
 ├── /api/[[...route]]   →  Porulle Hono app  (catalog, pricing, inventory, auth)
-├── /api/search         →  samesake.search   (NLQ-free hybrid: FTS + cosine ANN)
+├── /api/search         →  app.search        (NLQ-free hybrid: FTS + cosine ANN)
 └── /                   →  minimalist search UI
         │
         ▼
   one Postgres database
   ├── public.*            Porulle commerce tables
-  └── samesake_*, project_playground.*   samesake (namespaced)
+  └── playground.*         samesake (namespaced via `schema`)
 ```
 
 <Aside type="caution" title="Porulle 0.1.0 is alpha — two install workarounds">
@@ -31,7 +31,7 @@ While building this we hit (and filed) packaging bugs in `@porulle/*@0.1.0`. Unt
 
 ## 1. One database, or two? (the design answer)
 
-You can run samesake and your commerce backend in **one Postgres database**. We verified it: in the playground DB, Porulle owns the `public` schema (`sellable_entities`, `prices`, …) while samesake namespaces itself — six `samesake_*` system tables plus a `project_<slug>` schema for each project's search tables. **No name collisions.** Separate databases also work and give stronger blast-radius isolation; pick based on ops preference, not necessity. samesake never writes to your commerce tables — it only reads the catalog and maintains its own.
+You can run samesake and your commerce backend in **one Postgres database**. We verified it: in the playground DB, Porulle owns the `public` schema (`sellable_entities`, `prices`, …) while samesake namespaces itself — pass a dedicated `schema` (e.g. `"playground"`) to `samesake()` and its tables (`c_products`, …) live there. **No name collisions.** Separate databases also work and give stronger blast-radius isolation; pick based on ops preference, not necessity. samesake never writes to your commerce tables — it only reads the catalog and maintains its own.
 
 The playground uses a dedicated database (`createdb`-style isolation) so the demo is reproducible and droppable.
 
@@ -47,7 +47,7 @@ bunx create-next-app@latest apps/playground --ts --app --no-tailwind --no-src-di
 "@porulle/adapter-postgres": "^0.1.0",
 "@porulle/adapter-local-storage": "^0.1.0",
 "@samesake/core": "...",
-"@samesake/server": "...",
+"@samesake/postgres": "...",
 "better-auth": "1.6.18",
 "@better-auth/api-key": "1.6.18",   // workaround for porulle#25
 "hono": "^4.12.0", "drizzle-orm": "^0.45.1", "postgres": "^3.4.0", "zod": "^4.0.0"
@@ -61,7 +61,7 @@ bunx create-next-app@latest apps/playground --ts --app --no-tailwind --no-src-di
 ```ts title="next.config.ts"
 const nextConfig = {
   serverExternalPackages: ["@porulle/core", "@porulle/adapter-postgres", "@porulle/adapter-local-storage",
-    "@samesake/core", "@samesake/server", "drizzle-orm", "postgres", "better-auth"],
+    "@samesake/core", "@samesake/postgres", "drizzle-orm", "postgres", "better-auth"],
 };
 ```
 
@@ -135,6 +135,10 @@ await kernel.services.catalog.publish(res.value.id, staff);
 samesake reads the Porulle catalog and indexes it. The collection mirrors the synced fields:
 
 ```ts title="lib/samesake.ts"
+import { collection, f, Channels } from "@samesake/core";
+import { samesake } from "@samesake/postgres";
+import { geminiEmbed, geminiGenerate } from "./gemini.ts";
+
 export const products = collection("products", {
   fields: {
     title: f.text({ searchable: true }),
@@ -161,15 +165,23 @@ export const products = collection("products", {
   search: { channels: [Channels.fts({ fields: ["title","brand","category","color","material"], weight: 1 }),
     Channels.cosine({ embedding: "doc", weight: 1 })], combiner: "rrf" },
 });
+
+export const app = samesake({
+  url: process.env.SAMESAKE_DATABASE_URL!,
+  schema: "playground",
+  collection: products,
+  models: { embed: geminiEmbed, generate: geminiGenerate },
+});
 ```
 
 The sync reads active products (here straight from Porulle's tables — `GET /api/catalog/entities?status=active&include=attributes,pricing` is the API equivalent), maps them, and indexes:
 
 ```ts title="scripts/sync-to-samesake.ts"
-await matcher.migrate();                                  // create samesake_* tables if absent
-await matcher.apply("playground", { entities: [], collections: [products] });
-await matcher.pushDocuments("playground", "products", docs);
-await matcher.index("playground", "products");
+import { app } from "../lib/samesake.ts";
+
+await app.migrate();          // create samesake's tables under `schema: "playground"` if absent
+await app.enrich.upsert(docs);
+await app.enrich.enrich();
 ```
 
 ## 6. Routes + UI
@@ -184,13 +196,14 @@ export const GET = handle(app); export const POST = handle(app); /* PUT/PATCH/DE
 ```
 
 ```ts title="app/api/search/route.ts — samesake (specific route wins over the catch-all)"
+import { app } from "@/lib/samesake";
+
 export const runtime = "nodejs";
 export async function POST(req: Request) {
   const { q, category } = await req.json();
   // No explicit price filter: NLQ parses budgets ("under 3000") from q into a hard
   // price <= cap. category stays an explicit facet from the storefront chips.
-  const result = await getMatcher().search("playground", "products", {
-    q,
+  const result = await app.search(q, {
     limit: 24,
     filters: { available: true, ...(category ? { category } : {}) },
   });
@@ -203,7 +216,7 @@ A specific route (`/api/search`) takes precedence over the optional catch-all (`
 Budgets are understood because the collection enables NLQ and `price` is `budget: true`:
 
 ```ts
-// lib/samesake.ts — createMatcher({ embed: geminiEmbed, generate: geminiGenerate, ... })
+// lib/samesake.ts — samesake({ models: { embed: geminiEmbed, generate: geminiGenerate }, ... })
 search: { channels: [/* fts + cosine */], combiner: "rrf", nlq: { enable: true, semanticRewrite: true } }
 ```
 
@@ -298,12 +311,12 @@ indexing: {
 embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
 ```
 
-`matcher.enrich(project, collection)` runs the pipeline — it fetches each image through the
+`app.enrich.enrich()` runs the pipeline — it fetches each image through the
 SSRF-hardened fetcher and calls your `generate` with the image bytes + schema, then stores the
-JSON in `enriched`. The order in the sync is **push → enrich → index**. Now the colours are real
+JSON in `enriched`. The order in the sync is **`enrich.upsert` → `enrich.enrich`**. Now the colours are real
 ("RED PUFF SLEEVE MAXI DRESS" → `solid red`, "Princess Line Dress" → `solid black`), and because
 the `embed_doc` surface builder pulls in `enriched.color_text`, so "black dress with white" cosine-favours
-genuinely black products.
+genuinely black products (subject to the vector write-back TODO in [Pipeline lifecycle](/guides/pipeline-lifecycle/#enrich-writes-surfaces-vector-write-back-is-unported)).
 
 Pair it with a **constrained NLQ schema** so a sparse colour tag can't become a hard filter that
 dead-ends the query — let intent + budget through, and leave colour to the embedding + visual signals:

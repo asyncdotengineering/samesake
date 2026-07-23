@@ -36,21 +36,21 @@ psql samesake_dev -c "CREATE EXTENSION vector; CREATE EXTENSION pg_trgm; CREATE 
   <TabItem label="bun">
 
 ```bash
-bun add @samesake/core @samesake/server
+bun add @samesake/core @samesake/postgres
 ```
 
   </TabItem>
   <TabItem label="npm">
 
 ```bash
-npm install @samesake/core @samesake/server
+npm install @samesake/core @samesake/postgres
 ```
 
   </TabItem>
   <TabItem label="pnpm">
 
 ```bash
-pnpm add @samesake/core @samesake/server
+pnpm add @samesake/core @samesake/postgres
 ```
 
   </TabItem>
@@ -58,7 +58,6 @@ pnpm add @samesake/core @samesake/server
 
 ```bash title=".env"
 SAMESAKE_DATABASE_URL=postgres://localhost:5432/samesake_dev
-SAMESAKE_API_KEY=dev-key-please-change
 ```
 
 ## Build it
@@ -96,37 +95,44 @@ SAMESAKE_API_KEY=dev-key-please-change
    });
    ```
 
-2. **Create the matcher.** Supply your embedding function. For a keyword-only smoke test, a stub embedding is fine.
+2. **Create the bundle.** Supply your embedding function. For a keyword-only smoke test, a stub embedding is fine.
 
    ```ts title="search.ts"
-   import { createMatcher } from "@samesake/server";
+   import { samesake } from "@samesake/postgres";
    import { products } from "./catalog.ts";
 
-   const matcher = createMatcher({
-     databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
-     apiKey: process.env.SAMESAKE_API_KEY!,
-     embed: async ({ text, dim }) => stubEmbed(text, dim), // swap for a real model later
+   const app = samesake({
+     url: process.env.SAMESAKE_DATABASE_URL!,
+     collection: products,
+     models: {
+       embed: async ({ text, dim }) => stubEmbed(text, dim), // swap for a real model later
+     },
    });
    ```
 
-3. **Apply, push, index.**
+3. **Migrate, push, enrich.**
 
    ```ts title="search.ts"
-   await matcher.apply("shop", { entities: [], collections: [products] });
+   await app.migrate();
 
-   await matcher.pushDocuments("shop", "products", [
+   await app.enrich.upsert([
      { id: "1", data: { title: "ivory linen slip dress", brand: "atelier", price: 12900, color: "ivory", available: true } },
      { id: "2", data: { title: "black sequin party dress", brand: "luxe", price: 28000, color: "black", available: true } },
    ]);
 
-   await matcher.index("shop", "products");
+   await app.enrich.enrich();
    ```
+
+   <Aside type="tip">
+   This runs on FTS alone with the stub embed. If you wire a real embedding model and rely on the
+   `cosine` channel, verify vector write-back is wired end to end on your installed version — see
+   [Pipeline lifecycle](/guides/pipeline-lifecycle/#enrich-writes-surfaces-vector-write-back-is-unported).
+   </Aside>
 
 4. **Search.**
 
    ```ts title="search.ts"
-   const { hits } = await matcher.search("shop", "products", {
-     q: "linen dress under 15000",
+   const { hits } = await app.search("linen dress under 15000", {
      filters: { available: true },
      limit: 10,
    });
@@ -137,11 +143,18 @@ SAMESAKE_API_KEY=dev-key-please-change
 
 ## Serve it over HTTP
 
-The same matcher exposes a web-standard `fetch` handler and a Hono app:
+samesake is not a hosted service — there is no bundled `fetch` handler. Wrap `app.search`
+in whatever web-standard handler your runtime uses:
 
 ```ts
 // Bun.serve / Workers / Vercel / Deno
-export default { fetch: (req: Request) => matcher.fetch(req) };
+export default {
+  fetch: async (req: Request) => {
+    const { searchParams } = new URL(req.url);
+    const result = await app.search(searchParams.get("q") ?? "", { limit: 10 });
+    return Response.json(result);
+  },
+};
 ```
 
 ## Where to go next
@@ -151,5 +164,6 @@ export default { fetch: (req: Request) => matcher.fetch(req) };
 - [Eval from search snapshots](/guides/eval-from-snapshots/) — measure keyword vs hybrid on a real corpus.
 
 <Aside type="tip">
-`matcher.searchExplain(...)` returns per-leg ranks and the constraint trace — invaluable when a result ranks somewhere surprising.
+Every `search()` result carries `constraintTrace` — which filters were explicit, derived from
+NLQ, or dropped — so you don't need a separate explain call to see why a result ranked where it did.
 </Aside>

@@ -33,8 +33,7 @@ export interface FieldDef {
  *
  * Functions aren't supported — they can't survive HTTP transport.
  *
- * `model` is an opaque identifier (e.g. "gemini-embedding-001", "text-embedding-3-small",
- * "nomic-embed-text"). @samesake/server passes it through to the consumer's `embed`
+ * `model` is an opaque identifier chosen by the consumer. @samesake/server passes it through to the consumer's `embed`
  * function untouched; the consumer's embedder decides what to do with it. The matcher
  * uses it to namespace the embedding cache.
  *
@@ -42,8 +41,8 @@ export interface FieldDef {
  * entity_<kind>_match table is created with `vector(<dim>)` columns.
  *
  * `taskType` is opaque metadata that @samesake/server forwards to the consumer's
- * embedder. Useful for provider-specific hints like Gemini's "SEMANTIC_SIMILARITY"
- * vs "RETRIEVAL_QUERY"/"RETRIEVAL_DOCUMENT".
+ * embedder. It is available for provider-specific hints without making any
+ * provider part of the SDK contract.
  */
 export interface EmbeddingDef {
   source: string;
@@ -75,14 +74,13 @@ export interface ParseDef {
   /** Field on entity.data to extract from. Defaults to the "name" field. */
   source?: string;
   /**
-   * Opaque model identifier passed to the consumer's parse function (e.g.
-   * "gemini-2.5-flash-lite", "gpt-4o-mini"). Defaults are decided by the
-   * consumer's parse function.
+   * Opaque model identifier passed to the consumer's parse function. Defaults
+   * are decided by the consumer's parse function.
    */
   model?: string;
   /**
    * Override the default product-parse system prompt. Use this when your domain
-   * has specific extraction rules — e.g. "Sinhala medication strengths must
+   * has specific extraction rules — e.g. "medication strengths must
    * preserve units (mg/g/ml) verbatim."
    */
   instructions?: string;
@@ -344,8 +342,8 @@ export interface CollectionSearchDef {
    * Minimum query–document cosine similarity (0–1) a semantic-only hit must clear
    * to survive; hits that also match via FTS keywords are exempt. Suppresses
    * no-match padding — a query with no real match returns few/no results instead
-   * of the nearest neighbours. Calibrate per embedding model (≈0.5 for
-   * gemini-embedding-2); see guides/eval-gate.
+   * of the nearest neighbours. Calibrate per embedding model; see
+   * guides/eval-gate.
    */
   relevanceFloor?: number;
   /**
@@ -489,7 +487,7 @@ export interface IndexingDef {
 export interface CollectionDef {
   name?: string;
   /**
-   * Postgres full-text-search configuration for the lexical leg (stemming +
+   * Full-text-search configuration for the lexical leg (stemming +
    * stopwords): "english" (default), "german", "spanish", "simple" (no
    * stemming — right for mixed-language or non-European-language catalogs), or
    * any installed regconfig. Applied to both the indexed `fts` column and

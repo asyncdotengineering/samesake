@@ -13,6 +13,7 @@
 // samesake_unit) are qualified with `sys` — the matcher's configured system
 // schema, passed in by createMatcher via the ctx.
 import type { EntityDef } from "@samesake/core";
+import { sanitiseIdent } from "@samesake/core";
 import { tablesToDDL } from "../db/ddl.ts";
 import { perProjectTables } from "../db/schema/per-project.ts";
 import { assertIndexableVectorDimension } from "./vector-dim.ts";
@@ -657,8 +658,6 @@ ${matchColsAll.join(",\n")}
   return { projectSchemaName, generateProjectDDL };
 }
 
-export function sanitiseIdent(s: string): string {
-  return s.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
-}
+export { sanitiseIdent };
 
 export type SchemaGen = ReturnType<typeof makeSchemaGen>;

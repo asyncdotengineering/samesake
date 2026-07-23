@@ -3,6 +3,7 @@ import type { SQL } from "drizzle-orm";
 import type { CollectionDef } from "@samesake/core";
 import { computeFacets, type FacetResult } from "./postgres/facets.ts";
 import { getPgClient, getPgSql, type PgUnsafe } from "../core/db-utils.ts";
+import type { IndexingPersistResult } from "../core/enrich-pipeline.ts";
 
 /** Inputs for a facet aggregation over a collection's filtered candidate set. */
 export interface FacetQuery {
@@ -71,6 +72,18 @@ export interface StorageAdapter {
     query: string,
     params: unknown[]
   ): Promise<Record<string, unknown>[]>;
+  /** Dirty work-queue rows awaiting enrichment (`enriched_at IS NULL`). */
+  pendingForEnrich(table: string, limit: number): Promise<Array<{ id: string; data: unknown; image_etag: string | null }>>;
+  /** Persist enrichment output + ready indexing surfaces (the gated write path). */
+  persistEnrichment(table: string, id: string, enrichedJson: string, surfaces: IndexingPersistResult): Promise<void>;
+  /** Persist enrichment output only (no-indexing fallback write path). */
+  persistEnrichmentMinimal(table: string, id: string, enrichedJson: string): Promise<void>;
+  /** Execute a prebuilt dedup candidate-probe SQL (assembly stays in `dedup.ts`). */
+  dedupCandidateProbe(sql: string, params: unknown[]): Promise<Record<string, unknown>[]>;
+  /** Status of a dedup suggestion (`open`/`confirmed`/`declined`), or null when none. */
+  dedupSuggestionStatus(sugg: string, rowId: string, group: string): Promise<string | null>;
+  /** Whether a dedup pair was human-declined (checked symmetrically in both orderings). */
+  dedupIsDeclined(sugg: string, a: string, b: string): Promise<boolean>;
 }
 
 /**
@@ -240,5 +253,77 @@ export class PostgresAdapter implements StorageAdapter {
       [ids, ...scopeEntries.map(([, v]) => v)]
     );
     return (result as { count?: number }).count ?? 0;
+  }
+
+  async pendingForEnrich(table: string, limit: number): Promise<Array<{ id: string; data: unknown; image_etag: string | null }>> {
+    const rows = await getPgClient(this.handle.db, "enrich").unsafe(
+      `SELECT id, data, image_etag FROM ${table}
+       WHERE enriched_at IS NULL
+       ORDER BY id
+       LIMIT $1`,
+      [limit]
+    );
+    return rows as Array<{ id: string; data: unknown; image_etag: string | null }>;
+  }
+
+  async persistEnrichment(
+    table: string,
+    id: string,
+    enrichedJson: string,
+    surfaces: IndexingPersistResult
+  ): Promise<void> {
+    await getPgClient(this.handle.db, "enrich").unsafe(
+      `UPDATE ${table}
+       SET enriched = $1::jsonb,
+           enriched_at = now(),
+           doc = $2,
+           rerank_doc = $3,
+           fts_src = $4,
+           fts_src_a = $5,
+           pipeline_status = $6,
+           gate_reason = $7,
+           updated_at = now()
+       WHERE id = $8`,
+      [
+        enrichedJson,
+        surfaces.doc,
+        surfaces.rerank_doc,
+        surfaces.fts_src,
+        surfaces.fts_src_a,
+        surfaces.pipeline_status,
+        surfaces.gate_reason,
+        id,
+      ]
+    );
+  }
+
+  async persistEnrichmentMinimal(table: string, id: string, enrichedJson: string): Promise<void> {
+    await getPgClient(this.handle.db, "enrich").unsafe(
+      `UPDATE ${table}
+       SET enriched = $1::jsonb, enriched_at = now(), updated_at = now()
+       WHERE id = $2`,
+      [enrichedJson, id]
+    );
+  }
+
+  dedupCandidateProbe(sql: string, params: unknown[]): Promise<Record<string, unknown>[]> {
+    return getPgClient(this.handle.db, "dedup candidates").unsafe(sql, params);
+  }
+
+  async dedupSuggestionStatus(sugg: string, rowId: string, group: string): Promise<string | null> {
+    const rows = await getPgClient(this.handle.db, "dedup suggestion status").unsafe(
+      `SELECT status FROM ${sugg} WHERE row_id = $1 AND candidate_group = $2 LIMIT 1`,
+      [rowId, group]
+    );
+    return rows.length ? String(rows[0]!.status) : null;
+  }
+
+  async dedupIsDeclined(sugg: string, a: string, b: string): Promise<boolean> {
+    const rows = await getPgClient(this.handle.db, "dedup declined check").unsafe(
+      `SELECT 1 FROM ${sugg} WHERE status = 'declined'
+       AND ((row_id = $1 AND candidate_group = $2) OR (row_id = $2 AND candidate_group = $1)) LIMIT 1`,
+      [a, b]
+    );
+    return rows.length > 0;
   }
 }

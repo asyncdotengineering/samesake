@@ -7,45 +7,41 @@ import { Aside } from '@astrojs/starlight/components';
 
 [Vercel Workflows](https://useworkflow.dev/) (Workflow DevKit, package `workflow`) marks orchestrators with `"use workflow"` and durable steps with `"use step"`. Unhandled errors retry automatically; `FatalError` skips retries. Recurring syncs use a **Vercel Cron Job** that hits an API route calling `start()` from `workflow/api`.
 
-See [Running the enrich pipeline durably](/guides/enrich-pipeline/) for the five-step model.
+See [Running the enrich pipeline durably](/guides/enrich-pipeline/) for the model.
 
-## Matcher setup
+## Bundle setup
 
-```ts title="lib/matcher.ts"
-import { createMatcher, llmRerank } from "@samesake/server";
+```ts title="lib/search.ts"
+import { samesake } from "@samesake/postgres";
+import { llmRerank } from "@samesake/server";
 import { products } from "../catalog.ts";
 import { geminiEmbed, geminiGenerate } from "../gemini.ts";
 
-export const matcher = createMatcher({
-  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
-  apiKey: process.env.SAMESAKE_API_KEY!,
-  embed: geminiEmbed,
-  generate: geminiGenerate,
+export const app = samesake({
+  url: process.env.SAMESAKE_DATABASE_URL!,
+  collection: products,
+  models: { embed: geminiEmbed, generate: geminiGenerate },
   rerank: llmRerank(geminiGenerate),
 });
 ```
 
 ## Workflow and steps
 
-Each matcher call lives in its own step function — failures retry per step, not per workflow.
+Each bundle call lives in its own step function — failures retry per step, not per workflow.
 
 ```ts title="workflows/sync-catalog.ts"
 import { FatalError } from "workflow";
-import { matcher } from "../lib/matcher.ts";
+import { app } from "../lib/search.ts";
 import { fetchChangedRows } from "../catalog-source.ts";
-
-const PROJECT = "market";
-const COLLECTION = "products";
 
 export async function syncCatalog() {
   "use workflow";
 
-  await pushStep();
+  await upsertStep();
   await enrichStep();
-  await indexStep();
 }
 
-async function pushStep() {
+async function upsertStep() {
   "use step";
 
   if (!process.env.SAMESAKE_DATABASE_URL) {
@@ -53,41 +49,28 @@ async function pushStep() {
   }
 
   const rows = await fetchChangedRows();
-  await matcher.pushDocuments(PROJECT, COLLECTION, rows);
+  await app.enrich.upsert(rows);
 }
 
 async function enrichStep() {
   "use step";
-  await matcher.enrich(PROJECT, COLLECTION);
-}
-
-async function indexStep() {
-  "use step";
-  await matcher.index(PROJECT, COLLECTION);
+  await app.enrich.enrich();
 }
 ```
 
 ```ts title="workflows/maintenance.ts"
-import { matcher } from "../lib/matcher.ts";
-
-const PROJECT = "market";
-const COLLECTION = "products";
+import { app } from "../lib/search.ts";
 
 export async function catalogMaintenance() {
   "use workflow";
 
-  await revalidateImagesStep();
   await retryFailedStep();
 }
 
-async function revalidateImagesStep() {
-  "use step";
-  await matcher.revalidateImages(PROJECT, COLLECTION);
-}
-
+// Image revalidation is a caller-owned @samesake/server workflow; retry failed rows here.
 async function retryFailedStep() {
   "use step";
-  await matcher.retryFailed(PROJECT, COLLECTION);
+  await app.enrich.retryFailed({ limit: 500 });
 }
 ```
 
@@ -136,15 +119,15 @@ Secure cron routes with `CRON_SECRET` (Vercel sends it as `Authorization: Bearer
 
 ```ts title="app/api/webhooks/product/route.ts"
 import { start } from "workflow/api";
-import { matcher } from "@/lib/matcher";
+import { app } from "@/lib/search";
 import { syncCatalog } from "@/workflows/sync-catalog";
 
 export async function POST(request: Request) {
   const product = await request.json();
 
-  await matcher.pushDocuments("market", "products", [product]);
+  await app.enrich.upsert([product]);
 
-  // Next cron picks up enrich/index — or start the workflow now:
+  // Next cron picks up enrich — or start the workflow now:
   const run = await start(syncCatalog, []);
 
   return Response.json({ ok: true, runId: run.runId });
@@ -157,7 +140,7 @@ Workflow DevKit is evolving quickly. For the latest setup (Next.js plugin, `work
 
 ## Why this fits samesake
 
-Vercel Workflows keep orchestration in your repo — no separate queue service if you're already on Vercel. Each `"use step"` boundary matches a matcher call: a transient embed failure retries `indexStep` without re-running `enrichStep`. samesake's idempotent incrementality still means unchanged rows are cheap inside each step.
+Vercel Workflows keep orchestration in your repo — no separate queue service if you're already on Vercel. Each `"use step"` boundary matches a bundle call: a transient embed failure retries `enrichStep` without re-running `upsertStep`. samesake's idempotent incrementality still means unchanged rows are cheap inside each step.
 
 ## Where to go next
 

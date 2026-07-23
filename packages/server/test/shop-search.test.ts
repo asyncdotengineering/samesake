@@ -1,7 +1,8 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels, fashionSearchDefaults } from "../../sdk/src/index.ts";
+import { collection, f, Channels } from "../../sdk/src/index.ts";
+import { fashionSearchDefaults } from "../../presets/src/index.ts";
 import { denseAndFtsIndexingByTitle } from "./fixtures.ts";
 import type { EmbedRequest } from "../src/types.ts";
 import { createMatcher } from "../src/createMatcher.ts";

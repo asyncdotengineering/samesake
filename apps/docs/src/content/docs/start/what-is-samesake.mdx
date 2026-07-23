@@ -1,80 +1,53 @@
 ---
 title: What is samesake
-description: A TypeScript-first search engine compiler for visual commerce. One factory, two capabilities — hybrid product search and entity resolution — over Postgres + pgvector.
+description: A TypeScript-first commerce intelligence engine with enrich, resolve, and search primitives over pluggable ports.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-samesake is a **search engine compiler for visual commerce**, starting with fashion. You declare your catalog and retrieval spaces in TypeScript; samesake compiles them into a Postgres-backed search layer you run inside your own app — no separate search cluster, no hosted vector database.
+samesake is a TypeScript-first **commerce intelligence engine**. It turns raw catalog
+records into enriched, searchable data, resolves duplicate offers into product groups,
+and runs grounded search over the retrieval capabilities your application provides.
 
-It is built for shoppers who do not know the product name: screenshots, similar-look search, vague intent, budget constraints, occasion, size, availability, and merchant ranking policy.
+The product is deliberately split into three primitives:
 
-## What makes it different
+| Primitive | Responsibility |
+|---|---|
+| `enrich` | Typed extraction, confidence gates, derived indexing surfaces, and evaluation. |
+| `resolve` | Candidate generation, scoring, threshold decisions, and clustering. |
+| `search` | Query understanding, hybrid retrieval, honest cutoffs, ranking, and facets. |
 
-It is not a hosted vector DB, a generic RAG framework, or keyword search alone. It is a typed retrieval layer for commerce catalogs where:
+## The package graph
 
-- image similarity, text intent, structured attributes, price, freshness, and availability are **separate signals**;
-- **hard filters stay hard** — "under 20000" and "available now" are typed constraint predicates pushed into SQL, not soft semantic vibes;
-- **query-time weights** tune visual, intent, price, and freshness influence without reindexing;
-- every search emits an **auditable constraint trace** (`/search/explain` shows per-leg ranks and space cosines);
-- the same factory also does **entity resolution** and deduplication for catalog/customer records.
+```text
+@samesake/core
+    ├── @samesake/enrich  ── EnrichStore + CandidateProvider
+    ├── @samesake/query   ── Retriever + VocabProvider + facets
+    ├── @samesake/presets ── overridable domain bundles
+    └── @samesake/embed   ── dual-form embedder wrapper
 
-## How a search is composed
-
-```
-catalog.ts                      collection() + entity() declarations
-      │
-      ▼
-createMatcher({ embed, generate?, ... })
-      ├── schema generation     →  per-project search tables (fts, vector, filter columns)
-      ├── ingest / enrich / index →  connectors, enrichment pipeline, embeddings
-      ├── search / facets / nlq →  hybrid RRF retrieval (keyword + cosine + optional spaces)
-      └── match / dedup / explain →  entity resolution
-      │
-      ▼
-Postgres (pgvector + pg_trgm + unaccent + fuzzystrmatch)
+@samesake/postgres       ── one reference backend and Tier-2 bundle
 ```
 
-Three retrieval signals combine through **reciprocal-rank fusion (RRF)**:
+The pure packages own contracts and algorithms. A backend owns I/O: retrieval,
+durable row state, candidate blocking, vocabulary, and the facet implementation.
+Postgres is one backend with exact SQL facets; another application can provide the
+same ports over a different store.
 
-- **FTS** — Postgres full-text keyword matching.
-- **Cosine ANN** — vector similarity over embeddings you supply (bring your own model).
-- **Spaces** *(optional)* — typed segmented vectors (style / price / freshness / category / image) with query-time weights. Off by default; enable behind your own eval gate.
+## Composition tiers
 
-Hard filters (`price ≤ X`, `available = true`, `colors ∋ red`) compile to SQL predicates that gate the result set before ranking.
-
-## Measuring quality
-
-Search quality is only as good as the attributes enrichment extracts, so samesake ships three eval loops — the reason relevance is measured, not asserted:
-
-- **Enrichment accuracy** — `matcher.evaluateEnrichment(...)` scores the pipeline's extracted attributes against a human-labeled gold set (per-attribute precision / recall / F1). This is the *root cause*: a mis-extracted colour or a missed neckline is caught here, not blamed on ranking. See [Measure enrichment accuracy](/guides/eval-enrichment/).
-- **Search relevance** — `matcher.evaluateSearch(...)` grades results with an LLM-as-judge (or your labels); `matcher.calibrateSearch(...)` sweeps configs. Judge grades are cached per (query, doc) so pre/post comparisons are deterministic. See [Eval from search snapshots](/guides/eval-from-snapshots/).
-- **Adversarial red-team** — out-of-distribution, numerical, injection, contradiction, and polysemy queries to prove the engine fails *gracefully* (no crashes, no junk for off-domain queries).
-
-## Three ways to call it
-
-`createMatcher(config)` returns one object you can call three ways:
-
-| Surface | Use when |
-|---|---|
-| **In-process** — `matcher.search(...)` | hot paths inside your app; no HTTP overhead |
-| **Web-standard** — `matcher.fetch(request)` | Bun.serve, Cloudflare Workers, Vercel, Deno |
-| **Composable** — `matcher.app` (Hono) | mount at `/v1` inside an existing Hono service |
-
-## The stack
-
-| Layer | Choice |
-|---|---|
-| Runtime | Bun 1.3+ (Node supported) |
-| HTTP | Hono — universal `fetch` handler |
-| Database | Postgres 15+ with pgvector, pg_trgm, unaccent, fuzzystrmatch |
-| Validation | Zod |
-| AI | Bring your own — you supply `embed` and optional `generate` / `parse` |
+1. **Pure core** — call `enrich`, `resolve` scoring, or query helpers with injected
+   model and port closures.
+2. **Capability factory** — use `createEnricher` or `createSearch` with your ports.
+3. **Batteries bundle** — use a backend package such as `@samesake/postgres` when
+   its storage and retrieval choices fit your application.
 
 <Aside type="note">
-Two containers in production: Postgres and your app process. No Redis, no Elasticsearch, no LanceDB.
+No consumer choice is a samesake default. A model such as Gemini, a 768-dimensional
+collection, or the fashion preset can appear in a conformance example, but each is
+configuration supplied by that consumer.
 </Aside>
 
-Packages: **`@samesake/core`** (SDK), **`@samesake/server`**, **`@samesake/cli`**.
-
-Next: [build a search experience](/start/build-a-search-experience/) in plain language, or jump to the [Quickstart](/start/quickstart/).
+Start with the [canonical API](/reference/canonical-api/) or choose a path: [search
+without the reference backend](/guides/search-without-postgres/) and [enrichment
+without the reference backend](/guides/enrichment-without-postgres/).

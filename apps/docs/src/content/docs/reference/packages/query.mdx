@@ -1,0 +1,57 @@
+---
+title: '@samesake/query'
+description: Store-agnostic search planning, grounded query understanding, retrieval ports, ranking, cutoffs, and facet shapes.
+---
+
+`@samesake/query` owns the search brain. It turns a query plus a `CollectionDef` into
+a retrieval plan, consumes ranked rows from a `Retriever`, and applies grounding,
+cutoffs, ranking policy, and optional reranking. It does not own an index or database.
+
+## Public surface
+
+- `createSearch` returns a callable `SearchFn`: `(query, options?) => Promise<SearchResult>`, plus
+  `searchExplain(query, options?)` for per-leg rank diagnostics.
+- `Retriever` executes `RetrievalPlan` and returns `RankedRow[]`.
+- `VocabProvider` supplies known values for grounded constraint parsing.
+- `RetrievalPlan`, `RankedRow`, `SearchHit`, `SearchResult`, `SearchOpts`, and
+  `SearchExplainResult` describe the plan, evidence, and result shapes.
+- `parseNlq`, `deriveNlqSchema`, `mergeFilters`, and vocabulary helpers provide
+  grounded query understanding with injected generation and cache dependencies.
+- `parseSearchWeights`, `resolveAspectPlans`, and image-vector planning route query
+  signals into the declared channels.
+- `applyCutoff`, `applyRankingPolicy`, `buildConstraintTrace`, and rerank blending
+  are pure result-policy helpers.
+- `FacetResult`, `FacetCountResult`, `FacetRangeResult`, and `FacetBucket` are the
+  store-neutral facet shapes.
+
+## Search and facets are one capability
+
+`Retriever` can expose an optional `facets(request)` method alongside its main plan
+execution. A backend may calculate exact counts, approximate counts over the retrieved
+page, or omit facets. The query package keeps that capability explicit instead of
+assuming a particular query language.
+
+```ts
+import { createSearch, type Retriever } from '@samesake/query';
+
+const retriever: Retriever = async (plan) => backend.search(plan);
+retriever.facets = (request) => backend.facets(request);
+
+const search = createSearch({
+  collection,
+  retriever,
+  generate,
+  embed,
+});
+
+const result = await search('waterproof trail shoes', {
+  filters: { category: 'footwear' },
+  facets: ['category'],
+});
+```
+
+The backend owns the semantics of retrieval and facet execution; `@samesake/query`
+owns the common plan and result contract.
+
+The explain entry preserves the hot `search()` response shape while returning each ranked row's
+`fts_rank`, `cosine_rank`, `recency_rank`, `rrf_score`, and optional per-aspect rank breakdown.

@@ -4,8 +4,7 @@ import { sql } from "drizzle-orm";
 import { collection, f, Channels, gates } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
-import { proposeRewrites } from "../src/core/query-rewrite.ts";
-import type { MatcherCtx } from "../src/types.ts";
+import { proposeRewrites } from "@samesake/query";
 
 const databaseUrl = process.env.SAMESAKE_DATABASE_URL;
 const describeIf = databaseUrl ? describe : describe.skip;
@@ -13,31 +12,28 @@ const describeIf = databaseUrl ? describe : describe.skip;
 describe("typed query rewrites", () => {
   test("rejects malformed, duplicate, and original proposals", async () => {
     let calls = 0;
-    const ctx = {
-      generateConfigured: true,
-      generate: async () => {
-        calls++;
-        return {
-          rewrites: [
-            { type: "unknown", query: "sneakers" },
-            { type: "spellfix", query: "" },
-            { type: "spellfix", query: "Sneakers" },
-            { type: "synonym", query: "sneakers" },
-            { type: "broader", query: "shoes" },
-          ],
-        };
-      },
-      policy: { llm: { timeoutMs: 1000 } },
-      systemTables: undefined,
-    } as unknown as MatcherCtx;
     const rewrites = await proposeRewrites(
-      ctx,
-      { name: "products", fields: {}, search: { channels: [], nlq: { enable: true } } },
       "sneakers",
-      "empty"
+      { name: "products", fields: {}, search: { channels: [], nlq: { enable: true } } },
+      {
+        generateConfigured: true,
+        timeoutMs: 1000,
+        generate: async () => {
+          calls++;
+          return {
+            rewrites: [
+              { type: "unknown", query: "sneakers" },
+              { type: "spellfix", query: "" },
+              { type: "spellfix", query: "Sneakers" },
+              { type: "synonym", query: "sneakers" },
+              { type: "broader", query: "shoes" },
+            ],
+          };
+        },
+      }
     );
     expect(calls).toBe(1);
-    expect(rewrites).toEqual([{ type: "broader", query: "shoes" }]);
+    expect(rewrites).toEqual([{ type: "broader", from: "sneakers", to: "shoes" }]);
   });
 });
 

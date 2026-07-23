@@ -1,4 +1,5 @@
 import { eq, and, gt, sql } from "drizzle-orm";
+import type { StageCachePort } from "@samesake/enrich";
 import type { MatcherCtx } from "../types.ts";
 
 export function makeStageCacheService(ctx: MatcherCtx) {
@@ -36,3 +37,17 @@ export function makeStageCacheService(ctx: MatcherCtx) {
 }
 
 export type StageCacheService = ReturnType<typeof makeStageCacheService>;
+
+export function pgStageCache(ctx: MatcherCtx): StageCachePort {
+  const service = makeStageCacheService(ctx);
+  return {
+    async get(key) {
+      return (await service.getStageCache(key)) ?? undefined;
+    },
+    async set(key, value) {
+      const [, stageName = "enrich", model = "<default>"] = key.split(":");
+      const payload = value && typeof value === "object" ? value : { value };
+      await service.setStageCache(key, stageName, payload, model);
+    },
+  };
+}

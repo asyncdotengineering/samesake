@@ -9,12 +9,13 @@
 // schema/prefix get defaults applied; the lazy migrations helper is constructed.
 //
 // As of v0.2 there are NO bundled AI providers. The consumer brings their own
-// `embed` and (optionally) `parse` functions — see EmbedFn / ParseFn below.
-// @samesake/server has zero opinions about which LLM stack you use.
+// `embed` and (optionally) `parse` functions — see the BYO model contracts
+// (re-exported from @samesake/core) and ParseFn below. @samesake/server has
+// zero opinions about which LLM stack you use.
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { StorageAdapter } from "./db/storage-adapter.ts";
 import type { Hono } from "hono";
-import type { EntityDef } from "@samesake/core";
+import type { EntityDef, EmbedFn, GenerateFn, RerankFn, GroundImageFn } from "@samesake/core";
 import type { z } from "zod";
 import type { makeSystemTables } from "./db/schema/system.ts";
 import type { LoggerFn, Observability } from "./core/observability.ts";
@@ -24,34 +25,24 @@ import type { PhoneticProvider } from "./db/postgres/phonetic.ts";
 export type { LoggerFn, LoggerEvent, MetricsSnapshot } from "./core/observability.ts";
 export type { PolicyConfig, PolicySlot } from "./core/policy.ts";
 
-// ── BYO AI: the two function contracts ──────────────────────────────────
-/**
- * Inputs the matcher gives to the consumer's embed function.
- *   - `text`     — the string to embed (already trimmed / non-empty)
- *   - `model`    — the opaque model identifier from the entity's EmbeddingDef
- *   - `dim`      — the vector dimension the matcher expects back; throw or
- *                  the matcher will detect the mismatch and throw a clear error
- *   - `taskType` — opaque hint from EmbeddingDef.taskType (e.g. Gemini's
- *                  "SEMANTIC_SIMILARITY" / "RETRIEVAL_QUERY"). May be undefined.
- *   - `inputType`— "query" for a match-time query, "document" for an upsert.
- *                  Voyage cares; most providers don't. May be undefined.
- */
-export interface EmbedImageInput {
-  url?: string;
-  bytes?: Uint8Array;
-  mimeType?: string;
-}
-
-export interface EmbedRequest {
-  text?: string;
-  image?: EmbedImageInput;
-  model: string;
-  dim: number;
-  taskType?: string;
-  inputType?: "query" | "document";
-}
-
-export type EmbedFn = (req: EmbedRequest) => Promise<number[]>;
+// ── BYO AI: the model closure contracts ──────────────────────────────────
+// The BYO model contracts are owned by @samesake/core (one definition shared
+// by every samesake layer, with no dependency on @samesake/server). They are
+// re-exported here so every existing @samesake/server import path keeps
+// resolving unchanged.
+export type {
+  EmbedFn,
+  GenerateFn,
+  RerankFn,
+  GroundImageFn,
+  EmbedRequest,
+  GenerateRequest,
+  RerankRequest,
+  RerankCandidate,
+  EmbedImageInput,
+  GroundImageRequest,
+  GroundImageResult,
+} from "@samesake/core";
 
 /**
  * Inputs the matcher gives to the consumer's parse function.
@@ -77,56 +68,6 @@ export interface ParseRequest {
 }
 
 export type ParseFn = (req: ParseRequest) => Promise<unknown>;
-
-export interface GenerateRequest {
-  model?: string;
-  system?: string;
-  prompt: string;
-  images?: { mimeType: string; data: Uint8Array | string }[];
-  schema: Record<string, unknown>;
-}
-
-export type GenerateFn = (req: GenerateRequest) => Promise<unknown>;
-
-// ── Optional retrieval seams (BYO; default off) ─────────────────────────
-/**
- * Second-stage reranker. Given the query and the top-N first-stage candidates,
- * return a re-scored ordering. Candidates the function omits keep their original
- * relative order beneath the reranked ones. Wire a cross-encoder here; samesake
- * runs pure RRF when this is absent.
- */
-export interface RerankCandidate {
-  id: string;
-  /** Best available text for the candidate (doc/title), for the cross-encoder. */
-  text: string;
-  data: Record<string, unknown>;
-  /** First-stage (RRF) score. */
-  score: number;
-}
-export interface RerankRequest {
-  query: string;
-  image?: EmbedImageInput;
-  candidates: RerankCandidate[];
-  topK: number;
-}
-/** Returned scores MUST be in [0, 1]; the search layer clamps at the boundary. */
-export type RerankFn = (req: RerankRequest) => Promise<Array<{ id: string; score: number }>>;
-
-/**
- * Visual grounding: crop/segment the salient product region from a catalog/query
- * image before it is embedded (VL-CLIP-style). Return null to pass the image
- * through unchanged. Applied to both index-time and query-time images.
- */
-export interface GroundImageRequest {
-  url?: string;
-  bytes?: Uint8Array;
-  mimeType?: string;
-}
-export interface GroundImageResult {
-  bytes: Uint8Array;
-  mimeType: string;
-}
-export type GroundImageFn = (req: GroundImageRequest) => Promise<GroundImageResult | null>;
 
 export interface MigrationPlan {
   additions: string[];

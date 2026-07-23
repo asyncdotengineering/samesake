@@ -10,7 +10,8 @@
 // (>= suggest), or founds its own cluster. Precision-first: uncertain pairs are
 // suggestions, never auto-merges. Candidates are pinned to the row's own scope,
 // so a cluster can never span tenancy scopes (REQ-5, by construction).
-import type { CollectionDedupDef } from "@samesake/core";
+import { scoreBest } from "@samesake/enrich";
+import type { DedupCandidate } from "@samesake/enrich";
 import type { MatcherCtx } from "../types.ts";
 import type { ProjectsService } from "./projects.ts";
 import { collectionTableName } from "./db-utils.ts";
@@ -18,6 +19,10 @@ import { resolveScope } from "./scope.ts";
 import { collectionScopes, scopeColumn, dedupGroupField } from "./collections-schema-gen.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
 import { searchResultCache } from "./search-cache.ts";
+
+// Scoring + clustering moved to @samesake/enrich (no SQL); re-exported for existing importers.
+export { scoreCandidate, scoreBest } from "@samesake/enrich";
+export type { DedupCandidate } from "@samesake/enrich";
 
 export interface DedupRunOpts {
   /** Max rows to process this run. Default 500. */
@@ -31,61 +36,6 @@ export interface DedupRunResult {
   autoLinked: number;
   founded: number;
   suggested: number;
-}
-
-/** A candidate row (already scope-matched by the probe SQL) with the raw values scoring needs. */
-export interface DedupCandidate {
-  id: string;
-  group: string | null;
-  /** Channel field raw values, keyed by sanitised column name (for exactKey equality). */
-  fields: Record<string, unknown>;
-  /** Trigram similarity per sanitised field name, in [0,1]. */
-  trgm: Record<string, number>;
-  /** Doc-embedding cosine similarity in [0,1], or null when the candidate has no embedding. */
-  cos: number | null;
-}
-
-/** Score a single candidate against the row. exactKey equality short-circuits to 1.0 (REQ-4). */
-export function scoreCandidate(
-  cfg: CollectionDedupDef,
-  rowFields: Record<string, unknown>,
-  cand: DedupCandidate
-): number {
-  for (const ch of cfg.channels) {
-    if (ch.kind !== "exactKey") continue;
-    const col = sanitiseIdent(ch.field);
-    const rv = rowFields[col];
-    if (rv == null || String(rv).trim() === "") continue; // empty/null key never matches (REQ-4)
-    const cv = cand.fields[col];
-    if (cv != null && String(rv) === String(cv)) return 1.0;
-  }
-  let sum = 0;
-  let wsum = 0;
-  for (const ch of cfg.channels) {
-    if (ch.kind === "trigram") {
-      const col = sanitiseIdent(ch.field);
-      sum += ch.weight * (cand.trgm[col] ?? 0);
-      wsum += ch.weight;
-    } else if (ch.kind === "cosine") {
-      sum += ch.weight * (cand.cos ?? 0);
-      wsum += ch.weight;
-    }
-  }
-  return wsum > 0 ? sum / wsum : 0;
-}
-
-/** Highest-scoring candidate (deterministic — first wins on ties). Null when no candidates. */
-export function scoreBest(
-  cfg: CollectionDedupDef,
-  rowFields: Record<string, unknown>,
-  cands: DedupCandidate[]
-): { cand: DedupCandidate; score: number } | null {
-  let best: { cand: DedupCandidate; score: number } | null = null;
-  for (const cand of cands) {
-    const score = scoreCandidate(cfg, rowFields, cand);
-    if (!best || score > best.score) best = { cand, score };
-  }
-  return best;
 }
 
 export function makeDedupService(ctx: MatcherCtx, projectsService: ProjectsService) {
@@ -179,7 +129,7 @@ export function makeDedupService(ctx: MatcherCtx, projectsService: ProjectsServi
       FROM ${table} d JOIN probe USING (id)
       WHERE d.pipeline_status = 'ready'`;
 
-    const rows = await client("dedup candidates").unsafe(sql, params);
+    const rows = await ctx.storage.dedupCandidateProbe(sql, params);
     return rows.map((cr) => {
       const fields: Record<string, unknown> = {};
       for (const col of channelFields) fields[col] = cr[col];
@@ -199,11 +149,7 @@ export function makeDedupService(ctx: MatcherCtx, projectsService: ProjectsServi
   }
 
   async function suggestionStatus(sugg: string, rowId: string, group: string): Promise<string | null> {
-    const rows = await client("dedup suggestion status").unsafe(
-      `SELECT status FROM ${sugg} WHERE row_id = $1 AND candidate_group = $2 LIMIT 1`,
-      [rowId, group]
-    );
-    return rows.length ? String(rows[0]!.status) : null;
+    return ctx.storage.dedupSuggestionStatus(sugg, rowId, group);
   }
 
   // A split is a SYMMETRIC decision — the two rows must never re-cluster, regardless of
@@ -211,12 +157,7 @@ export function makeDedupService(ctx: MatcherCtx, projectsService: ProjectsServi
   // record is one directional (row_id, candidate_group), so check BOTH orderings; otherwise
   // a rebuild that re-founds the cluster the other way silently re-merges the split pair.
   async function isDeclined(sugg: string, a: string, b: string): Promise<boolean> {
-    const rows = await client("dedup declined check").unsafe(
-      `SELECT 1 FROM ${sugg} WHERE status = 'declined'
-       AND ((row_id = $1 AND candidate_group = $2) OR (row_id = $2 AND candidate_group = $1)) LIMIT 1`,
-      [a, b]
-    );
-    return rows.length > 0;
+    return ctx.storage.dedupIsDeclined(sugg, a, b);
   }
 
   async function dedup(

@@ -47,29 +47,30 @@ import type {
 import { assertIdent, assertNoIdentCollisions } from "./ident.ts";
 
 export * from "./types.ts";
-// Best-default enrichment templates (fashion commerce).
-export {
-  fashion,
-  fashionTaxonomy,
-  fashionEnums,
-  fashionEnrichPipeline,
-  fashionSearchFields,
-  fashionSearchDefaults,
-  composeFashionEmbedDoc,
-  composeFashionRerankDoc,
-  fashionIndexing,
-  FASHION_CONFIDENCE_FLOOR,
-  fashionClassifySchema,
-  fashionExtractSchema,
-  fashionCategoryAttrBlock,
-  fashionNlqSchema,
-  FASHION_EXTRACT_INSTRUCTIONS,
-  FASHION_NLQ_INSTRUCTIONS,
-  fashionEvalAttributes,
-  type FashionEnrichOptions,
-  type EnrichEvalAttr,
-} from "./templates/fashion.ts";
-export { IdentError, assertIdent, assertNoIdentCollisions } from "./ident.ts";
+// BYO model closure contracts (moved from @samesake/server; core owns them).
+export type {
+  EmbedImageInput,
+  EmbedRequest,
+  EmbedFn,
+  GenerateRequest,
+  GenerateFn,
+  RerankCandidate,
+  RerankRequest,
+  RerankFn,
+  GroundImageRequest,
+  GroundImageResult,
+  GroundImageFn,
+} from "./model.ts";
+// Scope — the shared tenancy primitive. Domain ports live with their packages:
+// EnrichStore + dedup CandidateProvider in @samesake/enrich; Retriever +
+// VocabProvider + RetrievalPlan/RankedRow in @samesake/query.
+export type { Scope } from "./ports.ts";
+export { IdentError, assertIdent, assertNoIdentCollisions, sanitiseIdent } from "./ident.ts";
+export { ClientError } from "./errors.ts";
+// Pure schema / image-token / path helpers shared by @samesake/enrich and @samesake/server.
+export { normalizeSchema } from "./schema-input.ts";
+export { imageVersionToken } from "./image-token.ts";
+export { getByPath } from "./paths.ts";
 
 const DEF_KIND = Symbol.for("@samesake/core.defKind");
 type DefKind = "entity" | "collection";
@@ -356,7 +357,7 @@ export const sources = {
       kind: "shopify",
       options: {
         domain: opts.domain,
-        currency: opts.currency ?? "LKR",
+        currency: opts.currency,
         maxPages: opts.maxPages ?? 8,
       },
     };
@@ -372,7 +373,7 @@ export const sources = {
       kind: "woocommerce",
       options: {
         domain: opts.domain,
-        currency: opts.currency ?? "LKR",
+        currency: opts.currency,
         maxPages: opts.maxPages ?? 8,
       },
     };

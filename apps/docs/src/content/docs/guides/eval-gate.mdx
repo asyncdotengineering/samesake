@@ -7,7 +7,7 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 
 Ranking and gate thresholds are **empirical**. The values shipped today are **placeholders**:
 
-- `FASHION_CONFIDENCE_FLOOR = 0.5` in `@samesake/core` (`fashion.indexing().gate`)
+- `FASHION_CONFIDENCE_FLOOR = 0.5` in `@samesake/presets` (`fashion.indexing().gate`)
 - `relevanceExponent = 1` (default in `rankingPolicy` / core ranking fusion)
 
 Do not change these without running the harness. Fabricating "calibrated" numbers defeats the purpose of the eval loop.
@@ -21,10 +21,30 @@ Do not change these without running the harness. Fabricating "calibrated" number
 3. Aggregates Hit@K, nDCG@K, MRR, null-rate, and constraint-violation rate.
 4. Sets `pass` from `thresholds` — exits **0** when all metrics meet thresholds, **nonzero** when any regress.
 
+<Aside type="caution">
+`runEval` is a method on the legacy `@samesake/server` `Matcher` instance — it has no
+standalone export and has not been ported to `@samesake/query`/`@samesake/postgres`. The example
+below still goes through `createMatcher` for the orchestration (query loop, judge-family assertion,
+artifact + judge-cache writes); only the underlying search index it evaluates needs to be the same
+Postgres data your `samesake()` bundle indexed. Composing this loop by hand against `app.search`
+plus the standalone `makeLlmJudge` + metric functions (`ndcgAtK`, `hitAtK`, `mrr`, `nullRate`,
+`constraintViolations`, all real `@samesake/server` exports) is possible but nontrivial — do that only
+if you need to drop the `@samesake/server` dependency entirely.
+</Aside>
+
 ```ts
+import { createMatcher, makeLlmJudge } from "@samesake/server";
+
+const matcher = createMatcher({
+  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
+  apiKey: process.env.SAMESAKE_API_KEY!,
+  embed: geminiEmbed,
+  generate: geminiGenerate,
+});
+
 const res = await matcher.runEval(PROJECT, COLLECTION, {
   queries: golden.queries,
-  judge, // e.g. makeLlmJudge(openaiGenerate, { model: "gpt-4.1-mini" }) vs a Gemini pipeline
+  judge: makeLlmJudge(openaiGenerate, { model: "gpt-4.1-mini" }), // vs a Gemini pipeline
   k: 10,
   relevanceFloor: 2, // ESCI: Substitute or better counts as relevant
 
@@ -51,7 +71,7 @@ GEMINI_API_KEY=... bun examples/fashion-search/eval-judge.ts
 
 <Steps>
 
-1. **Calibrate the judge (once per prompt change).** Run `matcher.calibrateSearch` / `calibrate.ts` against a labeled fixture so judge-vs-human F1 meets your trust bar. Rubric edits invalidate cached grades automatically (the judge version embeds a content hash of the prompt — `esci-v1@<hash>`); pass a new `version` tag only for model or methodology changes. See [Relevance judge](/reference/relevance-judge/) for the judge API, prompt, and schema.
+1. **Calibrate the judge (once per prompt change).** Run `calibrateJudge` (from `@samesake/server`) / `calibrate.ts` against a labeled fixture so judge-vs-human F1 meets your trust bar. Rubric edits invalidate cached grades automatically (the judge version embeds a content hash of the prompt — `esci-v1@<hash>`); pass a new `version` tag only for model or methodology changes. See [Relevance judge](/reference/relevance-judge/) for the judge API, prompt, and schema.
 
 2. **Baseline the current placeholders.** With `GEMINI_API_KEY` set, run the gate and save the artifact:
 
@@ -79,7 +99,7 @@ GEMINI_API_KEY=... bun examples/fashion-search/eval-judge.ts
 | Confidence floor (G2) | `FASHION_CONFIDENCE_FLOOR` / `fashion.indexing().gate` | Re-enrich + re-index (gate changes quarantine) |
 | Relevance exponent (G7) | `search.rankingPolicy.relevanceExponent` | Re-run eval only |
 | Axis weights (G7) | `rankingPolicy.weights.*` | Re-run eval only |
-| Rerank blend | `matcher` `rerank: llmRerank(generate)` | Re-run eval only |
+| Rerank blend | `samesake({ rerank: llmRerank(generate) })` | Re-run eval only |
 
 Core ranking uses **multiplicative fusion**: normalized relevance raised to `relevanceExponent`, multiplied by availability / business / personalization axes. Hard axes (e.g. availability) apply multiplicatively; soft axes add after the product. A `minRelevanceFloor` drops hits below a relevance cutoff before fusion.
 
@@ -87,7 +107,7 @@ Core ranking uses **multiplicative fusion**: normalized relevance raised to `rel
 
 - [Relevance judge](/reference/relevance-judge/) — `makeLlmJudge`, grading schema, versioning, and calibration.
 - [Eval from search snapshots](/guides/eval-from-snapshots/) — build a corpus and offline baseline before going live.
-- [Tuning search relevance](/guides/tuning-search/) — diagnose with `searchExplain`, fix data, then measure.
+- [Tuning search relevance](/guides/tuning-search/) — diagnose with the search result's `constraintTrace`, fix data, then measure.
 - [Pipeline lifecycle](/guides/pipeline-lifecycle/) — how the indexing gate quarantines low-confidence rows.
 
 <Aside type="caution">

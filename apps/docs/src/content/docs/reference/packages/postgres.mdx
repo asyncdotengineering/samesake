@@ -1,0 +1,37 @@
+---
+title: '@samesake/postgres'
+description: The PostgreSQL reference backend implementing samesake ports, exact facets, and the Tier-2 bundle.
+---
+
+`@samesake/postgres` is one backend package. It owns PostgreSQL-specific SQL and
+implements the store, retrieval, candidate, vocabulary, and exact facet ports for
+applications that choose this backend.
+
+## Public surface
+
+- `createPostgresAdapter` and `PostgresAdapter` own the connection and migrations.
+- `createPostgresBackend` returns the backend ports: `retriever`, `enrichStore`,
+  `candidates`, `vocab`, `facets`, `migrate`, and `close`.
+- `PostgresEnrichStore`, `PostgresRetriever`, `pgCandidates`, `pgVocab`,
+  `createFacets`, and `buildFilterSql` expose the backend pieces for custom wiring.
+- `samesake(config)` returns a `SamesakeBundle` with `enrich`, `resolve`, `search`, `facets`,
+  `migrate`, and `close`.
+
+```ts
+import { samesake } from '@samesake/postgres';
+
+const app = samesake({
+  url: process.env.DATABASE_URL!,
+  collection,
+  models: { embed, generate },
+  migrate: 'manual',
+});
+
+await app.migrate();
+const result = await app.search('blue jacket', { limit: 20 });
+await app.close();
+```
+
+The bundle is convenient when one backend should own all three capabilities. A
+consumer that already has a retrieval or durability system can use `@samesake/enrich`
+and `@samesake/query` directly with its own ports instead.

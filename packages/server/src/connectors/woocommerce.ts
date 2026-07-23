@@ -11,7 +11,7 @@ export interface WooFeedOpts {
 }
 
 export function wooStoreFeedConnector(opts: WooFeedOpts) {
-  const store = { domain: opts.domain, currency: opts.currency ?? "LKR" };
+  const store = { domain: opts.domain, currency: opts.currency };
   const maxPages = opts.maxPages ?? 8;
   const fetchFn = opts.fetchImpl ?? fetch;
   const timeoutMs = opts.timeoutMs ?? 60_000;
@@ -44,7 +44,7 @@ export function wooFeedFromJson(
   items: Record<string, unknown>[],
   store: { domain: string; currency?: string }
 ) {
-  const s = { domain: store.domain, currency: store.currency ?? "LKR" };
+  const s = { domain: store.domain, currency: store.currency };
   return {
     name: `woo:${store.domain}`,
     async *pull() {

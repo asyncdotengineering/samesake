@@ -8,5 +8,5 @@ export default defineConfig({
   sourcemap: false,
   target: "es2022",
   // Mark workspace deps as externals — consumers bring them.
-  external: ["@samesake/core", "hono", "drizzle-orm", "postgres", "ai", "@ai-sdk/google", "@hono/zod-validator", "zod"],
+  external: ["@samesake/core", "@samesake/enrich", "@samesake/query", "hono", "drizzle-orm", "postgres", "ai", "@ai-sdk/google", "@hono/zod-validator", "zod"],
 });

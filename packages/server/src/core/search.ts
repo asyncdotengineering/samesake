@@ -1,20 +1,31 @@
-import type { CollectionDef, ConstraintTrace, SearchMode, SearchWeightsInput } from "@samesake/core";
+import type { CollectionDef, SearchMode } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import { mergeBlendedRerank, rerankCandidateText } from "./rerank.ts";
-import { applyRankingPolicy } from "./ranking.ts";
+import { applyRankingPolicy, type SearchHit } from "@samesake/query";
 import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
-import { buildConstraintTrace } from "./constraint-trace.ts";
-import { mergeFilters, parseNlq, shouldSkipNlq } from "./nlq.ts";
-import { vocabCandidates } from "./field-vocab.ts";
+import { buildConstraintTrace } from "@samesake/query";
+import { mergeFilters, parseNlq, shouldSkipNlq } from "@samesake/query";
+import { vocabCandidates, groundVocabValues } from "./field-vocab.ts";
+import { makeStageCacheService } from "../db/stage-cache.ts";
+import { fetchRemoteImageSafe } from "./fetch-image.ts";
+import type { MetricName } from "./observability.ts";
 import type { ProjectsService, ProjectRow } from "./projects.ts";
 import { sanitiseIdent } from "./schema-gen.ts";
 import { ftsLanguage } from "./collections-schema-gen.ts";
 import { collectionTableName } from "./db-utils.ts";
 import { searchResultCache, type SearchCacheKey } from "./search-cache.ts";
 import { buildFilterSql, type FilterCompileOpts, type SearchFilters } from "./search-filter.ts";
-import { applyCutoff, type CutoffEvidence } from "./cutoff.ts";
-import { proposeRewrites, type RewriteRecord } from "./query-rewrite.ts";
+import { applyCutoff, type CutoffEvidence } from "@samesake/query";
+import {
+  proposeRewrites,
+  type RewriteRecord,
+  type SearchResult,
+  type SearchOpts as QuerySearchOpts,
+  type SearchExplainResult,
+  type ExplainDocBreakdown,
+  type FacetResult,
+} from "@samesake/query";
 import { appendScopeSql, resolveScope } from "./scope.ts";
 import {
   buildQueryAspectImageVectors,
@@ -22,8 +33,10 @@ import {
   resolveAspectPlans,
   type AspectPlan,
   type ChannelWeights,
-} from "./search-query.ts";
+} from "@samesake/query";
 import { embeddingColumn, embeddingEntries, evidenceEntries, evidenceTable, EVIDENCE_OVERFETCH_FACTOR } from "./aspects.ts";
+
+export type SearchOpts = QuerySearchOpts & { q: string };
 
 export {
   buildFilterSql,
@@ -51,111 +64,9 @@ export interface IndexDocumentRow {
   fields?: Record<string, unknown>;
 }
 
-export interface SearchHit {
-  id: string;
-  score: number;
-  data: Record<string, unknown>;
-  /**
-   * Cross-vendor offers for this hit's cluster (dedup-enabled collections only): one
-   * entry per ready cluster member, restricted to the collection's declared
-   * `dedup.offerFields` + `id` (+ scope keys on scoped collections). Absent when the
-   * collection declares no `dedup` or the hit carries no cluster id.
-   */
-  offers?: Array<Record<string, unknown>>;
-  [field: string]: unknown;
-}
+export type { SearchHit } from "@samesake/query";
 
-export interface SearchResult {
-  hits: SearchHit[];
-  parsed?: Record<string, unknown>;
-  constraintTrace: ConstraintTrace;
-  nlq_degraded?: boolean;
-  relaxed: boolean;
-  relaxedFields: string[];
-  took_ms: number;
-  facets?: Record<string, import("../db/postgres/facets.ts").FacetResult>;
-  total_candidates?: number;
-  /** hits removed by the result-cutoff strategy (honest zero-results); absent when 0 */
-  cutoff_dropped?: number;
-  /** true when served from the in-process result cache */
-  cached?: boolean;
-  rewritten?: RewriteRecord;
-}
-
-export interface ExplainDocBreakdown {
-  id: string;
-  fts_rank: number | null;
-  cosine_rank: number | null;
-  recency_rank: number | null;
-  rrf_score: number;
-  aspect_ranks?: Record<string, { rank: number | null; cosine: number | null }>;
-}
-
-export interface SearchExplainResult {
-  q: string;
-  parsed?: Record<string, unknown>;
-  constraintTrace: ConstraintTrace;
-  nlq_degraded?: boolean;
-  filters: { sql: string; params: Array<{ index: number; type: string }> };
-  relaxation: boolean;
-  relaxedFields: string[];
-  cache_hit: boolean;
-  weights: ChannelWeights;
-  docs: ExplainDocBreakdown[];
-  took_ms: number;
-  rewritten?: RewriteRecord;
-}
-
-export interface SearchOpts {
-  q: string;
-  image?: {
-    url?: string;
-    bytes?: Uint8Array;
-    bytesBase64?: string;
-    mimeType?: string;
-  };
-  filters?: SearchFilters;
-  weights?: SearchWeightsInput;
-  /**
-   * Retrieval objective. Omit to auto-resolve: "similar" when an image is present, else
-   * "intent". "intent" keeps keyword as a tiebreaker; "similar" turns keyword off so
-   * semantic + visual decide. Explicit `weights` still override the mode's defaults.
-   */
-  mode?: SearchMode;
-  limit?: number;
-  offset?: number;
-  facets?: string[];
-  /** Set true to opt into the short-TTL in-process result cache. */
-  cache?: boolean;
-  /**
-   * Second-stage reranking. Defaults to on when a `rerank` fn is configured on the
-   * matcher. Set false to force pure first-stage (RRF) order.
-   */
-  rerank?: boolean;
-  /**
-   * Collapse near-duplicate variants (same `search.variantGroup` value) to the
-   * best-scoring item per group. Defaults to on when the collection declares
-   * `variantGroup`. Set false to return every variant.
-   */
-  diversify?: boolean;
-  /**
-   * HNSW recall/latency dial (pgvector `hnsw.ef_search`, clamped to 10–1000).
-   * Higher = better ANN recall, slower query. Omit for the pgvector default (40).
-   */
-  efSearch?: number;
-  /**
-   * Tenancy scope. REQUIRED (all declared keys) when the collection declares
-   * `scopes` — every query runs inside exactly one scope; there is no
-   * cross-scope search. Rejected on unscoped collections.
-   */
-  scope?: Record<string, string>;
-  /**
-   * Attach cross-vendor `offers` to each hit (dedup-enabled collections only). Defaults
-   * to on when the collection declares `dedup`; set false to skip the batched offers
-   * query. No effect on collections without `dedup`.
-   */
-  offers?: boolean;
-}
+export type { SearchResult, SearchExplainResult, ExplainDocBreakdown } from "@samesake/query";
 
 // Second-stage rerank: how many first-stage candidates to hand the reranker.
 const RERANK_POOL = 50;
@@ -719,7 +630,15 @@ export function makeSearchService(
       const candidates = shouldSkipNlq(def, q)
         ? { available: true, candidates: {} }
         : await vocabCandidates(ctx, project.schema_name, collectionName, def, q, scopeCols);
-      return parseNlq(ctx, def, q, {
+      return parseNlq(def, q, {
+        generate: ctx.generate,
+        generateConfigured: ctx.generateConfigured,
+        stageCache: ctx.systemTables?.samesakeStageCache ? makeStageCacheService(ctx) : undefined,
+        timeoutMs: ctx.policy?.llm?.timeoutMs,
+        onMetric: (n) => ctx.observability?.inc(n as MetricName),
+        groundVocab: (schema, collection, values, scope) =>
+          groundVocabValues(ctx, schema, collection, values, scope),
+      }, {
         candidates,
         schema: project.schema_name,
         collection: collectionName,
@@ -744,7 +663,7 @@ export function makeSearchService(
       : !nlq.degraded && typeof nlq.parsed.lexical_query === "string" && nlq.parsed.lexical_query.trim()
         ? nlq.parsed.lexical_query.trim()
         : q;
-    const imageVectors = await buildQueryAspectImageVectors(def, opts.image, embedService, ctx.groundImage);
+    const imageVectors = await buildQueryAspectImageVectors(def, opts.image, embedService, fetchRemoteImageSafe, ctx.groundImage);
     const aspectPlans = await resolveAspectPlans(
       def,
       weights,
@@ -1001,13 +920,18 @@ export function makeSearchService(
     const originalVector = await primaryTextEmbedding(r.def, r.q);
     if (!originalVector) return { retrieval: r, ranked, rows: cut.rows, cutoffDropped: cut.dropped };
 
-    const proposals = await proposeRewrites(ctx, r.def, r.q, cut.rows.length === 0 ? "empty" : "thin");
+    const proposals = await proposeRewrites(r.q, r.def, {
+      generate: ctx.generate,
+      generateConfigured: ctx.generateConfigured,
+      stageCache: ctx.systemTables?.samesakeStageCache ? makeStageCacheService(ctx) : undefined,
+      timeoutMs: ctx.policy?.llm?.timeoutMs,
+    });
     for (const proposal of proposals) {
-      const replacementVector = await primaryTextEmbedding(r.def, proposal.query);
+      const replacementVector = await primaryTextEmbedding(r.def, proposal.to);
       if (!replacementVector || cosineSimilarity(originalVector, replacementVector) < 0.6) continue;
-      const retry = await retrieve(r.project.slug, r.collectionName, { ...opts, q: proposal.query }, {
+      const retry = await retrieve(r.project.slug, r.collectionName, { ...opts, q: proposal.to }, {
         original: r,
-        query: proposal.query,
+        query: proposal.to,
       });
       const retryRanked = await runRanked(retry, limit, "search");
       const retryCut = applySearchCutoff(retry, retryRanked);
@@ -1019,7 +943,7 @@ export function makeSearchService(
         ranked: retryRanked,
         rows: retryCut.rows,
         cutoffDropped: retryCut.dropped,
-        rewritten: { type: proposal.type, from: r.q, to: proposal.query },
+        rewritten: proposal,
       };
     }
     return { retrieval: r, ranked, rows: cut.rows, cutoffDropped: cut.dropped };
@@ -1351,7 +1275,7 @@ export function makeSearchService(
     projectSlug: string,
     collectionName: string,
     opts: { filters?: SearchFilters; facets: string[]; scope?: Record<string, string> }
-  ): Promise<Record<string, import("../db/postgres/facets.ts").FacetResult>> {
+  ): Promise<Record<string, FacetResult>> {
     if (!opts.facets?.length) return {};
     const project = await projectsService.getProject(projectSlug);
     if (!project) throw new Error(`project "${projectSlug}" not found`);

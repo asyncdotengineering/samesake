@@ -1,0 +1,46 @@
+{
+  "name": "@samesake/enrich",
+  "version": "5.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/asyncdotengineering/samesake"
+  },
+  "description": "Enrichment + dedup type surface for samesake: the per-row transform result, stage/cache/image ports, and the dedup candidate-provider seam. Depends only on @samesake/core.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "keywords": [
+    "samesake",
+    "enrichment",
+    "dedup",
+    "entity-resolution",
+    "record-linkage"
+  ],
+  "dependencies": {
+    "@samesake/core": "workspace:^",
+    "@samesake/embed": "workspace:^",
+    "graphology": "^0.26.0",
+    "graphology-components": "^1.5.4"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1"
+  }
+}

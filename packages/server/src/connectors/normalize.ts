@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { imageVersionToken } from "@samesake/core";
+
+export { imageVersionToken };
 
 export function stripHtml(s: unknown): string {
   return String(s ?? "")
@@ -12,7 +15,8 @@ export interface NormalizedProduct {
   title: string;
   description: string | null;
   price: number | null;
-  currency: string;
+  /** Caller-supplied store currency; unset when the caller supplies none. */
+  currency: string | undefined;
   image_url: string | null;
   url: string;
   vendor: string | null;
@@ -20,19 +24,6 @@ export interface NormalizedProduct {
   raw_tags: string[];
   available: boolean;
   content_hash: string;
-}
-
-export function imageVersionToken(fields: {
-  image_etag?: unknown;
-  image_updated_at?: unknown;
-  image_version?: unknown;
-}): string | null {
-  if (fields.image_etag != null && String(fields.image_etag)) return String(fields.image_etag);
-  if (fields.image_updated_at != null && String(fields.image_updated_at))
-    return String(fields.image_updated_at);
-  if (fields.image_version != null && String(fields.image_version))
-    return String(fields.image_version);
-  return null;
 }
 
 function contentHash(
@@ -54,7 +45,7 @@ function contentHash(
 
 export function normalizeShopify(
   item: Record<string, unknown>,
-  store: { domain: string; currency: string }
+  store: { domain: string; currency?: string }
 ): NormalizedProduct | null {
   if (!item.title || !item.handle) return null;
   const variants = (item.variants as Record<string, unknown>[] | undefined) ?? [];
@@ -88,7 +79,7 @@ export function normalizeShopify(
 
 export function normalizeWoo(
   item: Record<string, unknown>,
-  store: { domain: string; currency: string }
+  store: { domain: string; currency?: string }
 ): NormalizedProduct | null {
   if (!item.name || !item.permalink) return null;
   const prices = (item.prices as Record<string, unknown> | undefined) ?? {};
@@ -116,34 +107,7 @@ export function normalizeWoo(
   return { ...p, content_hash: contentHash(p, null) };
 }
 
-export function computeContentHash(data: Record<string, unknown>): string {
-  const p = {
-    title: data.title ?? "",
-    description: data.description ?? null,
-    price: data.price ?? null,
-    image_url: data.image_url ?? null,
-    available: data.available ?? false,
-    raw_type: data.raw_type ?? null,
-    raw_tags: Array.isArray(data.raw_tags) ? data.raw_tags : [],
-  };
-  const imageVersion = imageVersionToken({
-    image_etag: data.image_etag,
-    image_updated_at: data.image_updated_at,
-    image_version: data.image_version,
-  });
-  return contentHash(
-    {
-      title: String(p.title),
-      description: p.description != null ? String(p.description) : null,
-      price: p.price != null ? Number(p.price) : null,
-      currency: String(data.currency ?? ""),
-      image_url: p.image_url != null ? String(p.image_url) : null,
-      url: String(data.url ?? ""),
-      vendor: data.vendor != null ? String(data.vendor) : null,
-      raw_type: p.raw_type != null ? String(p.raw_type) : null,
-      raw_tags: p.raw_tags as string[],
-      available: Boolean(p.available),
-    },
-    imageVersion
-  );
-}
+// Relocated to @samesake/enrich so Postgres and Cloudflare/D1 shells share one
+// source of truth. Re-exported here under the historical name for back-compat;
+// every importer (ingest.ts, jsonl.ts, the server barrel) resolves this symbol.
+export { contentHash as computeContentHash } from "@samesake/enrich";

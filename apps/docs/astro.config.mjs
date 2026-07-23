@@ -8,7 +8,7 @@ export default defineConfig({
     starlight({
       title: "samesake",
       description:
-        "A TypeScript-first search engine compiler for visual commerce. Declare your catalog and retrieval in TypeScript; run a Postgres-backed hybrid search layer inside your app.",
+        "A TypeScript-first commerce intelligence engine. Compose enrich, resolve, and search over ports supplied by your application.",
       customCss: ["./src/styles/custom.css"],
       social: [
         { icon: "github", label: "GitHub", href: "https://github.com/asyncdotengineering/samesake" },
@@ -48,6 +48,8 @@ export default defineConfig({
           label: "Running the pipeline",
           items: [
             { label: "Running the enrich pipeline durably", slug: "guides/enrich-pipeline" },
+            { label: "Enrichment without the reference backend", slug: "guides/enrichment-without-postgres" },
+            { label: "Search without the reference backend", slug: "guides/search-without-postgres" },
             { label: "In-memory pipeline", slug: "guides/pipeline-in-memory" },
             { label: "Inngest pipeline", slug: "guides/pipeline-inngest" },
             { label: "Upstash Workflow pipeline", slug: "guides/pipeline-upstash" },
@@ -75,6 +77,13 @@ export default defineConfig({
         {
           label: "Reference",
           items: [
+            { label: "Canonical API", slug: "reference/canonical-api" },
+            { label: "@samesake/core", slug: "reference/packages/core" },
+            { label: "@samesake/enrich", slug: "reference/packages/enrich" },
+            { label: "@samesake/query", slug: "reference/packages/query" },
+            { label: "@samesake/presets", slug: "reference/packages/presets" },
+            { label: "@samesake/embed", slug: "reference/packages/embed" },
+            { label: "@samesake/postgres", slug: "reference/packages/postgres" },
             { label: "Reranking", slug: "reference/reranking" },
             { label: "Relevance judge", slug: "reference/relevance-judge" },
             { label: "Providers", slug: "reference/providers" },

@@ -1,0 +1,70 @@
+---
+title: Canonical API
+description: The package graph, three primitives, four ports, and three composition tiers that define samesake.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The canonical API is a small graph of contracts rather than one mandatory runtime.
+`@samesake/core` defines the config vocabulary; the capability packages own pure
+algorithms and ports; backends provide I/O.
+
+## Three primitives
+
+| Primitive | Pure package surface | Capability factory |
+|---|---|---|
+| `enrich` | `enrich`, `enrichRow`, gates, surfaces, dirty selection, evaluation | `createEnricher` |
+| `resolve` | candidate scoring and `clusterBatch` | `createEnricher().resolve` |
+| `search` | planning, grounded NLQ, filters, cutoff, ranking | `createSearch` |
+
+Search and facets are one capability. `Retriever` may expose `facets` alongside
+retrieval; a backend chooses whether counts are exact, approximate, or unsupported.
+
+## Four ports
+
+| Port | Owner | Responsibility |
+|---|---|---|
+| `Retriever` | `@samesake/query` | Execute a `RetrievalPlan` and return ranked rows; optional facets live here. |
+| `EnrichStore` | `@samesake/enrich` | Persist dirty, enriched, retryable, quarantined, and dead row state. |
+| `CandidateProvider` | `@samesake/enrich` | Block a row into candidates for pure resolution scoring. |
+| `VocabProvider` | `@samesake/query` | Supply known field values for grounded query constraints. |
+
+The consumer supplies model closures (`EmbedFn`, `GenerateFn`, `RerankFn`, and
+optional image grounding) from `@samesake/core`. The core treats model identifiers
+and dimensions as opaque configuration.
+
+## Package graph
+
+```text
+@samesake/core
+    ├── @samesake/enrich  ── enrich + resolve cores and EnrichStore
+    ├── @samesake/query   ── search core, Retriever, VocabProvider, facets
+    ├── @samesake/presets ── overridable domain bundles
+    └── @samesake/embed   ── dual-form embedder wrapper
+
+@samesake/postgres       ── reference ports, exact facets, and bundle
+```
+
+## Composition tiers
+
+1. **Tier 0 — pure function.** Inject model closures and call the algorithm. Your
+   workflow or application owns persistence and scheduling.
+2. **Tier 1 — capability factory.** `createEnricher` and `createSearch` compose a
+   pure core with the ports you provide.
+3. **Tier 2 — batteries bundle.** A backend such as `@samesake/postgres` wires all
+   three primitives over one backend and exposes migration and lifecycle methods.
+
+## Contract pages
+
+- [`@samesake/core`](/reference/packages/core/) — config DSL, types, model contracts.
+- [`@samesake/enrich`](/reference/packages/enrich/) — enrichment, resolution, and state port.
+- [`@samesake/query`](/reference/packages/query/) — search, retrieval, grounding, and facets.
+- [`@samesake/presets`](/reference/packages/presets/) — overridable domain bundles.
+- [`@samesake/embed`](/reference/packages/embed/) — single/batch embedder contract.
+- [`@samesake/postgres`](/reference/packages/postgres/) — one reference backend and bundle.
+- [PRD: samesake canonical API](/reference/prd/) — the product-level invariant and graph.
+
+<Aside type="note">
+Examples may choose a particular provider, vector dimension, or domain. Those choices
+are conformance scenarios, not defaults or requirements of the package graph.
+</Aside>

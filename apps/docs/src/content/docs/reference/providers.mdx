@@ -5,14 +5,14 @@ description: BYO provider functions for samesake — EmbedFn, GenerateFn, Rerank
 
 import { Aside } from '@astrojs/starlight/components';
 
-samesake never calls a model directly. You supply functions; the matcher passes opaque model strings through from your entity config.
+samesake never calls a model directly. You supply functions; the bundle passes opaque model strings through from your collection config.
 
-## Matcher seams
+## Model closures
 
-| Seam | Type | Required? | Used for |
+| Closure | Type | Required? | Used for |
 |------|------|-----------|----------|
-| `embed` | `EmbedFn` | **Yes** | Index + query vectors |
-| `generate` | `GenerateFn` | Optional | Enrich stages, NLQ, judge, `llmRerank` |
+| `models.embed` | `EmbedFn` \| `Embedder` | **Yes** | Index + query vectors |
+| `models.generate` | `GenerateFn` | Optional | Enrich stages, NLQ, judge, `llmRerank` |
 | `rerank` | `RerankFn` | Optional (default off) | Second-stage rerank — see [Reranking](/reference/reranking/) |
 | `groundImage` | `GroundImageFn` | Optional | Crop/segment before embed |
 
@@ -21,30 +21,36 @@ samesake never calls a model directly. You supply functions; the matcher passes 
 ## Ready-made adapters — `@samesake/providers`
 
 You rarely need to hand-write the glue: `@samesake/providers` ships zero-dependency factories
-returning exactly these closures, with lazy env-key resolution, 429/5xx retry with backoff, and
-optional call spacing for bulk indexing.
+for generation, parsing, and reranking. Its Gemini and Voyage embedding exports are aliases of
+the dual-form implementations in `@samesake/embed`, which provide both single-request and batch
+forms for search and enrichment.
 
 ```ts
-import { createMatcher } from "@samesake/server";
+import { samesake } from "@samesake/postgres";
 import { geminiEmbedder, geminiGenerator, cohereReranker } from "@samesake/providers";
 
-const matcher = createMatcher({
-  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
-  apiKey: process.env.SAMESAKE_API_KEY!,
-  embed: geminiEmbedder(),        // multimodal (text + image); GEMINI_API_KEY
-  generate: geminiGenerator(),    // NLQ, enrichment, judge
+const app = samesake({
+  url: process.env.SAMESAKE_DATABASE_URL!,
+  collection,
+  models: {
+    embed: geminiEmbedder(),      // multimodal (text + image); GEMINI_API_KEY
+    generate: geminiGenerator(),  // NLQ, enrichment, judge
+  },
   rerank: cohereReranker(),       // optional second stage; COHERE_API_KEY
 });
 ```
 
 | Provider | embed | generate | parse | rerank |
 |---|---|---|---|---|
-| Gemini | `geminiEmbedder` (multimodal) | `geminiGenerator` | `geminiParser` | — |
+| Gemini | `geminiEmbedder` (multimodal, `@samesake/embed`) | `geminiGenerator` | `geminiParser` | — |
 | OpenAI | `openaiEmbedder` | `openaiGenerator` | `openaiParser` | — |
-| Voyage | `voyageEmbedder` | — | — | `voyageReranker` |
+| Voyage | `voyageEmbedder` (`@samesake/embed`) | — | — | `voyageReranker` |
 | Cohere | `cohereEmbedder` | — | — | `cohereReranker` |
 
-All factories accept `{ apiKey, model, baseUrl, minIntervalMs, retries }`.
+Generation and reranking factories accept `{ apiKey, model, baseUrl, minIntervalMs, retries }`.
+The Gemini and Voyage embedding aliases resolve `GEMINI_API_KEY`/`VOYAGE_API_KEY` and accept the
+`@samesake/embed` options; model and dimension normally come from each collection's embedding
+definition.
 
 ### Vercel AI SDK bridge
 
@@ -55,13 +61,17 @@ optional peer dependency, only needed for this subpath):
 import { google } from "@ai-sdk/google";
 import { aiSdkEmbedder, aiSdkGenerator } from "@samesake/providers/ai-sdk";
 
-createMatcher({
-  embed: aiSdkEmbedder(google.textEmbedding("gemini-embedding-2"), {
-    providerOptions: ({ dim, taskType }) => ({
-      google: { outputDimensionality: dim, ...(taskType ? { taskType } : {}) },
+const app = samesake({
+  url: process.env.SAMESAKE_DATABASE_URL!,
+  collection,
+  models: {
+    embed: aiSdkEmbedder(google.textEmbedding("gemini-embedding-2"), {
+      providerOptions: ({ dim, taskType }) => ({
+        google: { outputDimensionality: dim, ...(taskType ? { taskType } : {}) },
+      }),
     }),
-  }),
-  generate: aiSdkGenerator(google("gemini-2.5-flash-lite")),
+    generate: aiSdkGenerator(google("gemini-2.5-flash-lite")),
+  },
 });
 ```
 
@@ -85,7 +95,7 @@ interface EmbedRequest {
 type EmbedFn = (req: EmbedRequest) => Promise<number[]>;
 ```
 
-Return a vector of length `dim` or the matcher throws a clear dimension mismatch.
+Return a vector of length `dim` or `createEmbedder`'s wrapper throws a clear dimension mismatch.
 
 ## `GenerateFn`
 
@@ -125,7 +135,7 @@ An example of implementing the closures yourself against the Vercel AI SDK — t
 ```ts title="embed.ts"
 import { embed } from "ai";
 import { google } from "@ai-sdk/google";
-import type { EmbedFn } from "@samesake/server";
+import type { EmbedFn } from "@samesake/core";
 
 export const geminiEmbed: EmbedFn = async ({ text, model, dim, taskType, inputType }) => {
   const { embedding } = await embed({
@@ -147,7 +157,7 @@ export const geminiEmbed: EmbedFn = async ({ text, model, dim, taskType, inputTy
 ```ts title="generate.ts"
 import { generateObject } from "ai";
 import { google } from "@ai-sdk/google";
-import type { GenerateFn } from "@samesake/server";
+import type { GenerateFn } from "@samesake/core";
 
 export const geminiGenerate: GenerateFn = async ({ model, system, prompt, schema }) => {
   const { object } = await generateObject({
@@ -161,16 +171,16 @@ export const geminiGenerate: GenerateFn = async ({ model, system, prompt, schema
 };
 ```
 
-```ts title="matcher.ts"
-import { createMatcher, llmRerank } from "@samesake/server";
+```ts title="search.ts"
+import { samesake } from "@samesake/postgres";
+import { llmRerank } from "@samesake/server";
 import { geminiEmbed } from "./embed.ts";
 import { geminiGenerate } from "./generate.ts";
 
-const matcher = createMatcher({
-  databaseUrl: process.env.SAMESAKE_DATABASE_URL!,
-  apiKey: process.env.SAMESAKE_API_KEY!,
-  embed: geminiEmbed,
-  generate: geminiGenerate,
+const app = samesake({
+  url: process.env.SAMESAKE_DATABASE_URL!,
+  collection,
+  models: { embed: geminiEmbed, generate: geminiGenerate },
   rerank: llmRerank(geminiGenerate, { model: "gemini-3.1-flash-lite" }),
 });
 ```

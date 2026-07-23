@@ -17,7 +17,7 @@
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fashion } from "@samesake/core";
+import { fashion } from "@samesake/presets";
 import { scoreEnrichment, createDbFromUrl, type GoldRow, type PredictedRow, type EnrichEvalResult } from "@samesake/server";
 
 const REPO_ROOT = join(import.meta.dir, "..", "..");

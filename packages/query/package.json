@@ -1,0 +1,44 @@
+{
+  "name": "@samesake/query",
+  "version": "5.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/asyncdotengineering/samesake"
+  },
+  "description": "Store-agnostic search query brain for samesake: the Retriever/VocabProvider ports, the RetrievalPlan/RankedRow contract, and createSearch. Depends only on @samesake/core and @samesake/embed.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "keywords": [
+    "samesake",
+    "search",
+    "hybrid-search",
+    "retrieval",
+    "query-understanding"
+  ],
+  "dependencies": {
+    "@samesake/core": "workspace:^",
+    "@samesake/embed": "workspace:^"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1"
+  }
+}

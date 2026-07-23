@@ -25,7 +25,7 @@ const matcher = createMatcher({
   apiKey: env.SAMESAKE_API_KEY,
   schema: env.SAMESAKE_SCHEMA,
   projectPrefix: env.SAMESAKE_PROJECT_PREFIX,
-  embed: geminiEmbedder({ apiKey: env.GEMINI_API_KEY }),
+  embed: geminiEmbedder(),
   parse: geminiParser({ apiKey: env.GEMINI_API_KEY }),
   migrate: "eager",
 });

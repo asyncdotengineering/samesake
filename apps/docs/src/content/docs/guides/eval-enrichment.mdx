@@ -6,9 +6,9 @@ description: Score the enrich pipeline's extracted attributes against a human-la
 import { Steps, Aside } from '@astrojs/starlight/components';
 
 Search relevance is only as good as the attributes the enrich pipeline extracts: a mis-labeled color
-or a missed neckline silently corrupts ranking. `matcher.evaluateSearch(...)` measures the
-downstream symptom; `matcher.evaluateEnrichment(...)` measures the **root cause** — did classify +
-extract pull the *right* structured attributes?
+or a missed neckline silently corrupts ranking. Search-relevance eval measures the downstream
+symptom (see [Eval gate](/guides/eval-gate/)); the `Enricher`'s `evaluate(gold)` measures the
+**root cause** — did classify + extract pull the *right* structured attributes?
 
 <Aside type="tip">This is the enrichment twin of the [search eval](/guides/eval-from-snapshots/). Run both: enrichment accuracy first (is the data right?), then search relevance (is the ranking right?).</Aside>
 
@@ -84,15 +84,32 @@ is visible and regressable.
 
 ## In code
 
+`evaluate` is a method on the `Enricher` returned by `createEnricher` — declare `evalAttributes`
+at construction time (the Tier-2 `samesake()` bundle does not wire `evalAttributes` today, so build
+the enricher directly for eval, reusing the bundle's `enrichStore` from `createPostgresBackend`):
+
 ```ts
-const result = await matcher.evaluateEnrichment("shop", "products", {
-  gold: [{ id: "1", labels: { category: "dresses", colors: ["red"], is_apparel_product: true } }],
-  attributes: [
+import { createEnricher } from "@samesake/enrich";
+import { createPostgresBackend } from "@samesake/postgres";
+import { products } from "./catalog.ts";
+import { generate, embed } from "./models.ts";
+
+const backend = createPostgresBackend({ url: process.env.SAMESAKE_DATABASE_URL!, collection: products });
+const enricher = createEnricher({
+  collection: products,
+  generate,
+  embed,
+  store: backend.enrichStore,
+  evalAttributes: [
     { name: "category", kind: "single" },
     { name: "colors", kind: "multi" },
     { name: "is_apparel_product", kind: "single", empty: [] },
   ],
 });
+
+const result = await enricher.evaluate([
+  { id: "1", labels: { category: "dresses", colors: ["red"], is_apparel_product: true } },
+]);
 // result.attributes[].{precision,recall,f1}, result.overall.microF1, result.diffs
 ```
 

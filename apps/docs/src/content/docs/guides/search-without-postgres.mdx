@@ -1,0 +1,77 @@
+---
+title: Search without the reference backend
+description: Implement the Retriever and optional facet capability over the index your application already operates.
+---
+
+`@samesake/query` needs a `Retriever`, not a particular database. The retriever receives
+a `RetrievalPlan` containing the normalized query, vectors, filters, weights, scope, and
+limit. It returns ranked rows; query policy handles the rest.
+
+## Implement the retrieval port
+
+```ts title="search.ts"
+import { createSearch, type Retriever } from '@samesake/query';
+import { createEmbedder } from '@samesake/embed';
+
+const embed = createEmbedder({
+  single: (request) => models.embed(request),
+  many: (requests) => models.embedMany(requests),
+  caps: { image: true, interleaved: true, dims: 'any', maxBatch: 64 },
+});
+
+const retriever: Retriever = async (plan) => {
+  const rows = await index.search({
+    query: plan.query,
+    vectors: plan.vectors,
+    filters: plan.filters,
+    weights: plan.weights,
+    scope: plan.scope,
+    limit: plan.limit,
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    data: row.data,
+    rrf_score: row.score,
+    legRanks: row.legRanks,
+    fts_present: row.ftsPresent,
+    cos_sim: row.cosine,
+  }));
+};
+
+retriever.facets = (request) => index.facets(request);
+
+export const search = createSearch({
+  collection,
+  retriever,
+  generate: models.generate,
+  embed,
+});
+```
+
+The index can be a native vector and lexical service, a D1-plus-vector arrangement,
+Turbopuffer, an in-memory test double, or any retrieval system that can honor the
+plan. `@samesake/query` does not inspect the implementation.
+
+## Search and facets stay together
+
+Facets are an optional method on the same retriever capability:
+
+```ts
+retriever.facets = async ({ fields, filters, scope }) =>
+  index.countValues({ fields, filters, scope });
+```
+
+An adapter should document whether counts are exact over the full filtered corpus or
+approximate over the retrieved page. If the backend cannot provide a requested facet,
+leave it out rather than inventing a database-shaped fallback.
+
+## Backend choices
+
+| Choice | Port implementation | Facets |
+|---|---|---|
+| `@samesake/postgres` | SQL `Retriever` | Exact SQL counts |
+| Cloudflare D1 + LanceDB or a native index | Consumer adapter | Exact or declared approximate counts |
+| Turbopuffer | Consumer adapter over its query API | Backend-supported counts |
+
+The search brain, filters, grounded NLQ, cutoff, ranking policy, and result trace are
+the same in each case. Only the port implementation changes.

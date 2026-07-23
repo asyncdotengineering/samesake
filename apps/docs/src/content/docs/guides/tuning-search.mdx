@@ -13,16 +13,26 @@ returning red dresses. Every step here came from a concrete fix.
 query → explain → diagnose → fix (data or config) → re-measure → repeat
 ```
 
-## 1. Diagnose before you tune — `searchExplain`
+## 1. Diagnose before you tune — read the result's `constraintTrace`
 
-Never guess why a result ranked where it did. `matcher.searchExplain(...)` returns, per hit, the
-rank from each retrieval leg (FTS, cosine, spaces) and the merged RRF score, plus the parsed NLQ
-and the compiled filter SQL.
+Never guess why a result ranked where it did. Every `search()` call returns `parsed` (the NLQ
+output) and `constraintTrace.appliedFilters` (the compiled filters) alongside the hits.
 
 ```ts
-const r = await matcher.searchExplain(project, collection, { q: "black dress with white" });
-r.docs.forEach((d) => console.log(d.id, { fts: d.fts_rank, cos: d.cosine_rank, spc: d.spaces_rank }));
-console.log(r.parsed, r.constraintTrace.appliedFilters, r.filters.sql);
+const r = await app.search("black dress with white", { limit: 20 });
+console.log(r.parsed, r.constraintTrace.appliedFilters);
+```
+
+<Aside type="caution">
+The hot `search()` result stays compact. For diagnostics, call the explicit
+`search.searchExplain()` entry on the same function; it returns each hit's `fts_rank`,
+`cosine_rank`, `recency_rank`, `rrf_score`, and optional per-aspect ranks from `RankedRow.legRanks`.
+</Aside>
+
+```ts
+const explained = await app.search.searchExplain("black dress with white", { limit: 20 });
+console.log(explained.docs[0]);
+// { id, fts_rank, cosine_rank, recency_rank, rrf_score, aspect_ranks? }
 ```
 
 In our case the explain showed `fts = null` for every hit (no title contained "black"/"white")
@@ -64,10 +74,10 @@ converts zod to JSON Schema and hands it to your `generate`. (The same goes for 
 constrained NLQ `schema`.) Provider-dialect mapping — e.g. Gemini's `responseSchema`
 vs `responseJsonSchema` — stays in your `generate` function.
 
-Run with `matcher.enrich(project, collection)`. Colours went from mostly-empty to accurate
+Run with `app.enrich.enrich()`. Colours went from mostly-empty to accurate
 ("RED PUFF SLEEVE MAXI DRESS" → `solid red`). See [the full pipeline](/guides/porulle-fashion-app/#enrich-attributes-from-the-image-samesake-enrich-pipeline).
 
-**Then measure the enrichment itself** — `matcher.evaluateEnrichment(...)` scores per-attribute
+**Then measure the enrichment itself** — the `Enricher`'s `evaluate(gold)` scores per-attribute
 precision / recall / F1 against a gold set, so you know whether the fix actually landed (and catch
 regressions where a prompt tweak fixes one product but breaks others). It's the root-cause loop
 beneath search relevance — see [Measure enrichment accuracy](/guides/eval-enrichment/).
@@ -122,7 +132,7 @@ This is the subtlest lever:
 <Aside type="caution">
 The classic failure: an LLM query parser extracts `color = "black"` and hard-filters a field that's
 90% empty → near-zero results. Either populate the field (step 3) **and** make it soft, or keep it
-out of the NLQ schema. Diagnose which with `searchExplain`'s `appliedFilters`.
+out of the NLQ schema. Diagnose which with the search result's `constraintTrace.appliedFilters`.
 </Aside>
 
 For the full story — how a sentence splits into filters + a clean `semantic_query`, how price/numeric intent is handled, and the **`search.relevanceFloor`** that returns *nothing* instead of nearest-neighbour padding when there's no real match — see [Conversational search](/guides/conversational-search/).
@@ -145,10 +155,16 @@ The lexical leg is language-configurable: `collection("products", { language: "g
 the Postgres stemmer for both the indexed `fts` column and query parsing (default `"english"`;
 use `"simple"` for mixed-language catalogs). Accents/case/punctuation are folded on both sides
 (`café` ≡ `cafe`) automatically. For cross-script matching — a Sinhala or Tamil query finding the
-Latin-transliterated product — declare `search: { phonetic: true }` and pass
-`createMatcher({ phonetic: indicPhonetic })`: index time stores per-token phonetic codes, query
-time ORs the query's codes into the lexical candidates. Changing `language` on an existing
-collection is a destructive migration (the generated column must be rebuilt).
+Latin-transliterated product — declare `search: { phonetic: true }` on the collection: index time
+stores per-token phonetic codes, query time ORs the query's codes into the lexical candidates.
+Changing `language` on an existing collection is a destructive migration (the generated column
+must be rebuilt).
+
+<Aside type="caution">
+The `PhoneticProvider` seam (e.g. `indicPhonetic`) remains a `@samesake/server` capability wired
+through `createMatcher({ phonetic })`. `@samesake/postgres`'s `samesake()` config has no `phonetic`
+field yet. See [server-only capabilities](/guides/server-only/).
+</Aside>
 
 ## 6. Multimodal & cross-modal signals
 
@@ -167,8 +183,9 @@ normalized relevance (`relevance^α × availability × business × …`) with op
 `minRelevanceFloor`. Hard axes multiply; soft axes add. Reach for these only after the
 data and signals are right — re-weighting noise just reshuffles noise.
 
-Default reranking uses **`llmRerank(generate)`** when wired on the matcher — a position-aware
-**blend** with first-stage RRF, not a full replace. Pass `rerank: false` per query to force pure RRF.
+Default reranking uses **`llmRerank(generate)`** (from `@samesake/server`) when wired via
+`samesake({ rerank })` or `createSearch({ rerank })` — a position-aware **blend** with first-stage
+RRF, not a full replace. Pass `rerank: false` per query to force pure RRF.
 See [Reranking](/reference/reranking/) and [Relevance judge](/reference/relevance-judge/) for the full contract.
 
 **Empirical tuning:** `FASHION_CONFIDENCE_FLOOR` and `relevanceExponent` are placeholders until
@@ -178,9 +195,9 @@ you run the offline eval gate — see [Eval gate — tune floor and exponents](/
 
 Tune against fixed sets, not vibes. samesake has three complementary eval loops:
 
-- **Enrichment accuracy** (root cause) — `matcher.evaluateEnrichment(...)`, per-attribute P/R/F1 vs a
+- **Enrichment accuracy** (root cause) — the `Enricher`'s `evaluate(gold)`, per-attribute P/R/F1 vs a
   gold set. Fix this first; search can't beat the data it ranks. See [Measure enrichment accuracy](/guides/eval-enrichment/).
-- **Search relevance** — `matcher.evaluateSearch(...)` / `runEval` over a fixed query set:
+- **Search relevance** — `matcher.runEval(...)` over a fixed query set:
   relevance@k, nDCG, constraint compliance. See [Eval from search snapshots](/guides/eval-from-snapshots/)
   and [Eval gate](/guides/eval-gate/). The LLM judge **sees each candidate's price** (so it can verify
   "under N" constraints) and **persists grades per (query, doc)** — so a pre/post comparison reflects a
@@ -197,15 +214,14 @@ enough to disambiguate.
 
 ## Running enrichment in the background
 
-`enrich`, `index`, and `ingest` do their work inline and resolve when it's finished — there is no
+`upsert` and `enrich` do their work inline and resolve when it's finished — there is no
 internal job queue or runner. To run them **durably or off the request path**, that's the caller's
 job: wrap each call in your platform's durable step, or call them from your own concurrency-bounded
 loop.
 
 ```ts
 // inside an Inngest step — the platform owns durability, retries, and scheduling:
-await step.run("enrich", () => matcher.enrich(project, "products"));
-await step.run("index", () => matcher.index(project, "products"));
+await step.run("enrich", () => app.enrich.enrich());
 ```
 
 See the [pipeline guides](/guides/enrich-pipeline/) for Inngest / Upstash / Cloudflare Workflows /

@@ -1,4 +1,4 @@
-// This example now consumes the fashion enrichment TEMPLATE from @samesake/core
+// This example consumes the fashion enrichment TEMPLATE from @samesake/presets
 // (taxonomy, enums, classify/extract schemas, prompts, embed-doc composer, NLQ defaults).
 // It keeps the old export names so the rest of the example is unchanged, and appends
 // Sri-Lanka-specific NLQ vocabulary on top of the region-neutral core defaults.
@@ -12,7 +12,7 @@ import {
   fashionCategoryAttrBlock,
   FASHION_EXTRACT_INSTRUCTIONS,
   FASHION_NLQ_INSTRUCTIONS,
-} from "@samesake/core";
+} from "@samesake/presets";
 
 export const CATEGORIES = fashionTaxonomy;
 export const ENUMS = fashionEnums;

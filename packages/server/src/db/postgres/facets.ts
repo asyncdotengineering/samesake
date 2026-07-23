@@ -1,30 +1,21 @@
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { CollectionDef, CollectionFieldDef } from "@samesake/core";
+import type {
+  FacetBucket,
+  FacetCountResult,
+  FacetRangeResult,
+  FacetResult,
+} from "@samesake/query";
 import { sanitiseIdent } from "../../core/schema-gen.ts";
 import { getPgClient } from "../../core/db-utils.ts";
 
+// Facet result shapes live in @samesake/query (store-agnostic). Re-exported here so
+// existing server importers (db/storage-adapter.ts, index.ts) keep resolving from this
+// module; the exact-SQL computeFacets engine stays below.
+export type { FacetBucket, FacetCountResult, FacetRangeResult, FacetResult } from "@samesake/query";
+
 const FACET_VALUE_CAP = 25;
 const RANGE_BUCKETS = 6;
-
-export interface FacetBucket {
-  lo: number;
-  hi: number;
-  count: number;
-}
-
-export interface FacetRangeResult {
-  count: number;
-  min: number | null;
-  max: number | null;
-  avg: number | null;
-  buckets: FacetBucket[];
-}
-
-export interface FacetCountResult {
-  values: Array<{ value: string; count: number }>;
-}
-
-export type FacetResult = FacetCountResult | FacetRangeResult;
 
 function facetFieldDef(def: CollectionDef, name: string): CollectionFieldDef | null {
   const field = def.fields[name];

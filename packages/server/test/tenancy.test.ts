@@ -2,6 +2,7 @@ import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { collection, f, Channels } from "@samesake/core";
+import { createPostgresBackend } from "../../postgres/src/backend.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 
@@ -106,6 +107,24 @@ describeIf("collection tenancy (scopes)", () => {
       expect(rows[0]!.is_nullable).toBe("NO");
     } finally {
       await close();
+    }
+
+    const scopeSchema = `g4_${Math.random().toString(36).slice(2, 10)}`;
+    const scopedCollection = collection("g4_rows", {
+      ...({ scopes: ["tenant_id"] } as { scopes: string[] }),
+      fields: { title: f.text() },
+    });
+    const backend = createPostgresBackend({ url: databaseUrl!, collection: scopedCollection, schema: scopeSchema });
+    try {
+      await backend.migrate();
+      await backend.enrichStore.upsert([
+        { id: "scoped-row", scope: { tenant_id: "tenant-a" }, data: { title: "tenant row" } },
+      ]);
+      const stored = await backend.adapter.query(`SELECT scope_tenant_id FROM ${scopeSchema}.c_g4_rows WHERE id = $1`, ["scoped-row"]);
+      expect(stored[0]?.scope_tenant_id).toBe("tenant-a");
+    } finally {
+      await backend.adapter.query(`DROP SCHEMA IF EXISTS ${scopeSchema} CASCADE`);
+      await backend.close();
     }
   });
 

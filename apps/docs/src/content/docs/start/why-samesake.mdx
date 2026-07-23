@@ -1,71 +1,64 @@
 ---
 title: Why samesake?
-description: How samesake compares to hosted search, Elasticsearch/Typesense/Meilisearch, vector databases, and RAG frameworks — and when you should not use it.
+description: Why a composable commerce intelligence engine can be a better fit than a hosted search product, a vector store, or a prompt-only pipeline.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-samesake is the **enrichment + fast-search toolkit you can replace your ecommerce search with** —
-especially for multi-vendor marketplaces. Declare the catalog in TypeScript, bring your own
-models, run it on the Postgres you already have. Two processes in production: Postgres and your
-app.
+samesake is for teams whose search quality depends on the quality and structure of
+their catalog data. It gives you a typed enrichment loop, record resolution, and
+grounded retrieval without taking ownership of your models, runtime, or storage.
 
-## The one-paragraph pitch
+## The useful boundary
 
-Most product-search quality problems are **data problems**: raw vendor listings with missing
-attributes, inconsistent titles, and no retrieval-friendly text. samesake treats LLM enrichment as
-a first-class pipeline stage (schema-validated extraction, quarantine gates, accuracy evals — not
-a one-off script), then compiles your catalog declaration into hybrid retrieval — weighted FTS +
-semantic + typed vector spaces, fused with RRF — inside Postgres. The search layer and the
-enrichment layer share one schema, one migration story, one eval harness.
+Most product-search failures begin before ranking: titles are inconsistent, attributes
+are absent, vendors describe the same item differently, and a nearest-neighbour list
+cannot tell the difference between weak evidence and a real match. samesake makes those
+steps explicit:
 
-## Compared to the alternatives
+- `enrich` extracts typed attributes, derives search surfaces, and quarantines weak rows;
+- `resolve` turns a candidate provider plus pure scoring into entity matches or product
+  groups with offers;
+- `search` combines grounded intent, lexical evidence, vector evidence, hard constraints,
+  ranking policy, honest cutoffs, and optional facets.
 
-| | samesake | Hosted search (Algolia, Constructor) | Search engines (Elasticsearch, Typesense, Meilisearch) | Vector DBs (Pinecone, Qdrant, Weaviate) | RAG frameworks |
-|---|---|---|---|---|---|
-| **Infra you run** | your Postgres + your app | none (SaaS) | separate cluster to operate | separate cluster/SaaS | varies |
-| **Enrichment of messy listings** | first-class pipeline with gates + accuracy evals | limited / DIY | DIY | DIY | chunking-oriented, not catalog-oriented |
-| **Hybrid retrieval** | FTS + semantic + typed spaces, RRF | proprietary | strong lexical; vectors bolted on | strong vectors; lexical bolted on | delegated to a store |
-| **Hard constraints** ("under 5000", "in stock") | typed filters compiled to SQL — never soft | good | good | filter support varies under ANN | usually prompt-level |
-| **Honest zero-results** | default-on result cutoff | varies | DIY | DIY (nearest neighbours always "match") | DIY |
-| **Relevance evals** | built-in LLM-judged eval + calibration, model-family separation enforced | dashboards | plugins/DIY | DIY | DIY |
-| **Models** | BYO closures or `@samesake/providers` | theirs | theirs/BYO | BYO embeddings | BYO |
-| **Cost shape** | your Postgres bill | per-search pricing | cluster + ops | per-vector pricing | n/a |
+Search and facets are one capability. A retrieval port may provide exact facet counts,
+approximate counts, or no facets, and the result contract remains explicit about what
+the backend supports.
 
-The one direct OSS analog — Marqo's open-source engine — is deprecated; that slot (open-source,
-batteries-included commerce search with enrichment) is the one samesake targets.
+## Why the ports matter
 
-## Why Postgres-only is a feature
+| Concern | samesake owns | Your application owns |
+|---|---|---|
+| Catalog and query logic | Pure transforms, plans, scoring, gates | Configuration and policy |
+| Models | Request and response contracts | Embed, generate, rerank, and grounding closures |
+| Enrichment state | `EnrichStore` contract | Durable state, retries, scheduling, and dead-lettering |
+| Retrieval | `Retriever` and `VocabProvider` contracts | Index, query engine, and backend-specific facet behavior |
+| Candidate blocking | `CandidateProvider` contract and scorer | The shortlist query and its recall/latency tradeoff |
 
-For catalogs up to ~1M SKUs — which is nearly every store and marketplace — HNSW indexes fit
-comfortably in RAM on ordinary instances. The industry lesson (MICES; teams like Digitec and
-dm-drogerie) is *start with what your engineers know*: adding Elasticsearch or a vector DB buys
-you an operational surface, a sync pipeline, and a consistency problem before it buys you
-relevance. samesake's ceiling is real — roughly 10M×1536-dim vectors — but it is 100× beyond the
-catalogs this is for. If you are past that, you have a search team, and this is not your tool.
+This lets a consumer use a reference SQL backend, a D1 plus native vector index,
+Turbopuffer, an in-memory test store, or a backend it already operates. The core does
+not change when the port implementation changes.
 
-## What samesake deliberately does not do
+## Model and domain neutrality
 
-Challenged and rejected for this stage — not roadmap gaps:
+The engine treats model identifiers and vector dimensions as opaque configuration.
+Presets carry overridable field, pipeline, and indexing choices; they never mandate a
+provider or dimension. A concrete model such as Gemini, a 768-dimensional collection,
+or the fashion preset is an example of composition, never a product default.
 
-- **Learning-to-rank / learned rankers** — no installation has click data at day one.
-- **SPLADE / ColBERT** — license and stack traps for marginal gain at this scale.
-- **A second storage backend** — Postgres-only *is* the pitch.
-- **An internal job queue** — durability belongs to your platform (Inngest, Upstash, Cloudflare
-  or Vercel workflows; [guides](/guides/pipeline-lifecycle/)).
-- **Personalization / behavioral collaborative filtering** — needs traffic you don't have yet.
+## Choose the right tier
 
-## When to pick something else
+- Use the pure functions when your workflow platform owns persistence and retries.
+- Use `createEnricher` or `createSearch` when you want one capability over your own ports.
+- Use `@samesake/postgres` when its reference backend is the right fit; it is an adapter,
+  not a prerequisite for `@samesake/core`, `@samesake/enrich`, or `@samesake/query`.
 
-- You need web-scale search (>10M SKUs) or query-per-second numbers with dedicated infra — pick a
-  search cluster and a team.
-- You want a fully-managed black box with merchandising dashboards — pick a hosted provider.
-- You're building document RAG, not catalog search — pick a RAG stack; samesake's enrichment and
-  typed spaces are commerce-shaped.
-- You cannot run Postgres 15+ with extensions — everything here assumes it.
+The [canonical API reference](/reference/canonical-api/) describes the package contracts
+and their boundaries. The [enrichment guide](/guides/enrich-pipeline/) shows the durable
+workflow shape without making one backend the center of the product.
 
 <Aside type="note">
-samesake is **alpha**: APIs break between minors, and the [roadmap](https://github.com/asyncdotengineering/samesake/blob/main/ROADMAP.md)
-is public. The claims above are backed by the eval harness in-repo — run them against your own
-catalog rather than trusting a comparison table.
+samesake is alpha. Treat package contracts as the source of truth and validate the
+configuration and port implementations against your own catalog and workload.
 </Aside>
