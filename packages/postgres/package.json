@@ -1,6 +1,6 @@
 {
   "name": "@samesake/postgres",
-  "version": "5.0.0",
+  "version": "6.0.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/asyncdotengineering/samesake"
@@ -18,10 +18,24 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
-  "publishConfig": { "access": "public" },
-  "scripts": { "build": "tsup" },
-  "keywords": ["samesake", "postgres", "search", "pgvector", "facets"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "keywords": [
+    "samesake",
+    "postgres",
+    "search",
+    "pgvector",
+    "facets"
+  ],
   "peerDependencies": {
     "postgres": "^3.4.0"
   },

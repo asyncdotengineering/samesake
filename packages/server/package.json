@@ -1,6 +1,6 @@
 {
   "name": "@samesake/server",
-  "version": "5.0.0",
+  "version": "6.0.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/asyncdotengineering/samesake"
@@ -47,7 +47,7 @@
     "drizzle-orm": "^0.45.0",
     "hono": "^4.12.0",
     "postgres": "^3.4.0",
-    "@samesake/core": "^4.0.0",
+    "@samesake/core": "^6.0.0",
     "zod": "^4.0.0"
   },
   "dependencies": {
