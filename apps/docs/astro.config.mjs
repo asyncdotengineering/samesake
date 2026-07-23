@@ -1,11 +1,22 @@
 // @ts-check
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import starlightLlmsTxt from "starlight-llms-txt";
 
 // https://astro.build/config
 export default defineConfig({
+  site: "https://samesake-docs.pages.dev",
   integrations: [
     starlight({
+      plugins: [
+        starlightLlmsTxt({
+          projectName: "samesake",
+          description:
+            "samesake is a TypeScript-first, backend-neutral commerce enrichment + search engine. Three composable primitives — enrich, resolve, search — over pluggable ports (EnrichStore, Retriever, CandidateProvider, VocabProvider), so the store, embedding model, vector dimension, and domain are things you plug in, not bake in.",
+          details:
+            "Runs the identical engine on Postgres + pgvector or on Cloudflare D1 + LanceDB with no Postgres. Published on npm as @samesake/core, @samesake/enrich, @samesake/query, @samesake/embed, @samesake/presets, and @samesake/postgres. Use one primitive or all three.",
+        }),
+      ],
       title: "samesake",
       description:
         "A TypeScript-first commerce intelligence engine. Compose enrich, resolve, and search over ports supplied by your application.",
