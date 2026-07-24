@@ -8,6 +8,8 @@ export interface EnrichedRow {
   enriched: Record<string, unknown>;
   surfaces?: EnrichedSurfaces;
   vectors?: Record<string, number[]>;
+  /** Filterable field values projected from data/enriched, for a store to persist into columns. */
+  fields?: Record<string, unknown>;
   status?: "ready" | "quarantined";
   gateReason?: string | null;
 }

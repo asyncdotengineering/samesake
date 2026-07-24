@@ -54,6 +54,10 @@ export const products = collection("products", {
     color: f.text({ filterable: true }),
     available: f.boolean({ filterable: true }),
   },
+  // An enrich pipeline runs before indexing. This catalog's data is already clean,
+  // so the pipeline is empty and the surfaces below read the raw `data` directly. A
+  // messier catalog adds stages here to parse structured attributes into `enriched` first.
+  enrich: { stages: [] },
   indexing: {
     surfaces: {
       embed_doc: {
@@ -78,6 +82,9 @@ export const products = collection("products", {
       Channels.cosine({ embedding: "doc", weight: 1 }),                  // meaning
     ],
     combiner: "rrf", // merge the two rankings fairly
+    // NLQ turns natural-language phrasing ("under 15000") into hard filters. Without
+    // it, the query text is treated as keywords only and budgets are never parsed.
+    nlq: { instructions: "Shopping queries for a fashion catalog. Extract price budgets and attributes." },
   },
 });
 ```
@@ -151,3 +158,7 @@ You described a catalog in one file, loaded products, and ran a search that resp
 - **Connect a real store.** If your catalog already lives somewhere, wire it: [MedusaJS](/integrations/medusajs/), [headless Shopify](/integrations/shopify/), [headless WooCommerce](/integrations/woocommerce/).
 
 When you're ready for the precise, no-narration version, the [Quickstart](/start/quickstart/) does the same thing in fifteen minutes and needs no model at all.
+
+<Aside type="tip" title="Run this end to end">
+The complete, runnable version of this guide — the exact `catalog.ts` and `search.ts` above, plus a test that proves the budget exclusion against a real Postgres — lives in [`examples/build-a-search-experience`](https://github.com/asyncdotengineering/samesake/tree/main/examples/build-a-search-experience). `SAMESAKE_DATABASE_URL=… bun run src/run.ts`.
+</Aside>

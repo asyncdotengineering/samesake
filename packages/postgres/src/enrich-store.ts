@@ -57,7 +57,10 @@ export class PostgresEnrichStore implements EnrichStore {
         return value;
       });
       const columns = ["id", "data", "content_hash", "enriched_at", "pipeline_status", ...scopeColumns];
-      const values = [row.id, json(row.data), contentHash(row.data), null, "pending", ...scopeValues];
+      const values = [row.id, row.data, contentHash(row.data), null, "pending", ...scopeValues];
+      // `data`/`enriched` are jsonb columns; postgres.js serializes a JS object to jsonb.
+      // Passing a pre-stringified JSON string here would double-encode it into a jsonb
+      // string scalar (so `data->>'title'` reads null), which breaks enrich + retrieval.
       const placeholders = values.map((_, index) => `$${index + 1}`).join(", ");
       const updates = [
         "data = EXCLUDED.data",
@@ -105,31 +108,38 @@ export class PostgresEnrichStore implements EnrichStore {
     const vectorEntries = embeddingEntries(this.options.collection)
       .map(([name, embedding], index) => embedding.evidence ? null : { name, column: embeddingColumn(name, index) })
       .filter((entry): entry is { name: string; column: string } => entry !== null);
+    const fieldNames = Object.keys(this.options.collection.fields ?? {});
     for (const row of rows) {
       const vectors = vectorEntries.flatMap(({ name, column }) => {
         const vector = row.vectors?.[name];
         return vector ? [{ column, value: vectorLiteral(vector) }] : [];
       });
+      // Build the SET clause dynamically: fixed columns, then the collection's
+      // filterable field columns (projected by the enricher into row.fields), then
+      // embedding vectors. Field columns are what powers filters/facets/NLQ budgets.
+      const columns: string[] = ["enriched", "doc", "rerank_doc", "fts_src", "fts_src_a", "pipeline_status", "gate_reason"];
+      const params: unknown[] = [
+        row.enriched ?? null, row.surfaces?.doc ?? null, row.surfaces?.rerank_doc ?? null,
+        row.surfaces?.fts_src ?? null, row.surfaces?.fts_src_a ?? null,
+        row.status ?? "ready", row.gateReason ?? null,
+      ];
+      for (const name of fieldNames) {
+        columns.push(ident(name));
+        params.push(row.fields?.[name] ?? null);
+      }
+      for (const { column, value } of vectors) {
+        columns.push(column);
+        params.push(value);
+      }
       const set = [
-        "enriched = $1::jsonb",
+        ...columns.map((column, index) => `${column} = $${index + 1}`),
         "enriched_at = now()",
-        "doc = $2",
-        "rerank_doc = $3",
-        "fts_src = $4",
-        "fts_src_a = $5",
-        "pipeline_status = $6",
-        "gate_reason = $7",
-        ...vectors.map(({ column }, index) => `${column} = $${8 + index}`),
-        `updated_at = now()`,
+        "updated_at = now()",
       ].join(", ");
+      params.push(row.id);
       await this.adapter.query(
-        `UPDATE ${this.options.table}
-         SET ${set}
-         WHERE id = $${8 + vectors.length}`,
-        [json(row.enriched), row.surfaces?.doc ?? null, row.surfaces?.rerank_doc ?? null,
-          row.surfaces?.fts_src ?? null, row.surfaces?.fts_src_a ?? null,
-          row.status ?? "ready", row.gateReason ?? null,
-          ...vectors.map(({ value }) => value), row.id]
+        `UPDATE ${this.options.table} SET ${set} WHERE id = $${params.length}`,
+        params
       );
     }
   }

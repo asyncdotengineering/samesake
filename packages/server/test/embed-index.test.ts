@@ -1,13 +1,12 @@
 import "./load-env.ts";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { collection, f, Channels, gates, pipeline, stage } from "../../sdk/src/index.ts";
+import { collection, f, Channels, gates, pipeline, stage, resolveFieldValue } from "../../sdk/src/index.ts";
 import { createMatcher } from "../src/createMatcher.ts";
 import { createDbFromUrl } from "../src/db/client.ts";
 import {
   l2Renormalize,
   resolveEmbedTemplate,
-  resolveFieldValue,
 } from "../src/core/embed-index.ts";
 import { stubEmbed } from "./fixtures.ts";
 

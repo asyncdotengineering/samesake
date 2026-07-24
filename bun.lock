@@ -112,6 +112,13 @@
         "drizzle-orm": "^0.45.2",
       },
     },
+    "examples/build-a-search-experience": {
+      "name": "@samesake-examples/build-a-search-experience",
+      "dependencies": {
+        "@samesake/core": "workspace:*",
+        "@samesake/postgres": "workspace:*",
+      },
+    },
     "examples/cisco-bom-quote": {
       "name": "cisco-bom-quote",
       "dependencies": {
@@ -869,6 +876,8 @@
     "@rollup/rollup-win32-x64-gnu": ["@rollup/rollup-win32-x64-gnu@4.62.0", "", { "os": "win32", "cpu": "x64" }, "sha512-SoTb6lPg25xZlA2ibwQ++ahCCnH+FP0qmEuafMJ4gznZKOlXioKEAeJLgCrqjM98ACziXM9V1amFjICVL4IFoA=="],
 
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.62.0", "", { "os": "win32", "cpu": "x64" }, "sha512-5L+T1fMX4RIEBoZzT0+sQ0PhTS36NULFmMXtl1TZo44TMAROIMHbZufSOjVWt/Y622BtxgxtaNOokbTDvfsrZA=="],
+
+    "@samesake-examples/build-a-search-experience": ["@samesake-examples/build-a-search-experience@workspace:examples/build-a-search-experience"],
 
     "@samesake-examples/cloudflare-backend": ["@samesake-examples/cloudflare-backend@workspace:examples/cloudflare-backend"],
 

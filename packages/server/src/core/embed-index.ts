@@ -1,4 +1,5 @@
 import type { CollectionDef, CollectionFieldDef, DerivedDocContext, PipelineDef } from "@samesake/core";
+import { resolveFieldValue } from "@samesake/core";
 import type { MatcherCtx } from "../types.ts";
 import type { EmbedService } from "./embed.ts";
 import { toVectorLiteral } from "./embed.ts";
@@ -51,19 +52,6 @@ export function resolveEmbedTemplate(
   });
 
   return resolved.replace(/\s+/g, " ").trim();
-}
-
-export function resolveFieldValue(
-  fieldName: string,
-  fieldDef: CollectionFieldDef,
-  data: Record<string, unknown>,
-  enriched: Record<string, unknown> | null
-): unknown {
-  const path = fieldDef.path ?? fieldName;
-  if (path.startsWith("enriched.")) {
-    return getByPath(enriched ?? {}, path.slice("enriched.".length));
-  }
-  return getByPath(data, path);
 }
 
 export function l2Renormalize(vec: number[]): number[] {

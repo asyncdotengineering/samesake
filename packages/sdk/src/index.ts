@@ -70,7 +70,7 @@ export { ClientError } from "./errors.ts";
 // Pure schema / image-token / path helpers shared by @samesake/enrich and @samesake/server.
 export { normalizeSchema } from "./schema-input.ts";
 export { imageVersionToken } from "./image-token.ts";
-export { getByPath } from "./paths.ts";
+export { getByPath, resolveFieldValue, projectFields } from "./paths.ts";
 
 const DEF_KIND = Symbol.for("@samesake/core.defKind");
 type DefKind = "entity" | "collection";

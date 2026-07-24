@@ -1,0 +1,14 @@
+{
+  "name": "@samesake-examples/build-a-search-experience",
+  "type": "module",
+  "private": true,
+  "description": "Runnable version of the 'Build a search experience' doc guide: describe a catalog in TypeScript, enrich it, and search it with keywords + meaning + hard budget filters over Postgres.",
+  "scripts": {
+    "start": "bun run src/run.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@samesake/core": "workspace:*",
+    "@samesake/postgres": "workspace:*"
+  }
+}

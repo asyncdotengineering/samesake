@@ -11,6 +11,7 @@ import type {
   GenerateFn,
   EmbedFn,
 } from "@samesake/core";
+import { projectFields } from "@samesake/core";
 import type { Embedder } from "@samesake/embed";
 import { enrich } from "./enrich.ts";
 import { clusterBatch } from "./cluster.ts";
@@ -138,12 +139,18 @@ export function createEnricher(cfg: {
       { pipeline, indexing },
       { generate, fewShot: cfg.fewShot, concurrency }
     );
+    // Project the collection's filterable fields into per-row column values so a
+    // store can persist them (raw `data` here; `enriched.`-pathed fields read the
+    // stage output). Without this, filters/facets over a fresh enrich have no columns.
+    const fieldDefs = cfg.collection?.fields;
+    const dataById = new Map(rows.map((r) => [r.id, r.data]));
     const ready = results.filter((r) => r.ok).map((r) => ({
       id: r.id,
       enriched: r.enriched,
       surfaces: r.surfaces,
       status: r.status,
       gateReason: r.gateReason,
+      fields: fieldDefs ? projectFields(fieldDefs, dataById.get(r.id) ?? {}, r.enriched) : undefined,
     }));
     await embedSurfaces(ready);
     await store.writeEnriched(ready);
