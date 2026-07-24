@@ -1,5 +1,13 @@
 # @samesake/cli
 
+## 6.0.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @samesake/core@6.0.1
+  - @samesake/server@6.0.1
+
 ## 6.0.0
 
 ### Major Changes

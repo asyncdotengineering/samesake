@@ -1,5 +1,27 @@
 # @samesake/enrich
 
+## 6.0.1
+
+### Patch Changes
+
+- Fix the `samesake()` Postgres enrich → search → resolve → facets path end to end.
+
+  The Tier-2 `samesake()` bundle path shipped in 6.0.0 was not exercised end to end
+  (the integration suite covers the `createMatcher` path), so four bugs slipped through:
+
+  - `PostgresEnrichStore` double-encoded jsonb `data`/`enriched` (JSON.stringify before
+    postgres.js also serialised), so `data->>'field'` read null.
+  - filterable field columns were never projected, so every filter/facet/NLQ-budget
+    matched nothing. Field projection now lives in `@samesake/core`
+    (`resolveFieldValue`/`projectFields`), the enricher writes `EnrichedRow.fields`, and
+    `PostgresEnrichStore` persists them.
+  - `resolve()` UNIONed dedup probes with per-member `ORDER BY … LIMIT` unparenthesized.
+  - `resolve()`'s `*_dedup_suggestions` feedback table was not created by the migration.
+  - `facets()` `filters` is now optional (facet the whole collection).
+
+- Updated dependencies
+  - @samesake/core@6.0.1
+
 ## 6.0.0
 
 ### Major Changes

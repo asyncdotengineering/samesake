@@ -1,3 +1,11 @@
+## 6.0.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @samesake/core@6.0.1
+  - @samesake/enrich@6.0.1
+
 ## 6.0.0
 
 ### Major Changes
