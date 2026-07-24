@@ -1,0 +1,8 @@
+{
+  "name": "@samesake-examples/marketplace-search",
+  "type": "module",
+  "private": true,
+  "description": "Runnable multi-vendor marketplace: enrich → resolve (cross-vendor dedup) → faceted search over Postgres.",
+  "scripts": { "start": "bun run src/run.ts", "test": "bun test" },
+  "dependencies": { "@samesake/core": "workspace:*", "@samesake/postgres": "workspace:*" }
+}

@@ -170,6 +170,13 @@
         "drizzle-orm": "^0.45.2",
       },
     },
+    "examples/marketplace-search": {
+      "name": "@samesake-examples/marketplace-search",
+      "dependencies": {
+        "@samesake/core": "workspace:*",
+        "@samesake/postgres": "workspace:*",
+      },
+    },
     "examples/quickstart": {
       "name": "samesake-example-quickstart",
       "dependencies": {
@@ -880,6 +887,8 @@
     "@samesake-examples/build-a-search-experience": ["@samesake-examples/build-a-search-experience@workspace:examples/build-a-search-experience"],
 
     "@samesake-examples/cloudflare-backend": ["@samesake-examples/cloudflare-backend@workspace:examples/cloudflare-backend"],
+
+    "@samesake-examples/marketplace-search": ["@samesake-examples/marketplace-search@workspace:examples/marketplace-search"],
 
     "@samesake/cli": ["@samesake/cli@workspace:packages/cli"],
 
