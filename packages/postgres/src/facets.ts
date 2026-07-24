@@ -18,11 +18,11 @@ function facetField(def: CollectionDef, field: string) {
 export function createFacets(adapter: PostgresAdapter, options: CollectionBackendOptions) {
   return async (request: {
     fields: string[];
-    filters: import("@samesake/query").RetrievalPlan["filters"];
+    filters?: import("@samesake/query").RetrievalPlan["filters"];
     scope?: Record<string, string>;
   }): Promise<Record<string, FacetResult>> => {
     const scope = request.scope ?? options.scope;
-    const compiled = buildFilterSql(request.filters, options.collection, 1);
+    const compiled = buildFilterSql(request.filters ?? [], options.collection, 1);
     const whereParts = compiled.where === "true" ? [] : [compiled.where];
     const params = [...compiled.params];
     for (const [field, value] of Object.entries(scope ?? {})) {

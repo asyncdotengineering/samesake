@@ -48,7 +48,7 @@ export function pgCandidates(adapter: PostgresAdapter, options: CollectionBacken
     const groupField = ident(dedup.groupField ?? "product_group");
     const fields = ["d.id", `d.${groupField} AS _group`, fieldSelect, trigramSelect, cosineSelect].filter(Boolean).join(", ");
     const rows = await adapter.query(
-      `WITH probe AS (${probes.join(" UNION ")}) SELECT ${fields} FROM ${options.table} d JOIN probe USING (id) WHERE d.pipeline_status = 'ready'`,
+      `WITH probe AS (${probes.map((probe) => `(${probe})`).join(" UNION ")}) SELECT ${fields} FROM ${options.table} d JOIN probe USING (id) WHERE d.pipeline_status = 'ready'`,
       params
     );
     return rows.map((candidate) => ({

@@ -96,6 +96,13 @@ function migrationStatements(schema: string, table: string, collection: Collecti
     `CREATE TABLE IF NOT EXISTS ${table} (${columns.join(", ")})`,
     `CREATE INDEX IF NOT EXISTS ${ident(table.split(".").pop()!)}_fts_idx ON ${table} USING gin (fts)`,
   ];
+  if (collection.dedup) {
+    // resolve()'s feedback port (decline/confirm memory) reads this table; create it
+    // alongside the main table so app.resolve() works on a dedup collection.
+    statements.push(
+      `CREATE TABLE IF NOT EXISTS ${table}_dedup_suggestions (row_id text NOT NULL, candidate_group text NOT NULL, score real NOT NULL, status text NOT NULL DEFAULT 'open', created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (row_id, candidate_group))`
+    );
+  }
   const vocabFields = Object.entries(collection.fields).filter(([, field]) => field.type === "text" && field.filterable);
   if (vocabFields.length) {
     const vocab = `${table}_vocab`;
