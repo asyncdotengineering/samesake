@@ -60,10 +60,10 @@ import { fashion } from "@samesake/presets";
 
 const products = collection("products", {
   fields: fashion.fields(),
-  indexing: fashion.indexing(),
-  embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
   spaces: fashion.spaces(),
   enrich: fashion.enrich(),
+  indexing: fashion.indexing(),
+  embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
   search: {
     channels: [Channels.fts({ fields: ["title"] }), Channels.cosine({ embedding: "doc" }), Channels.spaces({})],
     combiner: "rrf",
@@ -81,6 +81,7 @@ collection("products", {
     colors: f.array(f.enum(COLORS), { filterable: true }),
     // …
   },
+  enrich: { stages: [] },
   search: {
     channels: [/* fts + cosine + spaces */],
     nlq: {

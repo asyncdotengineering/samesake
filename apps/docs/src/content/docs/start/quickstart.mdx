@@ -77,6 +77,9 @@ SAMESAKE_DATABASE_URL=postgres://localhost:5432/samesake_dev
        color: f.text({ filterable: true }),
        available: f.boolean({ filterable: true }),
      },
+     // Required before indexing. Empty here — this data is already clean, so the
+     // surfaces below read `data` directly (a messier catalog adds parse stages).
+     enrich: { stages: [] },
      indexing: {
        surfaces: {
          embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => `${data.title} ${data.brand} ${data.color}`.trim() },
@@ -91,6 +94,7 @@ SAMESAKE_DATABASE_URL=postgres://localhost:5432/samesake_dev
          Channels.cosine({ embedding: "doc", weight: 1 }),
        ],
        combiner: "rrf",
+       nlq: { instructions: "Shopping queries for a fashion catalog. Extract price budgets and attributes." },
      },
    });
    ```
@@ -124,9 +128,9 @@ SAMESAKE_DATABASE_URL=postgres://localhost:5432/samesake_dev
    ```
 
    <Aside type="tip">
-   This runs on FTS alone with the stub embed. If you wire a real embedding model and rely on the
-   `cosine` channel, verify vector write-back is wired end to end on your installed version — see
-   [Pipeline lifecycle](/guides/pipeline-lifecycle/#enrich-writes-surfaces-vector-write-back-is-unported).
+   `enrich.enrich()` builds the FTS + dense surfaces, embeds the dense ones through your
+   `embed` function, and writes the vectors back — so both the `fts` and `cosine` channels
+   are live. With the stub embed above it runs keyword-only; swap in a real model for meaning.
    </Aside>
 
 4. **Search.**

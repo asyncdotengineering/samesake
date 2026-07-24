@@ -56,6 +56,7 @@ export const products = collection("products", {
     price:    f.number({ filterable: true, facet: "range", budget: true }),
     available: f.boolean({ filterable: true, facet: true }),
   },
+  enrich: { stages: [] },
   indexing: {
     surfaces: {
       embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => `${data.title} ${data.brand}`.trim() },

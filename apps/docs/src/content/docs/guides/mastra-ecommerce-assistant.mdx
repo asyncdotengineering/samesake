@@ -75,6 +75,7 @@ export const products = collection(PRODUCTS, {
     price: f.number({ filterable: true, facet: "range", budget: true }),
     image_url: f.text(),
   },
+  enrich: { stages: [] },
   indexing: {
     surfaces: {
       embed_doc: { kind: "dense", embedding: "doc", build: ({ data }) => `${data.name} ${data.description} ${data.brand} ${data.category} ${data.subcategory}`.trim() },

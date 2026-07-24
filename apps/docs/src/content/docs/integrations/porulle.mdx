@@ -37,6 +37,7 @@ export const products = collection("products", {
     available: f.boolean({ filterable: true }),
     image_url: f.text(),
   },
+  enrich: { stages: [] },
   indexing: {
     surfaces: {
       embed_doc: {

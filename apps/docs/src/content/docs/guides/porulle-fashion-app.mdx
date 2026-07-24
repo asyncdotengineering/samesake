@@ -147,6 +147,7 @@ export const products = collection("products", {
     price: f.number({ filterable: true, budget: true }), available: f.boolean({ filterable: true }),
     image_url: f.text(),
   },
+  enrich: { stages: [] },
   indexing: {
     surfaces: {
       embed_doc: {
@@ -162,8 +163,14 @@ export const products = collection("products", {
     gate: ({ data }) => (data.title ? { index: true } : { index: false, reason: "missing-title" }),
   },
   embeddings: { doc: { model: "gemini-embedding-2", dim: 1536 } },
-  search: { channels: [Channels.fts({ fields: ["title","brand","category","color","material"], weight: 1 }),
-    Channels.cosine({ embedding: "doc", weight: 1 })], combiner: "rrf" },
+  search: {
+    channels: [
+      Channels.fts({ fields: ["title","brand","category","color","material"], weight: 1 }),
+      Channels.cosine({ embedding: "doc", weight: 1 }),
+    ],
+    combiner: "rrf",
+    nlq: { enable: true, semanticRewrite: true },
+  },
 });
 
 export const app = samesake({
@@ -316,7 +323,7 @@ SSRF-hardened fetcher and calls your `generate` with the image bytes + schema, t
 JSON in `enriched`. The order in the sync is **`enrich.upsert` → `enrich.enrich`**. Now the colours are real
 ("RED PUFF SLEEVE MAXI DRESS" → `solid red`, "Princess Line Dress" → `solid black`), and because
 the `embed_doc` surface builder pulls in `enriched.color_text`, so "black dress with white" cosine-favours
-genuinely black products (subject to the vector write-back TODO in [Pipeline lifecycle](/guides/pipeline-lifecycle/#enrich-writes-surfaces-vector-write-back-is-unported)).
+genuinely black products. `enrich.enrich()` builds surfaces, embeds the dense ones, and writes the vectors back — see [Pipeline lifecycle](/guides/pipeline-lifecycle/#enrich-writes-surfaces-and-optional-vectors).
 
 Pair it with a **constrained NLQ schema** so a sparse colour tag can't become a hard filter that
 dead-ends the query — let intent + budget through, and leave colour to the embedding + visual signals:

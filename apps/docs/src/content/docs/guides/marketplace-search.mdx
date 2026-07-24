@@ -41,6 +41,7 @@ export const products = collection("products", {
       Channels.spaces({ weight: 1 }),
     ],
     combiner: "rrf",
+    nlq: { schema: fashion.nlq.schema(), instructions: fashion.nlq.instructions },
   },
 });
 ```

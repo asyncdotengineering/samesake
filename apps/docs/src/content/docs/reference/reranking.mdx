@@ -209,6 +209,7 @@ Reranking reorders; the **relevance floor** _removes_. `search.relevanceFloor` i
 ```ts
 collection("products", {
   // …
+  enrich: { stages: [] },
   search: {
     channels: [/* … */],
     relevanceFloor: 0.5, // calibrated for gemini-embedding-2

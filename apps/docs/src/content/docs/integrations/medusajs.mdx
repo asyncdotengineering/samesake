@@ -28,6 +28,7 @@ export const products = collection("products", {
     price: f.number({ filterable: true, budget: true }),
     available: f.boolean({ filterable: true }),
   },
+  enrich: { stages: [] },
   indexing: {
     surfaces: {
       embed_doc: {

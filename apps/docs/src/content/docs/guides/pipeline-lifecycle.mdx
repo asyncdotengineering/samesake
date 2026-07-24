@@ -88,6 +88,7 @@ import { collection, gates } from "@samesake/core";
 
 export const products = collection("products", {
   fields: { /* ... */ },
+  enrich: { stages: [] },
   indexing: {
     surfaces: {
       embed_doc: {
